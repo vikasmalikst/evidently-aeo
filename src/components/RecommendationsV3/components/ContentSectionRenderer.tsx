@@ -9,6 +9,8 @@ import React, { useState } from 'react';
 import { IconCopy, IconCheck, IconCode, IconCalculator, IconTable, IconFileText, IconVideo } from '@tabler/icons-react';
 import { MarkdownRenderer, AccordionFAQ, TimelineViewer, VideoScriptRenderer } from './EnhancedRenderers';
 import { LiveCompetitorData } from './LiveCompetitorData';
+import { VisualTableEditor } from './VisualTableEditor';
+import { IconEdit } from '@tabler/icons-react';
 
 // TypeScript types matching backend definitions
 export type ContentSectionType =
@@ -52,16 +54,16 @@ interface ContentSectionRendererProps {
 function parseFAQContent(content: string): Array<{ question: string; answer: string }> {
   const items: Array<{ question: string; answer: string }> = [];
   const lines = content.split('\n').filter(Boolean);
-  
+
   let currentQuestion = '';
   let currentAnswer = '';
-  
+
   for (const line of lines) {
     const trimmed = line.trim();
     // Check if this is a question line
-    if (trimmed.startsWith('?') || trimmed.toLowerCase().startsWith('q:') || 
-        trimmed.toLowerCase().startsWith('question:') || 
-        (trimmed.includes('?') && !trimmed.toLowerCase().startsWith('a:'))) {
+    if (trimmed.startsWith('?') || trimmed.toLowerCase().startsWith('q:') ||
+      trimmed.toLowerCase().startsWith('question:') ||
+      (trimmed.includes('?') && !trimmed.toLowerCase().startsWith('a:'))) {
       // Save previous Q&A pair if exists
       if (currentQuestion && currentAnswer) {
         items.push({ question: currentQuestion, answer: currentAnswer });
@@ -85,12 +87,12 @@ function parseFAQContent(content: string): Array<{ question: string; answer: str
       currentAnswer += ' ' + trimmed;
     }
   }
-  
+
   // Don't forget the last pair
   if (currentQuestion) {
     items.push({ question: currentQuestion, answer: currentAnswer || 'No answer provided.' });
   }
-  
+
   return items;
 }
 
@@ -101,10 +103,10 @@ function parseFAQContent(content: string): Array<{ question: string; answer: str
 function parseTimelineContent(content: string): Array<{ timestamp: string; title: string; description?: string }> {
   const items: Array<{ timestamp: string; title: string; description?: string }> = [];
   const lines = content.split('\n').filter(Boolean);
-  
+
   // Match patterns like "00:00 - Title" or "10:00 Title" or "0:00 - Title"
   const timestampRegex = /^(\d{1,2}:\d{2})\s*[-–—]?\s*(.+)$/;
-  
+
   for (const line of lines) {
     const trimmed = line.trim();
     const match = trimmed.match(timestampRegex);
@@ -115,7 +117,7 @@ function parseTimelineContent(content: string): Array<{ timestamp: string; title
       });
     }
   }
-  
+
   return items;
 }
 
@@ -233,9 +235,8 @@ function ComparisonTableRenderer({ content }: { content: string }) {
                 {headers.map((header, idx) => (
                   <th
                     key={idx}
-                    className={`px-4 py-3 text-left font-semibold text-[#1e293b] border-b border-[#e2e8f0] ${
-                      idx === 0 ? 'bg-[#f1f5f9]' : ''
-                    }`}
+                    className={`px-4 py-3 text-left font-semibold text-[#1e293b] border-b border-[#e2e8f0] border-r border-[#e2e8f0] last:border-r-0 ${idx === 0 ? 'bg-[#f1f5f9]' : ''
+                      }`}
                   >
                     {header}
                   </th>
@@ -254,9 +255,8 @@ function ComparisonTableRenderer({ content }: { content: string }) {
                     return (
                       <td
                         key={cellIdx}
-                        className={`px-4 py-3 border-b border-[#e2e8f0] ${
-                          cellIdx === 0 ? 'font-medium text-[#334155]' : 'text-[#64748b]'
-                        } ${isFillIn ? 'bg-[#fef3c7] text-[#92400e]' : ''}`}
+                        className={`px-4 py-3 border-b border-[#e2e8f0] border-r border-[#e2e8f0] last:border-r-0 ${cellIdx === 0 ? 'font-medium text-[#334155]' : 'text-[#64748b]'
+                          } ${isFillIn ? 'bg-[#fef3c7] text-[#92400e]' : ''}`}
                       >
                         {cell}
                       </td>
@@ -287,7 +287,7 @@ function renderStructuredTable(tableData: { columnHeaders: string[]; rows: any[]
           <thead>
             <tr className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9]">
               {tableData.columnHeaders.map((header: string, idx: number) => (
-                <th key={idx} className="px-4 py-3 text-left font-semibold text-[#1e293b] border-b border-[#e2e8f0]">
+                <th key={idx} className="px-4 py-3 text-left font-semibold text-[#1e293b] border-b border-[#e2e8f0] border-r border-[#e2e8f0] last:border-r-0">
                   {header}
                 </th>
               ))}
@@ -296,13 +296,13 @@ function renderStructuredTable(tableData: { columnHeaders: string[]; rows: any[]
           <tbody>
             {tableData.rows.map((row: any, idx: number) => (
               <tr key={idx} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-[#f8fafc]'} hover:bg-[#f0f9ff] transition-colors`}>
-                <td className="px-4 py-3 font-medium text-[#334155] border-b border-[#e2e8f0]">
+                <td className="px-4 py-3 font-medium text-[#334155] border-b border-[#e2e8f0] border-r border-[#e2e8f0]">
                   {row.feature}
                 </td>
                 {row.values.map((val: string, vIdx: number) => {
                   const isFillIn = val.includes('[FILL_IN');
                   return (
-                    <td key={vIdx} className={`px-4 py-3 border-b border-[#e2e8f0] ${isFillIn ? 'bg-[#fef3c7] text-[#92400e]' : 'text-[#64748b]'}`}>
+                    <td key={vIdx} className={`px-4 py-3 border-b border-[#e2e8f0] border-r border-[#e2e8f0] last:border-r-0 ${isFillIn ? 'bg-[#fef3c7] text-[#92400e]' : 'text-[#64748b]'}`}>
                       {val}
                     </td>
                   );
@@ -461,14 +461,47 @@ export function ContentSectionRenderer({
 }: ContentSectionRendererProps) {
   const content = editedContent ?? section.content;
 
-  // Editing mode - always show textarea
+  const [isVisualTableMode, setIsVisualTableMode] = useState(section.sectionType === 'comparison_table' || content.includes('|'));
+
+  // Editing mode
   if (isEditing) {
     return (
-      <textarea
-        className="w-full min-h-[150px] p-3 bg-[#f8fafc] border border-[#00bcdc] rounded-lg text-[13px] text-[#1a1d29] focus:outline-none focus:ring-2 focus:ring-[#00bcdc]"
-        value={content}
-        onChange={(e) => onContentChange?.(e.target.value)}
-      />
+      <div className="space-y-3 animate-in fade-in duration-200">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${isVisualTableMode ? 'text-[#00bcdc]' : 'text-gray-400'}`}>
+              {isVisualTableMode ? 'Grid Editor' : 'Markdown Editor'}
+            </span>
+          </div>
+          <button
+            onClick={() => setIsVisualTableMode(!isVisualTableMode)}
+            className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#e2e8f0] rounded-full text-[11px] font-semibold text-[#64748b] hover:text-[#00bcdc] hover:border-[#00bcdc] transition-all"
+          >
+            {isVisualTableMode ? <IconEdit size={12} /> : <IconTable size={12} />}
+            {isVisualTableMode ? 'Switch to Raw Markdown' : 'Switch to Visual Grid'}
+          </button>
+        </div>
+
+        {isVisualTableMode ? (
+          <VisualTableEditor
+            content={content}
+            onContentChange={(newContent) => onContentChange?.(newContent)}
+          />
+        ) : (
+          <textarea
+            className="w-full min-h-[300px] p-4 bg-[#0b1220] border border-[#1e293b] rounded-xl text-[13px] text-[#e2e8f0] font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#00bcdc] shadow-inner"
+            value={content}
+            onChange={(e) => onContentChange?.(e.target.value)}
+            spellCheck={false}
+          />
+        )}
+
+        <div className="flex items-center justify-between px-1">
+          <p className="text-[10px] text-[#94a3b8]">
+            {isVisualTableMode ? 'Changes are automatically saved to the draft.' : 'Use standard Markdown syntax for tables and formatting.'}
+          </p>
+        </div>
+      </div>
     );
   }
 
@@ -479,8 +512,8 @@ export function ContentSectionRenderer({
         <div className="space-y-4">
           <ComparisonTableRenderer content={content} />
           {isEditing && (
-            <LiveCompetitorData 
-              content={content} 
+            <LiveCompetitorData
+              content={content}
               onApplyData={(replacements: Record<string, string>) => {
                 let newContent = content;
                 Object.entries(replacements).forEach(([placeholder, value]) => {
@@ -491,7 +524,7 @@ export function ContentSectionRenderer({
                   newContent = newContent.split(`[FILL_IN: ${cleanPlaceholder}]`).join(value);
                 });
                 onContentChange?.(newContent);
-              }} 
+              }}
             />
           )}
         </div>
@@ -535,9 +568,9 @@ export function ContentSectionRenderer({
       return (
         <div className="space-y-4">
           <MarkdownRenderer content={content} highlightFillIns={true} />
-           {isEditing && content.includes('[FILL_IN:') && (
-            <LiveCompetitorData 
-              content={content} 
+          {isEditing && content.includes('[FILL_IN:') && (
+            <LiveCompetitorData
+              content={content}
               onApplyData={(replacements: Record<string, string>) => {
                 let newContent = content;
                 Object.entries(replacements).forEach(([placeholder, value]) => {
@@ -546,7 +579,7 @@ export function ContentSectionRenderer({
                   newContent = newContent.split(`[FILL_IN: ${cleanPlaceholder}]`).join(value);
                 });
                 onContentChange?.(newContent);
-              }} 
+              }}
             />
           )}
         </div>

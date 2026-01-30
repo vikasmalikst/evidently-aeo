@@ -9,10 +9,10 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  IconChevronDown, 
-  IconChevronRight, 
-  IconClock, 
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconClock,
   IconVideo,
   IconMicrophone,
   IconEye,
@@ -32,38 +32,38 @@ interface MarkdownRendererProps {
 
 export function MarkdownRenderer({ content, className = '', highlightFillIns = true }: MarkdownRendererProps) {
   // Pre-process content to highlight [FILL_IN] placeholders
-  const processedContent = highlightFillIns 
+  const processedContent = highlightFillIns
     ? content.replace(/\[FILL_IN[^\]]*\]/g, (match) => `<span class="fill-in-placeholder">${match}</span>`)
     : content;
 
   return (
     <div className={`markdown-content ${className}`}>
-      <ReactMarkdown 
+      <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           // Custom heading styles
           h1: ({ children }) => <h1 className="text-[20px] font-bold text-[#1e293b] mb-3 mt-4">{children}</h1>,
           h2: ({ children }) => <h2 className="text-[18px] font-semibold text-[#334155] mb-2 mt-3">{children}</h2>,
           h3: ({ children }) => <h3 className="text-[16px] font-semibold text-[#475569] mb-2 mt-2">{children}</h3>,
-          
+
           // Paragraph styling
           p: ({ children }) => <p className="text-[13px] text-[#374151] leading-relaxed mb-3">{children}</p>,
-          
+
           // List styling
           ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 mb-3 text-[13px] text-[#374151]">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 mb-3 text-[13px] text-[#374151]">{children}</ol>,
           li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-          
+
           // Strong/Bold
           strong: ({ children }) => <strong className="font-semibold text-[#1e293b]">{children}</strong>,
-          
+
           // Links
           a: ({ href, children }) => (
             <a href={href} className="text-[#0ea5e9] hover:underline" target="_blank" rel="noopener noreferrer">
               {children}
             </a>
           ),
-          
+
           // Code blocks
           code: ({ className, children }) => {
             const isInline = !className;
@@ -76,18 +76,48 @@ export function MarkdownRenderer({ content, className = '', highlightFillIns = t
               </pre>
             );
           },
-          
+
           // Blockquote
           blockquote: ({ children }) => (
             <blockquote className="border-l-4 border-[#0ea5e9] pl-4 py-1 my-3 bg-[#f0f9ff] rounded-r-lg">
               {children}
             </blockquote>
           ),
+
+          // Table styling
+          table: ({ children }) => (
+            <div className="overflow-x-auto my-4 rounded-lg border border-[#e2e8f0] shadow-sm">
+              <table className="w-full text-[13px] border-collapse bg-white">
+                {children}
+              </table>
+            </div>
+          ),
+          thead: ({ children }) => (
+            <thead className="bg-[#f8fafc] border-b-2 border-[#e2e8f0]">
+              {children}
+            </thead>
+          ),
+          th: ({ children }) => (
+            <th className="px-4 py-3 text-left font-bold text-[#1e293b] border-r border-[#e2e8f0] last:border-r-0">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="px-4 py-3 text-[#374151] border-b border-[#eff1f5] border-r border-[#eff1f5] last:border-r-0">
+              {children}
+            </td>
+          ),
+          tr: ({ children }) => (
+            <tr className="hover:bg-[#f8fafc] transition-colors">
+              {children}
+            </tr>
+          ),
+
         }}
       >
         {processedContent}
       </ReactMarkdown>
-      
+
       {/* CSS for FILL_IN highlighting */}
       <style>{`
         .fill-in-placeholder {
@@ -133,16 +163,15 @@ export function TimelineViewer({ items, title = 'Timeline' }: TimelineViewerProp
         <div className="h-1 bg-gradient-to-r from-[#0ea5e9] to-[#8b5cf6] rounded-full" />
         <div className="flex justify-between mt-1">
           {items.map((item, idx) => (
-            <div 
-              key={idx} 
+            <div
+              key={idx}
               className="relative flex flex-col items-center cursor-pointer group"
               onClick={() => setActiveIndex(activeIndex === idx ? null : idx)}
             >
-              <div className={`w-3 h-3 rounded-full -mt-2 transition-all ${
-                activeIndex === idx 
-                  ? 'bg-[#0ea5e9] ring-4 ring-[#0ea5e9]/20' 
+              <div className={`w-3 h-3 rounded-full -mt-2 transition-all ${activeIndex === idx
+                  ? 'bg-[#0ea5e9] ring-4 ring-[#0ea5e9]/20'
                   : 'bg-white border-2 border-[#0ea5e9] group-hover:bg-[#0ea5e9]'
-              }`} />
+                }`} />
               <span className="text-[10px] text-[#64748b] mt-1 font-mono">{item.timestamp}</span>
             </div>
           ))}
@@ -155,7 +184,7 @@ export function TimelineViewer({ items, title = 'Timeline' }: TimelineViewerProp
           <motion.div
             key={idx}
             initial={false}
-            animate={{ 
+            animate={{
               backgroundColor: activeIndex === idx ? '#f0f9ff' : 'transparent',
               borderColor: activeIndex === idx ? '#0ea5e9' : '#e2e8f0'
             }}
@@ -209,11 +238,11 @@ export function AccordionFAQ({ items, title = 'Frequently Asked Questions' }: Ac
       {title && (
         <h4 className="text-[14px] font-semibold text-[#1e293b] mb-3">{title}</h4>
       )}
-      
+
       <div className="space-y-2">
         {items.map((item, idx) => (
-          <div 
-            key={idx} 
+          <div
+            key={idx}
             className="border border-[#e2e8f0] rounded-lg overflow-hidden"
           >
             {/* Question Header */}
@@ -232,7 +261,7 @@ export function AccordionFAQ({ items, title = 'Frequently Asked Questions' }: Ac
                 <IconChevronDown size={16} className="text-[#64748b]" />
               </motion.div>
             </button>
-            
+
             {/* Answer Content */}
             <AnimatePresence>
               {openIndex === idx && (

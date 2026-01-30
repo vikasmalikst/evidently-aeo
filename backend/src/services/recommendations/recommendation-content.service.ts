@@ -10,13 +10,13 @@ import { getCerebrasKey, getCerebrasModel } from '../../utils/api-key-resolver';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
 import { shouldUseOllama, callOllamaAPI } from '../scoring/ollama-client.service';
 import {
-  contentPromptFactory,
   detectContentAsset,
   detectPlatform,
-  ContentPromptContext,
-} from './content-prompt-factory';
+  getNewContentPrompt,
+  NewContentPromptContext,
+  StructureConfig
+} from './new-content-factory';
 import { BrandContextV3, RecommendationV3, ContentAssetType } from './recommendation.types';
-import { getNewContentPrompt, NewContentPromptContext, StructureConfig } from './new-content-factory';
 
 export type RecommendationContentStatus = 'generated' | 'accepted' | 'rejected';
 export type RecommendationContentProvider = 'cerebras' | 'openrouter' | 'ollama';
@@ -786,7 +786,7 @@ ${contentStyleGuide}
     let newFactoryPrompt: string | null = null;
 
     // Supported types in New Content Factory
-    const newFactorySupportedAssets = ['article', 'whitepaper', 'short_video', 'expert_community_response', 'podcast'];
+    const newFactorySupportedAssets = ['article', 'whitepaper', 'short_video', 'expert_community_response', 'podcast', 'comparison_table'];
 
     if (newFactorySupportedAssets.includes(assetDetection.asset)) {
       const recV3ForNew: RecommendationV3 = {
@@ -823,35 +823,7 @@ ${contentStyleGuide}
     if (newFactoryPrompt) {
       prompt = newFactoryPrompt;
       console.log('🚀 [RecommendationContentService] Using NEW Content Factory (v2026.3) for article.');
-    } else if (useFactoryPrompt && !isColdStartGuide) {
-      // Use the new ContentPromptFactory for strategic asset types
-      const recV3: RecommendationV3 = {
-        id: rec.id,
-        action: rec.action || '',
-        citationSource: rec.citation_source || '',
-        focusArea: (rec.focus_area as 'visibility' | 'soa' | 'sentiment') || 'visibility',
-        priority: (rec.priority as 'High' | 'Medium' | 'Low') || 'Medium',
-        effort: (rec.effort as 'Low' | 'Medium' | 'High') || 'Medium',
-        kpi: rec.kpi,
-        reason: rec.reason,
-        explanation: rec.explanation,
-        contentFocus: rec.content_focus,
-        timeline: rec.timeline,
-      };
-      const brandContextV3: BrandContextV3 = {
-        brandId: brand?.id || rec.brand_id,
-        brandName: brand?.name || 'Brand',
-        industry: brand?.industry || 'Unknown',
-        brandDomain: brand?.name?.toLowerCase().replace(/\s/g, '') || undefined,
-      };
-      const factoryContext: ContentPromptContext = {
-        recommendation: recV3,
-        brandContext: brandContextV3,
-        assetType: assetDetection.asset,
-        platform: platformDetection,
-      };
-      prompt = contentPromptFactory.getContentPrompt(factoryContext);
-      console.log('✨ [RecommendationContentService] Using FSA ContentPromptFactory for strategic asset.');
+      console.log('🚀 [RecommendationContentService] Using NEW Content Factory (v2026.3) for article.');
     } else {
       // Fallback to legacy prompt construction
       prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${isColdStartGuide ? guideInstructions : contentInstructions}`;

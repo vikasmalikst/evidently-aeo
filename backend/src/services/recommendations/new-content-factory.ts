@@ -7,6 +7,7 @@ import { buildWhitepaperPrompt } from './prompts/whitepaper-prompt';
 import { buildShortVideoPrompt } from './prompts/short-video-prompt';
 import { buildExpertResponsePrompt } from './prompts/expert-response-prompt';
 import { buildPodcastPrompt } from './prompts/podcast-prompt';
+import { buildComparisonTablePrompt } from './prompts/comparison-table-prompt';
 
 // ... (existing imports)
 
@@ -44,6 +45,8 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
             return buildExpertResponsePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         case 'podcast':
             return buildPodcastPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+        case 'comparison_table':
+            return buildComparisonTablePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         default:
             return null;
     }
@@ -190,4 +193,123 @@ WRITING RULES:
 - No CTAs
 - JSON only
 `;
+}
+
+// ============================================================================
+// ASSET TYPE DETECTION (Moved from content-prompt-factory.ts)
+// ============================================================================
+
+export interface AssetDetectionResult {
+    asset: ContentAssetType;
+    confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Detects the Content Asset Type from the recommendation action string.
+ * 
+ * Priority Order:
+ * 1. Explicit content type keywords (article, whitepaper) - HIGHEST priority
+ * 2. Specific asset types (calculator, tool, case study, webinar, video)
+ * 3. Fallback to comparison if 'vs' present
+ * 4. Default to article
+ */
+export function detectContentAsset(action: string): AssetDetectionResult {
+    const actionLower = action.toLowerCase();
+
+    // 1. EXPLICIT ARTICLE/BLOG - Highest priority
+    const articleKeywords = ['standard article', 'publish article', 'blog post', 'guest post', 'write article', 'pillar page', 'resource guide'];
+    if (articleKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'article', confidence: 'high' };
+    }
+
+    // 2. Expert Community / Forum (Specific Format) - MOVED UP
+    const expertKeywords = ['expert community', 'forum response', 'quora', 'reddit response', 'community answer', 'expert answer'];
+    if (expertKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'expert_community_response', confidence: 'high' };
+    }
+
+    // 3. Podcast (Specific Format) - NEW
+    const podcastKeywords = ['podcast', 'audio', 'interview script'];
+    if (podcastKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'podcast', confidence: 'high' };
+    }
+
+    // 4. Video/YouTube Keywords (Specific Format) - MOVED UP
+    const videoKeywords = ['video', 'youtube', 'script', 'vlog', 'tiktok', 'reels'];
+    if (videoKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'short_video', confidence: 'high' };
+    }
+
+    // 5. Webinar Keywords (Specific Format)
+    const webinarKeywords = ['webinar', 'recap', 'event summary', 'presentation', 'talk'];
+    if (webinarKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'webinar_recap', confidence: 'high' };
+    }
+
+    // 6. Case Study Keywords
+    const caseStudyKeywords = ['case study', 'success story', 'customer story'];
+    if (caseStudyKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'case_study', confidence: 'high' };
+    }
+
+    // 7. EXPLICIT WHITEPAPER/REPORT (Moved down as it's often a referenced noun)
+    const whitepaperKeywords = ['whitepaper', 'white paper', 'research report', 'industry report', 'ebook'];
+    if (whitepaperKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'whitepaper', confidence: 'high' };
+    }
+
+    // 8. Comparison Table
+    const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison', 'versus table', 'vs table'];
+    if (explicitComparisonKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'comparison_table', confidence: 'high' };
+    }
+
+    // 8. Social Media Thread
+    const threadKeywords = ['thread', 'linkedin carousel', 'twitter thread', 'x thread', 'social thread'];
+    if (threadKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'social_media_thread', confidence: 'high' };
+    }
+
+    // 9. Guide keyword
+    if (actionLower.includes('guide')) {
+        return { asset: 'article', confidence: 'medium' };
+    }
+
+    // 10. Comparison fallback
+    if (actionLower.includes(' vs ') || actionLower.includes(' versus ')) {
+        return { asset: 'comparison_table', confidence: 'medium' };
+    }
+
+    return { asset: 'article', confidence: 'low' };
+}
+
+/**
+ * Detects the Platform (Container) from the citation source domain.
+ */
+export type ContentPlatform =
+    | 'reddit'
+    | 'linkedin'
+    | 'youtube'
+    | 'dev_to'
+    | 'owned_site'
+    | 'article_site'
+    | 'other';
+
+export function detectPlatform(citationSource: string, brandDomain?: string): ContentPlatform {
+    const sourceLower = citationSource.toLowerCase().trim();
+
+    if (sourceLower.includes('youtube.com') || sourceLower.includes('youtu.be')) return 'youtube';
+    if (sourceLower.includes('reddit.com')) return 'reddit';
+    if (sourceLower.includes('linkedin.com')) return 'linkedin';
+    if (sourceLower.includes('dev.to')) return 'dev_to';
+    if (sourceLower === 'owned-site' || (brandDomain && sourceLower.includes(brandDomain.toLowerCase()))) return 'owned_site';
+
+    // Known editorial sites
+    const articlePatterns = [
+        'techcrunch', 'forbes', 'wired', 'medium', 'hashnode', 'smashingmagazine',
+        'wikipedia', 'quora', 'stackoverflow', 'hubspot', 'atlassian'
+    ];
+    if (articlePatterns.some(p => sourceLower.includes(p))) return 'article_site';
+
+    return 'other';
 }

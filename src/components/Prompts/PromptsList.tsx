@@ -15,6 +15,7 @@ interface PromptsListProps {
   selectedCompetitors: string[];
   onReorderCompetitors?: (newOrder: string[]) => void;
   metricType: 'visibility' | 'sentiment' | 'mentions' | 'position' | 'share';
+  showHeatmap: boolean;
   brandLogo?: string;
   brandName?: string;
   brandDomain?: string;
@@ -57,6 +58,7 @@ export const PromptsList = memo(({
   selectedCompetitors,
   onReorderCompetitors,
   metricType,
+  showHeatmap,
   brandLogo,
   brandName,
   brandDomain
@@ -247,6 +249,39 @@ export const PromptsList = memo(({
     }
   };
 
+  const getHeatmapColor = (value: number | null | undefined, allValues: (number | null | undefined)[], type: string) => {
+    if (value === null || value === undefined || allValues.length < 2) return undefined;
+
+    const validValues = allValues.filter((v): v is number => v !== null && v !== undefined);
+    if (validValues.length < 2) return undefined;
+
+    const min = Math.min(...validValues);
+    const max = Math.max(...validValues);
+
+    if (max === min) return 'rgba(134, 239, 172, 0.2)'; // Green tint for equal max
+
+    let ratio = (value - min) / (max - min);
+
+    // For position, lower is better
+    if (type === 'position') {
+      ratio = 1 - ratio;
+    }
+
+    if (ratio >= 0.5) {
+      // Yellow (254, 240, 138) to Green (134, 239, 172)
+      const r = Math.round(254 - (254 - 134) * ((ratio - 0.5) * 2));
+      const g = Math.round(240 - (240 - 239) * ((ratio - 0.5) * 2));
+      const b = Math.round(138 - (138 - 172) * ((ratio - 0.5) * 2));
+      return `rgba(${r}, ${g}, ${b}, 0.25)`;
+    } else {
+      // Red (252, 165, 165) to Yellow (254, 240, 138)
+      const r = Math.round(252 + (254 - 252) * (ratio * 2));
+      const g = Math.round(165 + (240 - 165) * (ratio * 2));
+      const b = Math.round(165 + (138 - 165) * (ratio * 2));
+      return `rgba(${r}, ${g}, ${b}, 0.25)`;
+    }
+  };
+
   const metricLabel = getMetricLabel(metricType);
 
   return (
@@ -388,7 +423,10 @@ export const PromptsList = memo(({
                           </span>
                         </button>
                       </td>
-                      <td className="sticky left-[300px] z-20 bg-blue-50 px-2 py-2 w-28 text-center shadow-[1px_0_0_0_#93c5fd]">
+                      <td
+                        className="sticky left-[300px] z-20 bg-blue-50 px-2 py-2 w-28 text-center shadow-[1px_0_0_0_#93c5fd]"
+                        style={showHeatmap ? { backgroundColor: getHeatmapColor(getBrandValue(topic, metricType), [getBrandValue(topic, metricType), ...activeCompetitors.map(c => getCompetitorValue(topic, c.name.toLowerCase().trim(), metricType))], metricType) } : {}}
+                      >
                         <span className="text-sm font-bold font-data text-[var(--text-body)]">
                           {formatMetricValue(getBrandValue(topic, metricType), metricType)}
                         </span>
@@ -396,8 +434,18 @@ export const PromptsList = memo(({
                       {activeCompetitors.map(comp => {
                         const compKey = comp.name.toLowerCase().trim();
                         const score = getCompetitorValue(topic, compKey, metricType);
+                        const allValues = [
+                          getBrandValue(topic, metricType),
+                          ...activeCompetitors.map(c => getCompetitorValue(topic, c.name.toLowerCase().trim(), metricType))
+                        ];
+                        const bgColor = showHeatmap ? getHeatmapColor(score, allValues, metricType) : undefined;
+
                         return (
-                          <td key={comp.id} className="px-2 py-2 w-28 text-center border-l border-blue-100 bg-blue-50">
+                          <td
+                            key={comp.id}
+                            className="px-2 py-2 w-28 text-center border-l border-blue-100 bg-blue-50"
+                            style={bgColor ? { backgroundColor: bgColor } : {}}
+                          >
                             <span className="text-sm font-bold font-data text-[var(--text-body)]">
                               {formatMetricValue(score, metricType)}
                             </span>
@@ -424,7 +472,10 @@ export const PromptsList = memo(({
                               {prompt.question}
                             </p>
                           </td>
-                          <td className={`sticky left-[300px] z-20 px-2 py-3 w-28 text-center shadow-[1px_0_0_0_#e4e7ec] ${isSelected ? 'bg-[#f0f9ff]' : 'bg-white group-hover:bg-[#f9fafb]'}`}>
+                          <td
+                            className={`sticky left-[300px] z-20 px-2 py-3 w-28 text-center shadow-[1px_0_0_0_#e4e7ec] ${isSelected ? 'bg-[#f0f9ff]' : 'bg-white group-hover:bg-[#f9fafb]'}`}
+                            style={showHeatmap && !isSelected ? { backgroundColor: getHeatmapColor(getBrandValue(prompt, metricType), [getBrandValue(prompt, metricType), ...activeCompetitors.map(c => getCompetitorValue(prompt, c.name.toLowerCase().trim(), metricType))], metricType) } : {}}
+                          >
                             <span className="text-sm font-normal font-data text-[var(--text-body)]">
                               {formatMetricValue(getBrandValue(prompt, metricType), metricType)}
                             </span>
@@ -432,8 +483,18 @@ export const PromptsList = memo(({
                           {activeCompetitors.map(comp => {
                             const compKey = comp.name.toLowerCase().trim();
                             const score = getCompetitorValue(prompt, compKey, metricType);
+                            const allValues = [
+                              getBrandValue(prompt, metricType),
+                              ...activeCompetitors.map(c => getCompetitorValue(prompt, c.name.toLowerCase().trim(), metricType))
+                            ];
+                            const bgColor = showHeatmap && !isSelected ? getHeatmapColor(score, allValues, metricType) : undefined;
+
                             return (
-                              <td key={comp.id} className={`px-2 py-3 w-28 text-center border-l border-[var(--border-default)] ${isSelected ? 'bg-[#f0f9ff]' : 'bg-white group-hover:bg-[#f9fafb]'}`}>
+                              <td
+                                key={comp.id}
+                                className={`px-2 py-3 w-28 text-center border-l border-[var(--border-default)] ${isSelected ? 'bg-[#f0f9ff]' : 'bg-white group-hover:bg-[#f9fafb]'}`}
+                                style={bgColor ? { backgroundColor: bgColor } : {}}
+                              >
                                 <span className="text-sm font-normal font-data text-[var(--text-body)]">
                                   {formatMetricValue(score, metricType)}
                                 </span>

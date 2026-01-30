@@ -50,6 +50,7 @@ export const Prompts = () => {
   const { brands, selectedBrandId, selectedBrand, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
   const [isResponsePinned, setIsResponsePinned] = useState(false);
   const [isResponseVisible, setIsResponseVisible] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
 
   const handlePromptSelect = (prompt: PromptEntry) => {
     setSelectedPrompt(prompt);
@@ -358,6 +359,20 @@ export const Prompts = () => {
             allowedMetricTypes={['visibility', 'share', 'sentiment', 'mentions', 'position']}
             onHelpClick={handleHelpClick}
           />
+
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)]">
+            <span className="text-xs font-semibold text-[var(--text-caption)]">Heatmap</span>
+            <button
+              onClick={() => setShowHeatmap(!showHeatmap)}
+              className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${showHeatmap ? 'bg-[var(--accent-primary)]' : 'bg-gray-200'
+                }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${showHeatmap ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+              />
+            </button>
+          </div>
         </div>
 
         <PromptFilters
@@ -391,6 +406,7 @@ export const Prompts = () => {
               selectedCompetitors={selectedCompetitors}
               onReorderCompetitors={handleReorderCompetitors}
               metricType={metricType}
+              showHeatmap={showHeatmap}
               brandLogo={selectedBrand?.metadata?.logo || selectedBrand?.metadata?.brand_logo}
               brandName={selectedBrand?.name}
               brandDomain={selectedBrand?.homepage_url || undefined}

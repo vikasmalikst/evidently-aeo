@@ -301,6 +301,105 @@ class RecommendationContentService {
     return data as any;
   }
 
+  /**
+   * Save content structure draft WITHOUT calling LLM
+   */
+  async saveContentDraft(
+    recommendationId: string,
+    customerId: string,
+    structure: any
+  ): Promise<RecommendationContentRecord | null> {
+    try {
+      // Fetch recommendation to get brand/generation IDs
+      const { data: rec, error: recError } = await supabaseAdmin
+        .from('recommendations')
+        .select('*')
+        .eq('id', recommendationId)
+        .eq('customer_id', customerId)
+        .single();
+
+      if (recError || !rec) {
+        throw new Error('Recommendation not found or unauthorized');
+      }
+
+      // Prepare metadata with structure flag
+      const metadata = {
+        is_structure_draft: true,
+        structure_config: structure
+      };
+
+      // Create content record
+      // NOTE: Using 'cerebras' as provider to avoid potential enum constraints, 
+      // as 'ollama' might not be a valid value in the DB constraint.
+      const contentRecord: any = {
+        recommendation_id: recommendationId,
+        generation_id: rec.generation_id,
+        brand_id: rec.brand_id,
+        customer_id: customerId,
+        status: 'generated',
+        content_type: 'structure_draft',
+        content: JSON.stringify(structure, null, 2),
+        model_provider: 'cerebras',
+        model_name: 'draft',
+        prompt: 'manual_structure_draft',
+        metadata: {
+          is_structure_draft: true,
+          structure_config: structure,
+          updated_manually: true
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // Check if a draft already exists to update it
+      const { data: existing, error: existingError } = await supabaseAdmin
+        .from('recommendation_generated_contents')
+        .select('id')
+        .eq('recommendation_id', recommendationId)
+        .eq('content_type', 'structure_draft')
+        .maybeSingle();
+
+      if (existingError) {
+        console.error('❌ [RecommendationContentService] Error checking existing draft:', existingError);
+        throw existingError;
+      }
+
+      if (existing) {
+        const { data, error } = await supabaseAdmin
+          .from('recommendation_generated_contents')
+          .update({
+            content: contentRecord.content,
+            metadata: contentRecord.metadata,
+            updated_at: contentRecord.updated_at
+          })
+          .eq('id', existing.id)
+          .select('*')
+          .single();
+
+        if (error) {
+          console.error('❌ [RecommendationContentService] Error updating draft:', error);
+          throw error;
+        }
+        return data as any;
+      } else {
+        const { data, error } = await supabaseAdmin
+          .from('recommendation_generated_contents')
+          .insert(contentRecord)
+          .select('*')
+          .single();
+
+        if (error) {
+          console.error('❌ [RecommendationContentService] Error inserting draft:', error);
+          throw error;
+        }
+        return data as any;
+      }
+    } catch (error: any) {
+      console.error('❌ [RecommendationContentService] Error saving content draft:', error?.message || error);
+      return null;
+    }
+  }
+
   async generateContent(
     recommendationId: string,
     customerId: string,
@@ -1692,6 +1791,7 @@ RULES:
    * Get content for a recommendation
    */
   async getContent(recommendationId: string, customerId: string): Promise<RecommendationContentRecord | null> {
+
     const { data, error } = await supabaseAdmin
       .from('recommendation_generated_contents')
       .select('*')

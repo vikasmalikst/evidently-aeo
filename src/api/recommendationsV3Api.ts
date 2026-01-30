@@ -614,3 +614,29 @@ export async function regenerateContentV3(
     };
   }
 }
+/**
+ * Save content structure draft WITHOUT generating content
+ */
+export async function saveContentDraftV3(
+  recommendationId: string,
+  structure: any
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const response = await apiClient.post<{ success: boolean; data?: any; error?: string }>(
+      `/recommendations-v3/${recommendationId}/content/save`,
+      { structure }
+    );
+    if (response && typeof response === 'object' && 'success' in response) {
+      return response as { success: boolean; data?: any; error?: string };
+    } else if (response && typeof response === 'object' && 'data' in response) {
+      return (response as any).data;
+    }
+    return response as { success: boolean; data?: any; error?: string };
+  } catch (error: any) {
+    console.error('Error saving content draft:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to save content draft'
+    };
+  }
+}

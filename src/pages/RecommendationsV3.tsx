@@ -23,13 +23,15 @@ import {
   updateRecommendationStatusV3,
   regenerateContentV3,
   type RecommendationV3,
-  type IdentifiedKPI
+  type IdentifiedKPI,
+  saveContentDraftV3
 } from '../api/recommendationsV3Api';
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
 import { PremiumTabNavigator } from '../components/RecommendationsV3/PremiumTabNavigator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
-import { ContentStructureEditor, StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
+import { StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
+import { ContentStructureInlineEditor } from '../components/RecommendationsV3/components/ContentStructureInlineEditor';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
 import { EffortFilter } from '../components/RecommendationsV3/components/EffortFilter';
@@ -377,7 +379,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
     // Apply all filters (status, priority, effort)
     let filtered = [...allRecommendations];
-    
+
     // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(rec => {
@@ -385,17 +387,17 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
         return recStatus === statusFilter;
       });
     }
-    
+
     // Priority filter
     if (priorityFilter !== 'all') {
       filtered = filtered.filter(rec => rec.priority === priorityFilter);
     }
-    
+
     // Effort filter
     if (effortFilter !== 'all') {
       filtered = filtered.filter(rec => rec.effort === effortFilter);
     }
-    
+
     setRecommendations(filtered);
   }, [statusFilter, priorityFilter, effortFilter, allRecommendations, currentStep]);
 
@@ -936,15 +938,38 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     }
   };
 
+  // Render inline structure editor for Step 2
+  const renderStep2ExpandedContent = (recommendation: RecommendationV3) => {
+    return (
+      <ContentStructureInlineEditor
+        recommendationId={recommendation.id!}
+        onSave={async (sections) => {
+          setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
+          try {
+            const res = await saveContentDraftV3(recommendation.id!, sections);
+            if (!res.success) {
+              throw new Error(res.error || 'Failed to save content structure');
+            }
+          } finally {
+            setGeneratingContentIds(prev => {
+              const next = new Set(prev);
+              next.delete(recommendation.id!);
+              return next;
+            });
+          }
+        }}
+        isSaving={generatingContentIds.has(recommendation.id!)}
+      />
+    );
+  };
+
   // Handle generate content for single recommendation (Trigger)
   const handleGenerateContent = async (recommendation: RecommendationV3, action: string) => {
     if (!recommendation.id || action !== 'generate-content') return;
     if (generatingContentIds.has(recommendation.id)) return;
 
-    // Open structure editor instead of generating immediately
-    setStructureEditorRecId(recommendation.id);
-    setStructureEditorTitle(recommendation.contentFocus || recommendation.action || 'Content');
-    setIsStructureEditorOpen(true);
+    // Trigger generation directly
+    executeContentGeneration(recommendation.id, []);
   };
 
   // Execution of content generation after structure confirmation
@@ -1291,127 +1316,115 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 3: currentStep <= 2 && hasGeneratedContentForStep3,
                 4: currentStep <= 3 && hasCompletedForStep4
               }}
-                onStepClick={async (step: number) => {
-                  // Set manual loading flags
-                  isManuallyNavigatingRef.current = true;
-                  setIsManuallyLoading(true);
-                  lastManuallyLoadedStepRef.current = step;
+              onStepClick={async (step: number) => {
+                // Set manual loading flags
+                isManuallyNavigatingRef.current = true;
+                setIsManuallyLoading(true);
+                lastManuallyLoadedStepRef.current = step;
 
-                  try {
-                    setIsLoading(true);
+                try {
+                  setIsLoading(true);
+                  setError(null);
+                  console.log(`📥 [RecommendationsV3] Manual step navigation to Step ${step}`);
+                  const response = await getRecommendationsByStepV3(generationId, step);
+                  if (response.success && response.data) {
+                    // Update dataMaturity if provided
+                    if (response.data.dataMaturity !== undefined) {
+                      const newMaturity = (response.data.dataMaturity as any) || null;
+                      setDataMaturity(newMaturity);
+                      console.log(`🧊 [RecommendationsV3] Step ${step} - Updated dataMaturity to: ${newMaturity}`);
+                    }
+                    const recommendationsWithIds = response.data.recommendations
+                      .filter(rec => rec.id && rec.id.length > 10)
+                      .map(rec => ({ ...rec, id: rec.id! }));
+
+                    console.log(`✅ [RecommendationsV3] Loaded ${recommendationsWithIds.length} recommendations for Step ${step}`);
+
+                    setRecommendations(recommendationsWithIds);
+                    // Update allRecommendations for Step 1 to ensure filter works correctly
+                    // This prevents race condition where filter useEffect clears recommendations
+                    if (step === 1) {
+                      setAllRecommendations(recommendationsWithIds);
+                    }
                     setError(null);
-                    console.log(`📥 [RecommendationsV3] Manual step navigation to Step ${step}`);
-                    const response = await getRecommendationsByStepV3(generationId, step);
-                    if (response.success && response.data) {
-                      // Update dataMaturity if provided
-                      if (response.data.dataMaturity !== undefined) {
-                        const newMaturity = (response.data.dataMaturity as any) || null;
-                        setDataMaturity(newMaturity);
-                        console.log(`🧊 [RecommendationsV3] Step ${step} - Updated dataMaturity to: ${newMaturity}`);
-                      }
-                      const recommendationsWithIds = response.data.recommendations
-                        .filter(rec => rec.id && rec.id.length > 10)
-                        .map(rec => ({ ...rec, id: rec.id! }));
 
-                      console.log(`✅ [RecommendationsV3] Loaded ${recommendationsWithIds.length} recommendations for Step ${step}`);
+                    // Load content/guides for Step 3
+                    if (step === 3) {
+                      setHasGeneratedContentForStep3(false);
+                      const isColdStartForThisStep = (response.data?.dataMaturity === 'cold_start') || isColdStart;
+                      const newExpandedSections = new Map(expandedSections);
+                      recommendationsWithIds.forEach(rec => {
+                        if (rec.id && !newExpandedSections.has(rec.id)) {
+                          newExpandedSections.set(rec.id, { content: true });
+                        }
+                      });
+                      setExpandedSections(newExpandedSections);
 
-                      setRecommendations(recommendationsWithIds);
-                      // Update allRecommendations for Step 1 to ensure filter works correctly
-                      // This prevents race condition where filter useEffect clears recommendations
-                      if (step === 1) {
-                        setAllRecommendations(recommendationsWithIds);
-                      }
-                      setError(null);
+                      const contentPromises = recommendationsWithIds
+                        .filter(r => r.id && r.isContentGenerated)
+                        .map(async (rec) => {
+                          try {
+                            const contentResponse = await fetchRecommendationContentLatest(rec.id!);
+                            if (contentResponse.success && contentResponse.data?.content) {
+                              return { id: rec.id, content: contentResponse.data.content };
+                            }
+                          } catch (err) {
+                            console.error(`Error loading content for ${rec.id}:`, err);
+                          }
+                          return null;
+                        });
 
-                      // Load content/guides for Step 3
-                      if (step === 3) {
-                        setHasGeneratedContentForStep3(false);
-                        const isColdStartForThisStep = (response.data?.dataMaturity === 'cold_start') || isColdStart;
-                        const newExpandedSections = new Map(expandedSections);
-                        recommendationsWithIds.forEach(rec => {
-                          if (rec.id && !newExpandedSections.has(rec.id)) {
-                            newExpandedSections.set(rec.id, { content: true });
+                      const contentResults = await Promise.all(contentPromises);
+                      if (isColdStartForThisStep) {
+                        const newGuideMap = new Map(guideMap);
+                        contentResults.forEach(result => {
+                          if (result) {
+                            newGuideMap.set(result.id!, extractGuideObject(result.content));
                           }
                         });
-                        setExpandedSections(newExpandedSections);
-
-                        const contentPromises = recommendationsWithIds
-                          .filter(r => r.id && r.isContentGenerated)
-                          .map(async (rec) => {
-                            try {
-                              const contentResponse = await fetchRecommendationContentLatest(rec.id!);
-                              if (contentResponse.success && contentResponse.data?.content) {
-                                return { id: rec.id, content: contentResponse.data.content };
-                              }
-                            } catch (err) {
-                              console.error(`Error loading content for ${rec.id}:`, err);
-                            }
-                            return null;
-                          });
-
-                        const contentResults = await Promise.all(contentPromises);
-                        if (isColdStartForThisStep) {
-                          const newGuideMap = new Map(guideMap);
-                          contentResults.forEach(result => {
-                            if (result) {
-                              newGuideMap.set(result.id!, extractGuideObject(result.content));
-                            }
-                          });
-                          setGuideMap(newGuideMap);
-                        } else {
-                          const newContentMap = new Map(contentMap);
-                          contentResults.forEach(result => {
-                            if (result) {
-                              newContentMap.set(result.id!, result.content);
-                            }
-                          });
-                          setContentMap(newContentMap);
-                        }
-
-                        // Default all to collapsed for Step 3 accordion
-                        setExpandedRecId(null);
+                        setGuideMap(newGuideMap);
+                      } else {
+                        const newContentMap = new Map(contentMap);
+                        contentResults.forEach(result => {
+                          if (result) {
+                            newContentMap.set(result.id!, result.content);
+                          }
+                        });
+                        setContentMap(newContentMap);
                       }
 
-                      // Clear "completed" attention once user visits Step 4
-                      if (step === 4) {
-                        setHasCompletedForStep4(false);
-                      }
-
-                      setCurrentStep(step);
-                    } else {
-                      setRecommendations([]);
-                      setCurrentStep(step);
-                      if (response.error && !response.error.includes('not found') && !response.error.includes('No recommendations')) {
-                        setError(response.error);
-                      }
+                      // Default all to collapsed for Step 3 accordion
+                      setExpandedRecId(null);
                     }
-                  } catch (err: any) {
-                    console.error('Error loading step data:', err);
-                    setError(err.message || 'Failed to load recommendations');
+
+                    // Clear "completed" attention once user visits Step 4
+                    if (step === 4) {
+                      setHasCompletedForStep4(false);
+                    }
+
                     setCurrentStep(step);
-                  } finally {
-                    setIsLoading(false);
-                    setTimeout(() => {
-                      setIsManuallyLoading(false);
-                      isManuallyNavigatingRef.current = false;
-                    }, 300);
+                  } else {
+                    setRecommendations([]);
+                    setCurrentStep(step);
+                    if (response.error && !response.error.includes('not found') && !response.error.includes('No recommendations')) {
+                      setError(response.error);
+                    }
                   }
-                }}
-              />
+                } catch (err: any) {
+                  console.error('Error loading step data:', err);
+                  setError(err.message || 'Failed to load recommendations');
+                  setCurrentStep(step);
+                } finally {
+                  setIsLoading(false);
+                  setTimeout(() => {
+                    setIsManuallyLoading(false);
+                    isManuallyNavigatingRef.current = false;
+                  }, 300);
+                }
+              }}
+            />
           )}
         </div>
-
-        {/* Structure Editor Modal */}
-        <ContentStructureEditor
-          isOpen={isStructureEditorOpen}
-          onClose={() => setIsStructureEditorOpen(false)}
-          onConfirm={(sections) => {
-            if (structureEditorRecId) {
-              executeContentGeneration(structureEditorRecId, sections);
-            }
-          }}
-          recommendationTitle={structureEditorTitle}
-        />
 
         {/* Error Message */}
         {error && (
@@ -1520,6 +1533,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                         handleStatusChange(id, 'removed');
                       }
                     }}
+                    renderExpandedContent={renderStep2ExpandedContent}
                   />
                 )}
               </motion.div>
@@ -1840,8 +1854,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     {/* AEO Score Badge */}
                                     {content && (
                                       <div className="mr-2">
-                                        <AEOScoreBadge 
-                                          content={typeof content === 'string' ? content : (content?.content || '')} 
+                                        <AEOScoreBadge
+                                          content={typeof content === 'string' ? content : (content?.content || '')}
                                           brandName={selectedBrand?.name}
                                         />
                                       </div>
@@ -1929,11 +1943,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                               // Robust V4 Recovery
                                               // 1. Extract the text following "sections": [
                                               const sectionsStartMatch = content.match(/"sections"\s*:\s*\[([\s\S]*)/);
-                                              
+
                                               if (sectionsStartMatch) {
                                                 const sectionsStr = sectionsStartMatch[1];
                                                 const sections: any[] = [];
-                                                
+
                                                 // 2. Match individual object blocks { ... } non-greedily
                                                 // Note: This simple regex assumes no nested braces within content (escaped braces are fine)
                                                 // If content has nested objects, this might be brittle, but standard V4 schema is flat.

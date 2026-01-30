@@ -2123,7 +2123,6 @@ router.post('/:recommendationId/content', authenticateToken, requireFeatureEntit
         error: 'Failed to generate content'
       });
     }
-
   } catch (error) {
     console.error('❌ [RecommendationsV3 Single Content] Error:', error);
     return res.status(500).json({
@@ -2133,5 +2132,56 @@ router.post('/:recommendationId/content', authenticateToken, requireFeatureEntit
   }
 });
 
-export default router;
+/**
+ * POST /api/recommendations-v3/:recommendationId/content/save
+ * 
+ * Save a content structure draft WITHOUT generating content.
+ */
+router.post('/:recommendationId/content/save', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
 
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    const { recommendationId } = req.params;
+    const { structure } = req.body;
+
+    if (!structure) {
+      return res.status(400).json({
+        success: false,
+        error: 'Structure is required'
+      });
+    }
+
+    const result = await recommendationContentService.saveContentDraft(
+      recommendationId,
+      customerId,
+      structure
+    );
+
+    if (result) {
+      return res.json({
+        success: true,
+        data: result
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to save content draft'
+      });
+    }
+  } catch (error) {
+    console.error('❌ [RecommendationsV3 Save Draft] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save content draft'
+    });
+  }
+});
+
+export default router;

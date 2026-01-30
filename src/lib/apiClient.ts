@@ -1,8 +1,19 @@
 // Auto-detect backend URL based on current origin, with fallback to env variable or localhost
 const getApiBaseUrl = (): string => {
-  // If explicitly set in env, use that
-  if (import.meta.env.VITE_BACKEND_URL) {
-    return import.meta.env.VITE_BACKEND_URL.replace(/\/$/, '');
+  let envUrl = import.meta.env.VITE_BACKEND_URL;
+
+  // Safety check: If we are on production domain but env var points to localhost, ignore it.
+  // This happens when the VPS has a default .env file with VITE_BACKEND_URL=http://localhost:4000/api
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin;
+    if (origin.includes('evidentlyaeo.com') && envUrl && (envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
+      envUrl = ''; // Force fallthrough to auto-detect
+    }
+  }
+
+  // If explicitly set in env (and valid), use that
+  if (envUrl) {
+    return envUrl.replace(/\/$/, '');
   }
 
   // Auto-detect based on current origin

@@ -591,6 +591,7 @@ export function ContentSectionRenderer({
  * Section Header Badge (for enhanced section type display)
  */
 export function SectionTypeBadge({ sectionType }: { sectionType: ContentSectionType }) {
+  if (!sectionType) return null;
   return (
     <span className={`px-2 py-0.5 rounded text-[10px] font-medium capitalize flex items-center gap-1 ${getSectionBadgeStyle(sectionType)}`}>
       {getSectionIcon(sectionType)}

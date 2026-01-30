@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { IconPlus, IconTrash, IconChevronUp, IconChevronDown, IconCheck, IconSparkles, IconGripVertical } from '@tabler/icons-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { StructureSection } from './ContentStructureEditor';
+import { TableStructureEditor } from './TableStructureEditor';
 import { CONTENT_TEMPLATES, ContentTemplateType } from '../data/structure-templates';
 
 interface ContentStructureInlineEditorProps {
@@ -154,14 +155,22 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
 
                                     {/* Section Content */}
                                     <div className="px-4 py-3">
-                                        <textarea
-                                            value={section.content}
-                                            onChange={(e) => handleUpdateSection(index, 'content', e.target.value)}
-                                            className="w-full bg-slate-50/50 border border-slate-200/60 rounded-lg p-3 text-[13px] text-slate-600 focus:ring-2 focus:ring-[#00bcdc]/20 focus:border-[#00bcdc]/40 outline-none transition-all resize-none placeholder:text-slate-400"
-                                            placeholder="Describe what this section should cover..."
-                                            rows={2}
-                                            onPointerDown={(e) => e.stopPropagation()}
-                                        />
+                                        {/* Use Table Editor for comparison_table sections, otherwise textarea */}
+                                        {section.sectionType === 'comparison_table' ? (
+                                            <TableStructureEditor
+                                                content={section.content}
+                                                onChange={(newContent) => handleUpdateSection(index, 'content', newContent)}
+                                            />
+                                        ) : (
+                                            <textarea
+                                                value={section.content}
+                                                onChange={(e) => handleUpdateSection(index, 'content', e.target.value)}
+                                                className="w-full bg-slate-50/50 border border-slate-200/60 rounded-lg p-3 text-[13px] text-slate-600 focus:ring-2 focus:ring-[#00bcdc]/20 focus:border-[#00bcdc]/40 outline-none transition-all resize-none placeholder:text-slate-400"
+                                                placeholder="Describe what this section should cover..."
+                                                rows={2}
+                                                onPointerDown={(e) => e.stopPropagation()}
+                                            />
+                                        )}
                                     </div>
                                 </div>
                             </Reorder.Item>

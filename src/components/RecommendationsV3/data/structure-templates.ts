@@ -1,7 +1,7 @@
 
 import { StructureSection } from '../components/ContentStructureEditor';
 
-export type ContentTemplateType = 'article' | 'whitepaper' | 'short_video' | 'expert_community_response' | 'podcast';
+export type ContentTemplateType = 'article' | 'whitepaper' | 'short_video' | 'expert_community_response' | 'podcast' | 'comparison_table';
 
 export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> = {
     article: [
@@ -151,6 +151,32 @@ export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> 
             content: "Host summarizes the 3 main points",
             sectionType: "summary"
         }
+    ],
+    comparison_table: [
+        {
+            id: "overview",
+            title: "Overview",
+            content: "<300-400 words introducing the comparison.>",
+            sectionType: "context"
+        },
+        {
+            id: "table",
+            title: "Comparison Table",
+            content: `| Feature | [Brand Name] | [Competitor] |\n|---|---|---|\n| [Feature 1] | [Value] | [Value] |`,
+            sectionType: "comparison_table"
+        },
+        {
+            id: "detailed_analysis",
+            title: "Deep Dive Analysis",
+            content: "<Comprehensive prose analysis of the differences (400-600 words).>",
+            sectionType: "strategies"
+        },
+        {
+            id: "verdict",
+            title: "Final Verdict",
+            content: "<Balanced conclusion: who should choose which option>",
+            sectionType: "cta"
+        }
     ]
 };
 
@@ -159,6 +185,7 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
     if (assetType) {
         if (assetType === 'expert_community_response') return 'expert_community_response';
         if (assetType === 'whitepaper') return 'whitepaper';
+        if (assetType === 'comparison_table') return 'comparison_table';
         if (assetType.includes('video')) return 'short_video';
         if (assetType === 'podcast') return 'podcast';
     }
@@ -186,6 +213,11 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
     // 5. Check for Whitepaper (Can be a referenced object, so check last among specifics)
     if (act.includes('whitepaper') || act.includes('white paper') || act.includes('report') || act.includes('guide')) {
         return 'whitepaper';
+    }
+
+    // 6. Check for Comparison Table
+    if (act.includes('comparison table') || act.includes('comparison')) {
+        return 'comparison_table';
     }
 
     return 'article';

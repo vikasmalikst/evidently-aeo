@@ -146,17 +146,14 @@ export const RecommendationsTableV3 = ({
                   />
                 </th>
               )}
-              <th className="px-4 py-3 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider min-w-[400px]">
+              <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider min-w-[400px]">
                 Recommendation
               </th>
-              <th className="px-4 py-3 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[200px]">
+              <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[200px]">
                 Source/Domain
               </th>
-              <th className="px-4 py-3 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[120px]">
-                Focus Area
-              </th>
               {showStatusDropdown && (
-                <th className="px-4 py-3 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[160px]">
+                <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[160px]">
                   Status
                 </th>
               )}
@@ -213,8 +210,8 @@ export const RecommendationsTableV3 = ({
                             />
                           </td>
                         )}
-                        <td className="px-4 py-3">
-                          <div className="flex items-start gap-2">
+                        <td className="px-4 py-5">
+                          <div className="flex items-start gap-3">
                             {hasDetails && (
                               <button
                                 onClick={() => toggleExpand(recId)}
@@ -228,22 +225,19 @@ export const RecommendationsTableV3 = ({
                                 )}
                               </button>
                             )}
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-1.5">
                               {/* Recommendation Action as main display */}
-                              <p className="text-[14px] text-[#0f172a] font-semibold leading-snug">
+                              <p className="text-[14px] text-[#0f172a] font-semibold leading-relaxed">
                                 {rec.action?.replace(/^\[.*?\]\s*/, '') || rec.contentFocus || 'No action specified'}
                               </p>
                             </div>
                           </div>
                         </td>
 
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-5">
                           <p className="text-[12px] text-[var(--text-body)]">
                             {rec.citationSource}
                           </p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <FocusAreaBadge area={rec.focusArea} />
                         </td>
                         {showStatusDropdown && (
                           <td className="px-4 py-3">

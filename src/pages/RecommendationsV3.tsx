@@ -950,6 +950,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             if (!res.success) {
               throw new Error(res.error || 'Failed to save content structure');
             }
+
+            // Proceed to generate content using the saved structure
+            await executeContentGeneration(recommendation.id!, sections);
           } finally {
             setGeneratingContentIds(prev => {
               const next = new Set(prev);

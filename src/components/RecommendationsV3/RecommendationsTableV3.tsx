@@ -327,8 +327,6 @@ export const RecommendationsTableV3 = ({
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       onAction(rec, actionType);
-                                      // Note: Expansion removed from here as per user request. 
-                                      // Expansion is now only via the dropdown icon in the row.
                                     }}
                                     className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border bg-[#06c686] text-white border-[#05a870] hover:bg-[#05a870] transition-colors cursor-pointer"
                                   >

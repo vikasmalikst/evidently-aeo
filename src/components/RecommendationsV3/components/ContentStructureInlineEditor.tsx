@@ -203,12 +203,12 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
                     {isSaving ? (
                         <>
                             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            Saving...
+                            Generating...
                         </>
                     ) : (
                         <>
-                            <IconCheck size={18} />
-                            Save Configuration
+                            <IconSparkles size={18} />
+                            Generate Content
                         </>
                     )}
                 </button>

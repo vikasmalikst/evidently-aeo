@@ -337,7 +337,7 @@ class RecommendationContentService {
         brand_id: rec.brand_id,
         customer_id: customerId,
         status: 'generated',
-        content_type: 'structure_draft',
+        content_type: 'draft',
         content: JSON.stringify(structure, null, 2),
         model_provider: 'cerebras',
         model_name: 'draft',
@@ -356,7 +356,8 @@ class RecommendationContentService {
         .from('recommendation_generated_contents')
         .select('id')
         .eq('recommendation_id', recommendationId)
-        .eq('content_type', 'structure_draft')
+        .eq('content_type', 'draft')
+        .contains('metadata', { is_structure_draft: true })
         .maybeSingle();
 
       if (existingError) {
@@ -396,7 +397,7 @@ class RecommendationContentService {
       }
     } catch (error: any) {
       console.error('❌ [RecommendationContentService] Error saving content draft:', error?.message || error);
-      return null;
+      throw error;
     }
   }
 
@@ -415,7 +416,7 @@ class RecommendationContentService {
 
     if (recError || !rec) {
       console.error('❌ [RecommendationContentService] Recommendation not found or unauthorized:', recError);
-      return null;
+      throw new Error('Recommendation not found or unauthorized');
     }
 
     // Fetch brand context (lightweight)
@@ -929,7 +930,9 @@ ${contentStyleGuide}
       }
     }
 
-    if (!content) return null;
+    if (!content) {
+      throw new Error('All LLM providers failed to generate content');
+    }
 
     // Log the response received
     console.log('\n📥 [RecommendationContentService] ========== RESPONSE ==========');
@@ -1011,7 +1014,7 @@ ${contentStyleGuide}
 
     if (insertError) {
       console.error('❌ [RecommendationContentService] Error inserting generated content:', insertError);
-      return null;
+      throw new Error(`Failed to save generated content to database: ${insertError.message}`);
     }
 
     return {

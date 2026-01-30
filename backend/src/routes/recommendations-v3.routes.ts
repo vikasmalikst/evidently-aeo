@@ -1116,86 +1116,7 @@ router.get('/:recommendationId/content', authenticateToken, async (req, res) => 
   }
 });
 
-/**
- * POST /api/recommendations-v3/:recommendationId/content
- * 
- * Generate content for a single approved recommendation (Step 2 → Step 3).
- * @deprecated Use /generate-content-bulk for bulk generation
- */
-router.post('/:recommendationId/content', authenticateToken, async (req, res) => {
-  try {
-    const customerId = req.user?.customer_id;
 
-    if (!customerId) {
-      return res.status(401).json({
-        success: false,
-        error: 'User not authenticated'
-      });
-    }
-
-    const { recommendationId } = req.params;
-    const { contentType } = req.body || {};
-
-    // Verify recommendation is approved
-    const { data: recommendation } = await supabaseAdmin
-      .from('recommendations')
-      .select('id, is_approved, customer_id')
-      .eq('id', recommendationId)
-      .eq('customer_id', customerId)
-      .single();
-
-    if (!recommendation) {
-      return res.status(404).json({
-        success: false,
-        error: 'Recommendation not found'
-      });
-    }
-
-    if (!recommendation.is_approved) {
-      return res.status(400).json({
-        success: false,
-        error: 'Recommendation must be approved before generating content'
-      });
-    }
-
-    // Generate content using existing service
-    const result = await recommendationContentService.generateContent(
-      recommendationId,
-      customerId,
-      { contentType }
-    );
-
-    if (!result?.record) {
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to generate content'
-      });
-    }
-
-    // Mark recommendation as content generated
-    await supabaseAdmin
-      .from('recommendations')
-      .update({ is_content_generated: true })
-      .eq('id', recommendationId)
-      .eq('customer_id', customerId);
-
-    return res.json({
-      success: true,
-      data: {
-        content: result.record,
-        providerUsed: result.providerUsed,
-        modelUsed: result.modelUsed
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ [RecommendationsV3 Content] Error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to generate content'
-    });
-  }
-});
 
 /**
  * PATCH /api/recommendations-v3/:recommendationId/complete
@@ -2098,11 +2019,16 @@ router.post('/:recommendationId/content', authenticateToken, requireFeatureEntit
 
     if (result?.record) {
       // Mark as generated
-      await supabaseAdmin
+      const { error: markError } = await supabaseAdmin
         .from('recommendations')
         .update({ is_content_generated: true })
         .eq('id', recommendationId)
         .eq('customer_id', customerId);
+
+      if (markError) {
+        console.error('⚠️ [RecommendationsV3] Could not mark recommendation as generated:', markError);
+        // We continue anyway as the content was saved successfully
+      }
 
       // Parse if JSON string
       let contentData = result.record;
@@ -2120,14 +2046,14 @@ router.post('/:recommendationId/content', authenticateToken, requireFeatureEntit
     } else {
       return res.status(500).json({
         success: false,
-        error: 'Failed to generate content'
+        error: 'Failed to generate content: No record returned from service'
       });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ [RecommendationsV3 Single Content] Error:', error);
     return res.status(500).json({
       success: false,
-      error: 'Failed to generate content'
+      error: error.message || 'Failed to generate content'
     });
   }
 });
@@ -2175,11 +2101,11 @@ router.post('/:recommendationId/content/save', authenticateToken, requireFeature
         error: 'Failed to save content draft'
       });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ [RecommendationsV3 Save Draft] Error:', error);
     return res.status(500).json({
       success: false,
-      error: 'Failed to save content draft'
+      error: error.message || 'Failed to save content draft'
     });
   }
 });

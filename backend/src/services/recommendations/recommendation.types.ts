@@ -190,9 +190,8 @@ export type ContentSectionType =
  */
 export type ContentAssetType =
     | 'article'              // Standard blog/article (default)
-    | 'video_script'         // YouTube script with scenes
-    | 'article'              // Standard blog/article (default)
-    | 'video_script'         // YouTube script with scenes
+    | 'video_script'         // Long-form YouTube script
+    | 'short_video'          // YouTube Shorts, Reels, TikTok
     | 'comparison_table'     // Side-by-side comparison
     | 'whitepaper'           // Executive report / downloadable guide
     | 'webinar_recap'        // Event summary with Q&A

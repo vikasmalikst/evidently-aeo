@@ -3,15 +3,14 @@ import {
     BrandContextV3,
     ContentAssetType
 } from './recommendation.types';
+import { buildWhitepaperPrompt } from './prompts/whitepaper-prompt';
+import { buildShortVideoPrompt } from './prompts/short-video-prompt';
 
-// ============================================================================
-// NEW CONTENT FACTORY (v2026.3)
-// ============================================================================
+// ... (existing imports)
 
 export interface NewContentPromptContext {
     recommendation: RecommendationV3;
     brandContext: BrandContextV3;
-    // We might add more specific context fields here later
     structureConfig?: StructureConfig;
 }
 
@@ -19,7 +18,7 @@ export interface StructureConfig {
     sections: Array<{
         id: string;
         title: string;
-        content: string; // This serves as the intent/description for the prompt
+        content: string;
         sectionType: string;
     }>;
 }
@@ -35,6 +34,10 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
     switch (assetType) {
         case 'article':
             return buildBlogArticlePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+        case 'whitepaper':
+            return buildWhitepaperPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+        case 'short_video':
+            return buildShortVideoPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         default:
             return null;
     }
@@ -170,8 +173,6 @@ You must return a VALID JSON object with the following structure. Content must b
   "brandName": "${brandName}",
   "contentTitle": "<Catchy, Click-Worthy Title>",
   "sections": ${sectionsJson},
-  "requiredInputs": []
-},
   "requiredInputs": []
 }
 

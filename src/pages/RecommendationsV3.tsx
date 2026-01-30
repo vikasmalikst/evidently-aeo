@@ -30,6 +30,7 @@ import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
 import { PremiumTabNavigator } from '../components/RecommendationsV3/PremiumTabNavigator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
+import { OpportunityStrategyCard } from '../components/RecommendationsV3/components/OpportunityStrategyCard';
 import { StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
 import { ContentStructureInlineEditor } from '../components/RecommendationsV3/components/ContentStructureInlineEditor';
 import { getTemplateForAction } from '../components/RecommendationsV3/data/structure-templates';
@@ -165,14 +166,14 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   // Helper: Extract visible text content from structured content (V3/V4) for scoring
   const extractVisibleContent = useCallback((content: any): string => {
     if (!content) return '';
-    
+
     // If it's already a string, return it (but check if it's JSON)
     if (typeof content === 'string') {
       try {
         // Attempt to parse if it looks like JSON
         if (content.trim().startsWith('{')) {
-           const parsed = JSON.parse(content);
-           return extractVisibleContent(parsed);
+          const parsed = JSON.parse(content);
+          return extractVisibleContent(parsed);
         }
         return content;
       } catch {
@@ -196,7 +197,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     if (content.content !== undefined) {
       return extractVisibleContent(content.content);
     }
-    
+
     // Fallback: JSON stringify if object but not known structure
     return JSON.stringify(content);
   }, []);
@@ -1521,6 +1522,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                   showCheckboxes={false}
                   showStatusDropdown={true}
                   onStatusChange={handleStatusChange}
+                  renderExpandedContent={(rec) => <OpportunityStrategyCard recommendation={rec} />}
+                  onNavigate={setCurrentStep}
                 />
               </motion.div>
             )}
@@ -1898,10 +1901,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     {/* AEO Score Badge */}
                                     {content && (
                                       <div className="mr-2">
-                                      <AEOScoreBadge
+                                        <AEOScoreBadge
                                           content={extractVisibleContent(content)}
                                           brandName={selectedBrand?.name}
-                                          contentType={getTemplateForAction(rec.action)} 
+                                          contentType={getTemplateForAction(rec.action)}
                                         />
                                       </div>
                                     )}

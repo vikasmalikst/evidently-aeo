@@ -84,18 +84,18 @@ export function useRecommendationsV3(brandId: string | null): UseRecommendations
     try {
       console.log('🚀 [useRecommendationsV3] Starting generation for brand:', selectedBrandId);
       const response = await generateRecommendationsV3({ brandId: selectedBrandId });
-      
+
       if (response.success && response.data) {
         const genId = response.data.generationId;
         if (genId) {
           setGenerationId(genId);
-          
+
           // Wait for database transaction
           await new Promise(resolve => setTimeout(resolve, 1000));
-          
+
           // Fetch from database to ensure we have proper IDs
           const fullResponse = await getGenerationV3(genId);
-          
+
           if (fullResponse.success && fullResponse.data && fullResponse.data.recommendations) {
             const recommendationsWithIds = fullResponse.data.recommendations.filter(rec => rec && rec.id && rec.action);
             if (recommendationsWithIds.length > 0) {
@@ -124,21 +124,21 @@ export function useRecommendationsV3(brandId: string | null): UseRecommendations
     setError(null);
 
     // Optimistic update
-    const updateRec = (rec: RecommendationV3) => 
-      rec.id === recommendationId 
+    const updateRec = (rec: RecommendationV3) =>
+      rec.id === recommendationId
         ? { ...rec, reviewStatus: status, isApproved: status === 'approved' }
         : rec;
-    
+
     setRecommendations(prev => prev.map(updateRec));
     setAllRecommendations(prev => prev.map(updateRec));
 
     try {
       const response = await updateRecommendationStatusV3(recommendationId, status);
-      
+
       if (!response.success) {
         // Revert on error
-        const revertRec = (rec: RecommendationV3) => 
-          rec.id === recommendationId 
+        const revertRec = (rec: RecommendationV3) =>
+          rec.id === recommendationId
             ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review', isApproved: status === 'approved' ? false : rec.isApproved }
             : rec;
         setRecommendations(prev => prev.map(revertRec));
@@ -148,8 +148,8 @@ export function useRecommendationsV3(brandId: string | null): UseRecommendations
     } catch (err: any) {
       console.error('Error updating recommendation status:', err);
       // Revert on error
-      const revertRec = (rec: RecommendationV3) => 
-        rec.id === recommendationId 
+      const revertRec = (rec: RecommendationV3) =>
+        rec.id === recommendationId
           ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review', isApproved: status === 'approved' ? false : rec.isApproved }
           : rec;
       setRecommendations(prev => prev.map(revertRec));
@@ -196,12 +196,12 @@ export function useRecommendationsV3(brandId: string | null): UseRecommendations
 
       try {
         const response = await getRecommendationsByStepV3(generationId, currentStep);
-        
+
         if (response.success && response.data) {
           const recommendationsWithIds = response.data.recommendations
             .filter(rec => rec.id && rec.id.length > 10)
             .map(rec => ({ ...rec, id: rec.id! }));
-          
+
           if (currentStep === 1) {
             // Merge with existing to preserve status changes
             const mergedRecommendations = (() => {
@@ -214,9 +214,9 @@ export function useRecommendationsV3(brandId: string | null): UseRecommendations
                 return rec;
               });
             })();
-            
+
             setAllRecommendations(mergedRecommendations);
-            
+
             // Apply current filter
             if (statusFilter === 'all') {
               setRecommendations(mergedRecommendations);

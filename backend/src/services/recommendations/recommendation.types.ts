@@ -199,6 +199,7 @@ export type ContentAssetType =
     | 'linkedin_post'        // Short-form professional post
     | 'reddit_post'          // Community-style conversational post
     | 'expert_community_response' // Detailed response for forums/communities
+    | 'podcast'              // Audio script/transcript
     | 'social_media_thread'  // Threaded content (X, LinkedIn)
     | 'other';
 

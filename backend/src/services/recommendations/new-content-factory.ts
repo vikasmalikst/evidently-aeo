@@ -5,6 +5,8 @@ import {
 } from './recommendation.types';
 import { buildWhitepaperPrompt } from './prompts/whitepaper-prompt';
 import { buildShortVideoPrompt } from './prompts/short-video-prompt';
+import { buildExpertResponsePrompt } from './prompts/expert-response-prompt';
+import { buildPodcastPrompt } from './prompts/podcast-prompt';
 
 // ... (existing imports)
 
@@ -38,6 +40,10 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
             return buildWhitepaperPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         case 'short_video':
             return buildShortVideoPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+        case 'expert_community_response':
+            return buildExpertResponsePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+        case 'podcast':
+            return buildPodcastPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         default:
             return null;
     }

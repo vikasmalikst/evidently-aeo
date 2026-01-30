@@ -944,7 +944,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     return (
       <ContentStructureInlineEditor
         recommendationId={recommendation.id!}
-        contentType={getTemplateForAction(recommendation.action)}
+        contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
         onSave={async (sections) => {
           setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
           try {

@@ -65,6 +65,7 @@ export interface RecommendationV3 {
   source?: 'domain_audit' | 'ai_generated';
   howToFix?: string[];  // Step-by-step fix instructions (for domain audit recs)
   regenRetry?: number;  // Number of times content has been regenerated
+  assetType?: string;   // Content Asset Type (e.g. 'article', 'short_video') 
 }
 
 /**

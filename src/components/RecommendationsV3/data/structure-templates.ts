@@ -154,19 +154,36 @@ export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> 
     ]
 };
 
-export const getTemplateForAction = (action: string): ContentTemplateType => {
+export const getTemplateForAction = (action: string, assetType?: string): ContentTemplateType => {
+    // 1. Trust assetType if explicitly provided and matches a known template
+    if (assetType) {
+        if (assetType === 'expert_community_response') return 'expert_community_response';
+        if (assetType === 'whitepaper') return 'whitepaper';
+        if (assetType.includes('video')) return 'short_video';
+        if (assetType === 'podcast') return 'podcast';
+    }
+
     const act = action.toLowerCase();
-    if (act.includes('video') || act.includes('short') || act.includes('tiktok') || act.includes('reel')) {
-        return 'short_video';
-    }
-    if (act.includes('whitepaper') || act.includes('report') || act.includes('guide')) {
-        return 'whitepaper';
-    }
-    if (act.includes('podcast') || act.includes('audio')) {
-        return 'podcast';
-    }
+
+    // 2. Check for Expert Response first (Specific)
     if (act.includes('expert') || act.includes('community') || act.includes('forum') || act.includes('reddit')) {
         return 'expert_community_response';
     }
+
+    // 3. Check for Podcast (Specific)
+    if (act.includes('podcast') || act.includes('audio')) {
+        return 'podcast';
+    }
+
+    // 4. Check for Video (Specific)
+    if (act.includes('video') || act.includes('short') || act.includes('tiktok') || act.includes('reel')) {
+        return 'short_video';
+    }
+
+    // 5. Check for Whitepaper (Can be a referenced object, so check last among specifics)
+    if (act.includes('whitepaper') || act.includes('white paper') || act.includes('report') || act.includes('guide')) {
+        return 'whitepaper';
+    }
+
     return 'article';
 };

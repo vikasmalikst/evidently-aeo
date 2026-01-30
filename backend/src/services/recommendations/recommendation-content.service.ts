@@ -782,9 +782,13 @@ ${contentStyleGuide}
 
     // === PROMPT SELECTION: Factory (for FSA strategic assets) or Legacy ===
 
-    // v2026.3 Integration: Check New Content Factory first for 'article'
+    // v2026.3 Integration: Check New Content Factory for specific assets
     let newFactoryPrompt: string | null = null;
-    if (assetDetection.asset === 'article') {
+
+    // Supported types in New Content Factory
+    const newFactorySupportedAssets = ['article', 'whitepaper', 'short_video', 'expert_community_response', 'podcast'];
+
+    if (newFactorySupportedAssets.includes(assetDetection.asset)) {
       const recV3ForNew: RecommendationV3 = {
         id: rec.id,
         action: rec.action || '',
@@ -805,11 +809,13 @@ ${contentStyleGuide}
         brandDomain: brand?.name?.toLowerCase().replace(/\s/g, '') || undefined,
       };
 
+      console.log(`🚀 [RecommendationContentService] Attempting NEW Content Factory for asset: ${assetDetection.asset}`);
+
       newFactoryPrompt = getNewContentPrompt({
         recommendation: recV3ForNew,
         brandContext: brandContextV3ForNew,
         structureConfig: request.structureConfig
-      }, 'article');
+      }, assetDetection.asset);
     }
 
     let prompt: string;

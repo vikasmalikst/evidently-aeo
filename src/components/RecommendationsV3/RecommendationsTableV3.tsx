@@ -228,20 +228,15 @@ export const RecommendationsTableV3 = ({
                                 )}
                               </button>
                             )}
-                            <div className="flex flex-col gap-1.5">
-                              {/* Content Type Badge */}
-                              {rec.action && (
-                                <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-gradient-to-r from-[#00bcdc]/10 to-[#0096b0]/10 text-[#0096b0] border border-[#00bcdc]/20 w-fit shadow-sm shadow-cyan-100">
-                                  {rec.action.match(/^\[(.*?)\]/)?.[1] || 'Article'}
-                                </span>
-                              )}
-                              {/* Title (contentFocus) as main display */}
-                              <p className="text-[14px] text-[var(--text-headings)] font-semibold leading-snug">
-                                {rec.contentFocus || rec.action?.replace(/^\[.*?\]\s*/, '') || 'Untitled Recommendation'}
+                            <div className="flex flex-col gap-1">
+                              {/* Recommendation Action as main display */}
+                              <p className="text-[14px] text-[#0f172a] font-semibold leading-snug">
+                                {rec.action?.replace(/^\[.*?\]\s*/, '') || rec.contentFocus || 'No action specified'}
                               </p>
                             </div>
                           </div>
                         </td>
+
                         <td className="px-4 py-3">
                           <p className="text-[12px] text-[var(--text-body)]">
                             {rec.citationSource}
@@ -355,35 +350,15 @@ export const RecommendationsTableV3 = ({
 
                       </motion.tr>
                       {isExpanded && (
-                        <tr key={`${recId}-details`} className="bg-[#f8fafc]">
-                          <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-5 py-4">
-                            <div className="bg-white border border-[#e2e8f0] rounded-xl overflow-hidden shadow-sm">
-                              {/* Main Action Banner */}
-                              <div className="bg-[#f0f9ff] px-6 py-5 border-b border-[#bde0fe] relative">
-                                {/* Accent Bar */}
-                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00bcdc]" />
-
-                                <div className="flex items-start gap-3">
-                                  <div className="mt-0.5 w-6 h-6 rounded-md bg-[#ffffff] border border-[#00bcdc]/20 flex items-center justify-center flex-shrink-0 shadow-sm">
-                                    <svg className="w-3.5 h-3.5 text-[#00bcdc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    </svg>
-                                  </div>
-                                  <div className="flex-1">
-                                    <p className="text-[11px] font-bold text-[#00bcdc] uppercase tracking-wide mb-1 opacity-80">Recommended Action</p>
-                                    <p className="text-[15px] text-[#0f172a] leading-relaxed font-semibold">
-                                      {rec.action?.replace(/^\[[^\]]+\]\s*/, '') || 'No action specified'}
-                                    </p>
-                                  </div>
-                                </div>
+                        <tr key={`${recId}-details`} className="bg-white">
+                          <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-0 py-0">
+                            {/* Content Area - Unified with table row */}
+                            {renderExpandedContent ? (
+                              <div className="border-t border-[#e2e8f0]">
+                                {renderExpandedContent(rec)}
                               </div>
+                            ) : (
 
-                              {/* Content Area */}
-                              {renderExpandedContent ? (
-                                <div className="p-4">
-                                  {renderExpandedContent(rec)}
-                                </div>
-                              ) : (
                                 <div className="flex">
                                   {/* Left Sidebar - Quick Stats */}
                                   <div className="w-48 bg-[#f8fafc] border-r border-[#e2e8f0] p-4 flex-shrink-0">
@@ -513,7 +488,6 @@ export const RecommendationsTableV3 = ({
                                   </div>
                                 </div>
                               )}
-                            </div>
                           </td>
                         </tr>
                       )}

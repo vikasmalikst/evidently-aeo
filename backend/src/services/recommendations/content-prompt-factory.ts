@@ -77,41 +77,46 @@ export function detectContentAsset(action: string): AssetDetectionResult {
     return { asset: 'article', confidence: 'high' };
   }
 
-  // 2. EXPLICIT WHITEPAPER/REPORT
-  const whitepaperKeywords = ['whitepaper', 'white paper', 'research report', 'industry report', 'ebook'];
-  if (whitepaperKeywords.some(k => actionLower.includes(k))) {
-    return { asset: 'whitepaper', confidence: 'high' };
+  // 2. Expert Community / Forum (Specific Format) - MOVED UP
+  const expertKeywords = ['expert community', 'forum response', 'quora', 'reddit response', 'community answer', 'expert answer'];
+  if (expertKeywords.some(k => actionLower.includes(k))) {
+    return { asset: 'expert_community_response', confidence: 'high' };
   }
 
-
-  // 3. Case Study Keywords
-  const caseStudyKeywords = ['case study', 'success story', 'customer story'];
-  if (caseStudyKeywords.some(k => actionLower.includes(k))) {
-    return { asset: 'case_study', confidence: 'high' };
+  // 3. Podcast (Specific Format) - NEW
+  const podcastKeywords = ['podcast', 'audio', 'interview script'];
+  if (podcastKeywords.some(k => actionLower.includes(k))) {
+    return { asset: 'podcast', confidence: 'high' };
   }
 
-  // 4. Webinar Keywords
-  const webinarKeywords = ['webinar', 'recap', 'event summary', 'presentation', 'talk'];
-  if (webinarKeywords.some(k => actionLower.includes(k))) {
-    return { asset: 'webinar_recap', confidence: 'high' };
-  }
-
-  // 5. Video/YouTube Keywords
+  // 4. Video/YouTube Keywords (Specific Format) - MOVED UP
   const videoKeywords = ['video', 'youtube', 'script', 'vlog', 'tiktok', 'reels'];
   if (videoKeywords.some(k => actionLower.includes(k))) {
     return { asset: 'video_script', confidence: 'high' };
   }
 
-  // 6. Comparison Table
+  // 5. Webinar Keywords (Specific Format)
+  const webinarKeywords = ['webinar', 'recap', 'event summary', 'presentation', 'talk'];
+  if (webinarKeywords.some(k => actionLower.includes(k))) {
+    return { asset: 'webinar_recap', confidence: 'high' };
+  }
+
+  // 6. Case Study Keywords
+  const caseStudyKeywords = ['case study', 'success story', 'customer story'];
+  if (caseStudyKeywords.some(k => actionLower.includes(k))) {
+    return { asset: 'case_study', confidence: 'high' };
+  }
+
+  // 7. EXPLICIT WHITEPAPER/REPORT (Moved down as it's often a referenced noun)
+  const whitepaperKeywords = ['whitepaper', 'white paper', 'research report', 'industry report', 'ebook'];
+  if (whitepaperKeywords.some(k => actionLower.includes(k))) {
+    return { asset: 'whitepaper', confidence: 'high' };
+  }
+
+  // 8. Comparison Table
   const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison', 'versus table', 'vs table'];
   if (explicitComparisonKeywords.some(k => actionLower.includes(k))) {
     return { asset: 'comparison_table', confidence: 'high' };
-  }
-
-  // 7. Expert Community / Forum
-  const expertKeywords = ['expert community', 'forum response', 'quora', 'reddit response', 'community answer', 'expert answer'];
-  if (expertKeywords.some(k => actionLower.includes(k))) {
-    return { asset: 'expert_community_response', confidence: 'high' };
   }
 
   // 8. Social Media Thread

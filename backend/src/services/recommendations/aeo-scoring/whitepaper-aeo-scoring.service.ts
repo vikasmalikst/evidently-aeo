@@ -163,9 +163,9 @@ export class WhitepaperAEOScoringService implements IAEOScoringService {
         const hasProblem = problemPatterns.some(p => p.test(text));
 
         if (hasProblem) {
-            return { score: 10, max: 10, status: 'good', feedback: "Clear problem/landscape definition." };
+            return { score: 10, max: 10, status: 'good' as const, feedback: "Clear problem/landscape definition." };
         }
-        return { score: 0, max: 10, status: 'warning', feedback: "Define the 'Challenge' or 'Problem' space explicitly." };
+        return { score: 0, max: 10, status: 'warning' as const, feedback: "Define the 'Challenge' or 'Problem' space explicitly." };
     }
 
     // 6. Marketing Penalty

@@ -192,6 +192,7 @@ WRITING RULES:
 - No marketing language
 - No CTAs
 - JSON only
+- CRITICAL: DO NOT RENAME SECTIONS. Use the exact "title" provided in the structure for each section.
 `;
 }
 
@@ -217,13 +218,13 @@ export function detectContentAsset(action: string): AssetDetectionResult {
     const actionLower = action.toLowerCase();
 
     // 1. EXPLICIT ARTICLE/BLOG - Highest priority
-    const articleKeywords = ['standard article', 'publish article', 'blog post', 'guest post', 'write article', 'pillar page', 'resource guide'];
+    const articleKeywords = ['article', 'standard article', 'publish article', 'blog post', 'guest post', 'write article', 'pillar page', 'resource guide'];
     if (articleKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'article', confidence: 'high' };
     }
 
     // 2. Expert Community / Forum (Specific Format) - MOVED UP
-    const expertKeywords = ['expert community', 'forum response', 'quora', 'reddit response', 'community answer', 'expert answer'];
+    const expertKeywords = ['expert community', 'forum response', 'quora', 'reddit', 'reddit response', 'community answer', 'expert answer'];
     if (expertKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'expert_community_response', confidence: 'high' };
     }
@@ -252,16 +253,16 @@ export function detectContentAsset(action: string): AssetDetectionResult {
         return { asset: 'case_study', confidence: 'high' };
     }
 
-    // 7. EXPLICIT WHITEPAPER/REPORT (Moved down as it's often a referenced noun)
-    const whitepaperKeywords = ['whitepaper', 'white paper', 'research report', 'industry report', 'ebook'];
-    if (whitepaperKeywords.some(k => actionLower.includes(k))) {
-        return { asset: 'whitepaper', confidence: 'high' };
-    }
-
-    // 8. Comparison Table
+    // 7. Comparison Table (MOVED UP: Prioritize over whitepaper if both keywords exist)
     const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison', 'versus table', 'vs table'];
     if (explicitComparisonKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'comparison_table', confidence: 'high' };
+    }
+
+    // 8. EXPLICIT WHITEPAPER/REPORT
+    const whitepaperKeywords = ['whitepaper', 'white paper', 'research report', 'industry report', 'ebook'];
+    if (whitepaperKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'whitepaper', confidence: 'high' };
     }
 
     // 8. Social Media Thread

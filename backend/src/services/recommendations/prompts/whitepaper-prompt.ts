@@ -93,6 +93,7 @@ WRITING RULES:
 - Use clear, simple sentence structures (easy for AI to parse).
 - Avoid persuasive language; use factual statments.
 - Ensure the Executive Summary can stand alone as a complete answer.
+- CRITICAL: DO NOT RENAME SECTIONS. Use the exact "title" provided in the structure for each section.
 `;
 }
 

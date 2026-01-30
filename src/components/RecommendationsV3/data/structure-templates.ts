@@ -165,8 +165,11 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
 
     const act = action.toLowerCase();
 
+    // 0. Explicit Overrides
+    if (act.includes('expert article')) return 'article';
+
     // 2. Check for Expert Response first (Specific)
-    if (act.includes('expert') || act.includes('community') || act.includes('forum') || act.includes('reddit')) {
+    if (act.includes('expert community response') || act.includes('forum') || act.includes('reddit')) {
         return 'expert_community_response';
     }
 

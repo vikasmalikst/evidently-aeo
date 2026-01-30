@@ -136,10 +136,11 @@ export function analyzeContent(content: string, brandName?: string): { score: nu
 interface SEOScoreCardProps {
   content: string;
   brandName?: string;
+  contentType?: string; // Add contentType prop
   onRefresh?: () => void;
 }
 
-export function SEOScoreCard({ content, brandName, onRefresh }: SEOScoreCardProps) {
+export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEOScoreCardProps) {
   // Client-side state
   const [hygiene, setHygiene] = useState<HygieneAnalysis>(analyzeHygiene(content));
   
@@ -166,22 +167,47 @@ export function SEOScoreCard({ content, brandName, onRefresh }: SEOScoreCardProp
         const response = await fetch(`${API_BASE_URL}/aeo/score`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content })
+          body: JSON.stringify({ content, contentType }) // Pass content type
         });
         
         const data = await response.json();
         
         if (data.success && data.data) {
            const b = data.data.breakdown;
-           const newMetrics: SEOMetric[] = [
-             { name: 'Primary Answer', ...b.primaryAnswer, value: b.primaryAnswer.status === 'good' ? 'Found' : 'Missing', suggestion: b.primaryAnswer.feedback },
-             { name: 'Chunkability', ...b.chunkability, value: b.chunkability.status === 'good' ? 'Good' : 'Poor', suggestion: b.chunkability.feedback },
-             { name: 'Concept Definitions', ...b.conceptClarity, value: b.conceptClarity.status === 'good' ? 'Clear' : 'Vague', suggestion: b.conceptClarity.feedback },
-             { name: 'Explanation Depth', ...b.explanationDepth, value: b.explanationDepth.status === 'good' ? 'Deep' : 'Shallow', suggestion: b.explanationDepth.feedback },
-             { name: 'Comparisons', ...b.comparison, value: b.comparison.status === 'good' ? 'Present' : 'None', suggestion: b.comparison.feedback },
-             { name: 'Authority Signals', ...b.authority, value: b.authority.status === 'good' ? 'Strong' : 'Weak', suggestion: b.authority.feedback },
-             { name: 'Tone Check', ...b.antiMarketing, value: b.antiMarketing.status === 'good' ? 'Neutral' : 'Promo', suggestion: b.antiMarketing.feedback }
-           ];
+           const newMetrics: SEOMetric[] = [];
+
+           // --- 1. Generic / Article Metrics ---
+           if (b.primaryAnswer) newMetrics.push({ name: 'Primary Answer', ...b.primaryAnswer, value: b.primaryAnswer.status === 'good' ? 'Found' : 'Missing', suggestion: b.primaryAnswer.feedback });
+           if (b.chunkability) newMetrics.push({ name: 'Chunkability', ...b.chunkability, value: b.chunkability.status === 'good' ? 'Good' : 'Poor', suggestion: b.chunkability.feedback });
+           
+           // --- 2. Expert Community Response Metrics ---
+           if (b.questionRelevance) newMetrics.push({ name: 'Question Relevance', ...b.questionRelevance, value: b.questionRelevance.status === 'good' ? 'High' : 'Low', suggestion: b.questionRelevance.feedback });
+           if (b.earlyAnswerSignal) newMetrics.push({ name: 'Early Answer', ...b.earlyAnswerSignal, value: b.earlyAnswerSignal.status === 'good' ? 'Direct' : 'Buried', suggestion: b.earlyAnswerSignal.feedback });
+           if (b.experienceSignals) newMetrics.push({ name: 'Expertise Signals', ...b.experienceSignals, value: b.experienceSignals.status === 'good' ? 'Strong' : 'Weak', suggestion: b.experienceSignals.feedback });
+           if (b.informationalDensity) newMetrics.push({ name: 'Info Density', ...b.informationalDensity, value: b.informationalDensity.status === 'good' ? 'High' : 'Low', suggestion: b.informationalDensity.feedback });
+           if (b.toneTrust) newMetrics.push({ name: 'Trustable Tone', ...b.toneTrust, value: b.toneTrust.status === 'good' ? 'Neutral' : 'Bias', suggestion: b.toneTrust.feedback });
+           if (b.contextualReasoning) newMetrics.push({ name: 'Contextual Reasoning', ...b.contextualReasoning, value: b.contextualReasoning.status === 'good' ? 'Deep' : 'Shallow', suggestion: b.contextualReasoning.feedback });
+           if (b.semanticClarity) newMetrics.push({ name: 'Semantic Clarity', ...b.semanticClarity, value: b.semanticClarity.status === 'good' ? 'Clear' : 'Issues', suggestion: b.semanticClarity.feedback });
+           if (b.followUpReadiness) newMetrics.push({ name: 'Follow-Up Ready', ...b.followUpReadiness, value: b.followUpReadiness.status === 'good' ? 'Yes' : 'No', suggestion: b.followUpReadiness.feedback });
+           if (b.verifiability) newMetrics.push({ name: 'Verifiability', ...b.verifiability, value: b.verifiability.status === 'good' ? 'Linked' : 'None', suggestion: b.verifiability.feedback });
+
+           // --- 3. Comparison Table Metrics ---
+           if (b.comparisonIntent) newMetrics.push({ name: 'Comparison Intent', ...b.comparisonIntent, value: b.comparisonIntent.status === 'good' ? 'Clear' : 'Vague', suggestion: b.comparisonIntent.feedback });
+           if (b.tableStructure) newMetrics.push({ name: 'Table Structure', ...b.tableStructure, value: b.tableStructure.status === 'good' ? 'Valid' : 'Broken', suggestion: b.tableStructure.feedback });
+           if (b.attributeQuality) newMetrics.push({ name: 'Attribute Quality', ...b.attributeQuality, value: b.attributeQuality.status === 'good' ? 'High' : 'Low', suggestion: b.attributeQuality.feedback });
+           if (b.neutralFactuality) newMetrics.push({ name: 'Neutral Factuality', ...b.neutralFactuality, value: b.neutralFactuality.status === 'good' ? 'Neutral' : 'Bias', suggestion: b.neutralFactuality.feedback });
+           if (b.semanticConsistency) newMetrics.push({ name: 'Semantic Consistency', ...b.semanticConsistency, value: b.semanticConsistency.status === 'good' ? 'match' : 'mismatch', suggestion: b.semanticConsistency.feedback });
+           if (b.contextualInterpretation) newMetrics.push({ name: 'Context Layer', ...b.contextualInterpretation, value: b.contextualInterpretation.status === 'good' ? 'Present' : 'Missing', suggestion: b.contextualInterpretation.feedback });
+           if (b.edgeCaseCoverage) newMetrics.push({ name: 'Edge Case / Limits', ...b.edgeCaseCoverage, value: b.edgeCaseCoverage.status === 'good' ? 'Covered' : 'Missing', suggestion: b.edgeCaseCoverage.feedback });
+           if (b.timeliness) newMetrics.push({ name: 'Timeliness', ...b.timeliness, value: b.timeliness.status === 'good' ? 'Fresh' : 'Unknown', suggestion: b.timeliness.feedback });
+           if (b.llmReadiness) newMetrics.push({ name: 'LLM Readiness', ...b.llmReadiness, value: b.llmReadiness.status === 'good' ? 'Ready' : 'Hard', suggestion: b.llmReadiness.feedback });
+           
+           // --- 4. Shared / Other Metrics (Fallbacks) ---
+           if (b.conceptClarity) newMetrics.push({ name: 'Concept Definitions', ...b.conceptClarity, value: b.conceptClarity.status === 'good' ? 'Clear' : 'Vague', suggestion: b.conceptClarity.feedback });
+           if (b.explanationDepth) newMetrics.push({ name: 'Explanation Depth', ...b.explanationDepth, value: b.explanationDepth.status === 'good' ? 'Deep' : 'Shallow', suggestion: b.explanationDepth.feedback });
+           if (b.comparison) newMetrics.push({ name: 'Comparisons', ...b.comparison, value: b.comparison.status === 'good' ? 'Present' : 'None', suggestion: b.comparison.feedback });
+           if (b.authority) newMetrics.push({ name: 'Authority Signals', ...b.authority, value: b.authority.status === 'good' ? 'Strong' : 'Weak', suggestion: b.authority.feedback });
+           if (b.antiMarketing) newMetrics.push({ name: 'Tone Check', ...b.antiMarketing, value: b.antiMarketing.status === 'good' ? 'Neutral' : 'Promo', suggestion: b.antiMarketing.feedback });
 
            setScrapability({
              score: data.data.totalScore,

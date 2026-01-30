@@ -90,6 +90,7 @@ WRITING RULES:
 - Host's job is to clarify and summarize.
 - Expert's job is to provide deep, first-hand knowledge.
 - Ensure the "Core Insight" section contains a standalone definition of the topic.
+- CRITICAL: DO NOT RENAME SECTIONS. Use the exact "title" provided in the structure for each section.
 `;
 }
 

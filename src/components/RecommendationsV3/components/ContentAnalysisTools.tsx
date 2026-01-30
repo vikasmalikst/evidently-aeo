@@ -6,7 +6,13 @@ import { SEOScoreCard, analyzeContent } from './SEOScoreCard';
 // Define API URL (same as SEOScoreCard)
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
-export function AEOScoreBadge({ content, brandName }: AEOScoreBadgeProps) {
+export interface AEOScoreBadgeProps {
+  content: string;
+  brandName?: string;
+  contentType?: string; // Add contentType prop
+}
+
+export function AEOScoreBadge({ content, brandName, contentType }: AEOScoreBadgeProps) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const [backendScore, setBackendScore] = useState<number | null>(null);
@@ -35,7 +41,7 @@ export function AEOScoreBadge({ content, brandName }: AEOScoreBadgeProps) {
         const response = await fetch(`${API_BASE_URL}/aeo/score`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content })
+          body: JSON.stringify({ content, contentType }) // Pass content type
         });
         
         const data = await response.json();
@@ -167,6 +173,7 @@ export function AEOScoreBadge({ content, brandName }: AEOScoreBadgeProps) {
                 <SEOScoreCard 
                   content={content} 
                   brandName={brandName}
+                  contentType={contentType} // Pass content type
                 />
               </div>
             </div>

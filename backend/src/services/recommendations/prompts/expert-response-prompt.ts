@@ -87,6 +87,7 @@ WRITING RULES:
 - Start with the answer. Don't bury the lead.
 - Use "In my experience" or "We found that" signals.
 - Avoid generic advice. Be specific.
+- CRITICAL: DO NOT RENAME SECTIONS. Use the exact "title" provided in the structure for each section.
 `;
 }
 

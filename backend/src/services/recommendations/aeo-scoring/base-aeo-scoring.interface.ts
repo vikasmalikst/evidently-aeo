@@ -1,11 +1,34 @@
 export interface AEOScoreBreakdown {
-    primaryAnswer: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
-    chunkability: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
-    conceptClarity: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
-    explanationDepth: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
-    comparison: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
-    authority: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
-    antiMarketing: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    // Generic / Article
+    primaryAnswer?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    chunkability?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    conceptClarity?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    explanationDepth?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    comparison?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    authority?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    antiMarketing?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+
+    // Expert Community Response Specific
+    questionRelevance?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    earlyAnswerSignal?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    experienceSignals?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    informationalDensity?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    toneTrust?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    contextualReasoning?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    semanticClarity?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    followUpReadiness?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    verifiability?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+
+    // Comparison Table Specific
+    comparisonIntent?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    tableStructure?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    attributeQuality?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    neutralFactuality?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    semanticConsistency?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    contextualInterpretation?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    edgeCaseCoverage?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    timeliness?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    llmReadiness?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
 }
 
 export interface AEOScoreResult {

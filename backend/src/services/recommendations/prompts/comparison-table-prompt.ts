@@ -59,6 +59,7 @@ QUALITY REQUIREMENTS:
 - Compare 5-7 realistic features/criteria in DEPTH
 - **CRITICAL:** The comparison table must be valid MARKDOWN TABLE syntax.
 - The prose analysis should be SUBSTANTIAL (400+ words).
+- CRITICAL: DO NOT RENAME SECTIONS. Use the exact "title" provided in the structure for each section.
 
 OUTPUT SCHEMA (GeneratedContentJsonV4):
 {

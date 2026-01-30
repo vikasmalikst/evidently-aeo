@@ -77,7 +77,7 @@ CONTENT TYPE OPTIONS:
 - Short-form Video Script (TikTok/Reels/YouTube Shorts)
 - Social Media Thread (X/Threads)
 - Technical Comparison Table (Specialized for AEO comparison queries)
-- Interactive Tool/Calculator (High utility for specific problems)
+
 - Expert Community Response (Reddit/Quora/StackOverflow)
 - Data-Driven White Paper (In-depth research)
 - Article (Standard SEO/AEO long-form content)

@@ -162,6 +162,45 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     return value.replace(/\\n/g, '\n');
   }, []);
 
+  // Helper: Extract visible text content from structured content (V3/V4) for scoring
+  const extractVisibleContent = useCallback((content: any): string => {
+    if (!content) return '';
+    
+    // If it's already a string, return it (but check if it's JSON)
+    if (typeof content === 'string') {
+      try {
+        // Attempt to parse if it looks like JSON
+        if (content.trim().startsWith('{')) {
+           const parsed = JSON.parse(content);
+           return extractVisibleContent(parsed);
+        }
+        return content;
+      } catch {
+        return content;
+      }
+    }
+
+    // V4: Sections
+    if (content.version === '4.0' && Array.isArray(content.sections)) {
+      return content.sections
+        .map((s: any) => `${s.title}\n${s.content || ''}`)
+        .join('\n\n');
+    }
+
+    // V3: Publishable Content
+    if (content.version === '3.0' && content.publishableContent) {
+      return content.publishableContent.content || '';
+    }
+
+    // DB Record wrapper
+    if (content.content !== undefined) {
+      return extractVisibleContent(content.content);
+    }
+    
+    // Fallback: JSON stringify if object but not known structure
+    return JSON.stringify(content);
+  }, []);
+
   useEffect(() => {
     // Reset per-generation artifacts when generation changes
     setGuideMap(new Map());
@@ -1859,9 +1898,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     {/* AEO Score Badge */}
                                     {content && (
                                       <div className="mr-2">
-                                        <AEOScoreBadge
-                                          content={typeof content === 'string' ? content : (content?.content || '')}
+                                      <AEOScoreBadge
+                                          content={extractVisibleContent(content)}
                                           brandName={selectedBrand?.name}
+                                          contentType={getTemplateForAction(rec.action)} 
                                         />
                                       </div>
                                     )}

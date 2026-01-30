@@ -84,6 +84,7 @@ WRITING RULES:
 - Spoken word count: ~130-150 words total (for 60s).
 - Use short, punchy sentences.
 - Ensure at least one sentence is a perfect "definition" or "answer" that AI can quote.
+- CRITICAL: DO NOT RENAME SECTIONS. Use the exact "title" provided in the structure for each section.
 `;
 }
 

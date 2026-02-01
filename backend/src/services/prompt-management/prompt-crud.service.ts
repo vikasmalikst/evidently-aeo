@@ -9,6 +9,7 @@ import { ManagedPrompt, PromptTopic, ManagePromptsResponse } from './types'
 import { parseMetadata, extractTopicName, slugify, roundToPrecision, calculateCoverageScore } from './utils'
 import { promptVersioningService } from './prompt-versioning.service'
 import { v4 as uuidv4 } from 'uuid'
+import { queryTaggingService } from '../query-tagging.service'
 
 export class PromptCrudService {
   async getConfigV2Rows(
@@ -441,11 +442,15 @@ export class PromptCrudService {
         throw new DatabaseError(`Failed to create query generation: ${generationError.message}`)
       }
 
+      // Fetch brand terms for tagging
+      const brandTerms = await queryTaggingService.getBrandTerms(brandId)
+
       const insertRecords = rowsWithoutId.map(r => ({
         generation_id: generationId,
         brand_id: brandId,
         customer_id: customerId,
         query_text: r.prompt,
+        query_tag: queryTaggingService.determineTag(r.prompt, brandTerms),
         topic: r.topic,
         locale: r.locale,
         country: r.country,

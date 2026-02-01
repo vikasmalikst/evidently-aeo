@@ -13,6 +13,7 @@ import { dataCollectionService, QueryExecutionRequest } from './data-collection/
 import { competitorVersioningService } from './competitor-management';
 import { OptimizedMetricsHelper } from './query-helpers/optimized-metrics.helper';
 import { customerEntitlementsService } from './customer-entitlements.service';
+import { queryTaggingService } from './query-tagging.service';
 
 type NormalizedCompetitor = {
   name: string;
@@ -3637,6 +3638,9 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
       throw new Error(`Failed to create query generation record: ${genError.message}`);
     }
 
+    // Fetch brand terms for tagging
+    const brandTerms = await queryTaggingService.getBrandTerms(brandId);
+
     // Map prompts to topics
     const queryInserts = prompts.map((promptData, index) => {
       let promptText: string;
@@ -3655,11 +3659,14 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
         ) || topics[0] || 'General'; // Fallback to first topic or 'General'
       }
 
+      const queryTag = queryTaggingService.determineTag(promptText, brandTerms);
+
       return {
         generation_id: generationId,
         brand_id: brandId,
         customer_id: customerId,
         query_text: promptText,
+        query_tag: queryTag,
         topic: matchedTopic, // Store topic in dedicated column
         intent: 'data_collection', // Default intent
         brand: brandName,

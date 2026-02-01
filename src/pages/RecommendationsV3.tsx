@@ -14,6 +14,7 @@ import { useManualBrandDashboard } from '../manual-dashboard';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import {
   getRecommendationsByStepV3,
+  getGenerationV3,
   generateContentV3,
   generateContentBulkV3,
   generateGuideV3,
@@ -37,6 +38,7 @@ import { getTemplateForAction } from '../components/RecommendationsV3/data/struc
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
 import { EffortFilter } from '../components/RecommendationsV3/components/EffortFilter';
+import { ContentTypeFilter } from '../components/RecommendationsV3/components/ContentTypeFilter';
 import { ContentSectionRenderer, SectionTypeBadge } from '../components/RecommendationsV3/components/ContentSectionRenderer';
 import { SEOScoreCard, ExportModal } from '../components/RecommendationsV3/components/SEOScoreCard';
 import { AEOScoreBadge } from '../components/RecommendationsV3/components/ContentAnalysisTools';
@@ -103,7 +105,19 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_review' | 'approved' | 'rejected'>('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'High' | 'Medium' | 'Low'>('all');
   const [effortFilter, setEffortFilter] = useState<'all' | 'Low' | 'Medium' | 'High'>('all');
+  const [contentTypeFilter, setContentTypeFilter] = useState<string>('all');
   const [allRecommendations, setAllRecommendations] = useState<RecommendationV3[]>([]); // Store all Step 1 recommendations for local filtering
+
+  // Calculate available content types from all recommendations
+  const availableContentTypes = React.useMemo(() => {
+    const types = new Set<string>();
+    allRecommendations.forEach(rec => {
+      if (rec.assetType) {
+        types.add(rec.assetType);
+      }
+    });
+    return Array.from(types).sort();
+  }, [allRecommendations]);
   const [generatingContentIds, setGeneratingContentIds] = useState<Set<string>>(new Set()); // Track which recommendations are generating content
   const [hasGeneratedContentForStep3, setHasGeneratedContentForStep3] = useState(false); // Drives Step 3 "attention" animation after generating content
   const [hasCompletedForStep4, setHasCompletedForStep4] = useState(false); // Drives Step 4 "attention" animation after marking completed
@@ -128,6 +142,36 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [globalReferences, setGlobalReferences] = useState<Map<string, string>>(new Map()); // recId -> references
   const [refiningIds, setRefiningIds] = useState<Set<string>>(new Set()); // Track which recommendations are being refined
   const [refinedContent, setRefinedContent] = useState<Map<string, any>>(new Map()); // recId -> refined v4.0 content
+  const [stepCounts, setStepCounts] = useState<Record<number, number>>({});
+
+  // Fetch counts for all steps
+  useEffect(() => {
+    if (!generationId) return;
+
+    const fetchCounts = async () => {
+      try {
+        const response = await getGenerationV3(generationId);
+        if (response.success && response.data?.recommendations) {
+          const recs = response.data.recommendations;
+          
+          const counts = {
+            1: recs.filter(r => r.reviewStatus === 'pending_review' || !r.reviewStatus).length,
+            2: recs.filter(r => r.isApproved && !r.isContentGenerated).length,
+            3: recs.filter(r => r.isContentGenerated && !r.isCompleted).length,
+            4: recs.filter(r => r.isCompleted).length
+          };
+          
+          setStepCounts(counts);
+        }
+      } catch (err) {
+        console.error('Error fetching generation counts:', err);
+      }
+    };
+
+    fetchCounts();
+    // Re-fetch counts when step changes to keep them somewhat in sync
+    // or when specific actions occur (though we rely on generationId mostly)
+  }, [generationId, currentStep]);
 
   const isColdStart = dataMaturity === 'cold_start';
 
@@ -439,8 +483,13 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       filtered = filtered.filter(rec => rec.effort === effortFilter);
     }
 
+    // Content Type filter
+    if (contentTypeFilter !== 'all') {
+      filtered = filtered.filter(rec => rec.assetType === contentTypeFilter);
+    }
+
     setRecommendations(filtered);
-  }, [statusFilter, priorityFilter, effortFilter, allRecommendations, currentStep]);
+  }, [statusFilter, priorityFilter, effortFilter, contentTypeFilter, allRecommendations, currentStep]);
 
   // Restore persisted step when selectedBrandId changes (e.g., brand switch)
   useEffect(() => {
@@ -1350,6 +1399,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           {generationId && (
             <PremiumTabNavigator
               currentStep={currentStep}
+              counts={stepCounts}
               attentionSteps={{
                 2: (() => {
                   const sourceArray = allRecommendations.length > 0 ? allRecommendations : recommendations;
@@ -1515,6 +1565,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                     <StatusFilter value={statusFilter} onChange={setStatusFilter} />
                     <PriorityFilter value={priorityFilter} onChange={setPriorityFilter} />
                     <EffortFilter value={effortFilter} onChange={setEffortFilter} />
+                    <ContentTypeFilter value={contentTypeFilter} onChange={setContentTypeFilter} options={availableContentTypes} />
                   </div>
                 </div>
                 <RecommendationsTableV3

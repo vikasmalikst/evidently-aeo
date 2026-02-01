@@ -761,7 +761,8 @@ export const ScheduledJobs = () => {
     if (!scoringPreview) return;
 
     const { brandId } = scoringPreview;
-    setShowScoringModal(false);
+    // Keep modal open while processing
+    // setShowScoringModal(false);
 
     try {
       setScoring(true);
@@ -769,10 +770,15 @@ export const ScheduledJobs = () => {
         customer_id: effectiveCustomerId,
       });
       if (response.success) {
+        setShowScoringModal(false);
         alert(`Scoring started in background! ${response.message || 'Check job run history for progress.'}`);
+      } else {
+        setShowScoringModal(false);
+        alert(`Failed to start scoring: ${response.error || response.message || 'Unknown error'}`);
       }
     } catch (error: unknown) {
       console.error('Failed to start scoring:', error);
+      setShowScoringModal(false);
       alert(`Failed to start scoring: ${getErrorMessage(error)}`);
     } finally {
       setScoring(false);
@@ -1782,8 +1788,9 @@ export const ScheduledJobs = () => {
         showScoringModal && scoringPreview && (
           <ScoringConfirmationModal
             preview={scoringPreview}
-            onClose={() => setShowScoringModal(false)}
+            onClose={() => !scoring && setShowScoringModal(false)}
             onConfirm={confirmScoreNow}
+            isScoring={scoring}
           />
         )
       }
@@ -1909,6 +1916,7 @@ const ScoringConfirmationModal = ({
   preview,
   onClose,
   onConfirm,
+  isScoring,
 }: {
   preview: {
     brandName: string;
@@ -1919,6 +1927,7 @@ const ScoringConfirmationModal = ({
   };
   onClose: () => void;
   onConfirm: () => void;
+  isScoring: boolean;
 }) => {
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'Never';
@@ -2006,9 +2015,21 @@ const ScoringConfirmationModal = ({
           </button>
           <button
             onClick={onConfirm}
-            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+            disabled={isScoring}
+            className={`px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 ${isScoring ? 'opacity-75 cursor-not-allowed' : ''
+              }`}
           >
-            Start Scoring
+            {isScoring ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Starting...
+              </span>
+            ) : (
+              'Start Scoring'
+            )}
           </button>
         </div>
       </div>

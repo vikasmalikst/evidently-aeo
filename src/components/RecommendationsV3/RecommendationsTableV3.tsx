@@ -227,6 +227,9 @@ export const RecommendationsTableV3 = ({
                   />
                 </th>
               )}
+              <th className="px-4 py-4 text-center text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-12">
+                #
+              </th>
               <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider min-w-[400px]">
                 Recommendation
               </th>
@@ -248,7 +251,7 @@ export const RecommendationsTableV3 = ({
           <tbody className="bg-white divide-y divide-[#f1f5f9]">
             {recommendations.length === 0 ? (
               <tr>
-                <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
+                <td colSpan={12} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
                   No recommendations found
                 </td>
               </tr>
@@ -273,7 +276,7 @@ export const RecommendationsTableV3 = ({
                           rotate: 5, // Tilted drop
                           transition: { duration: 0.4, ease: "backIn" }
                         }}
-                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#fafbfc]'} hover:bg-[#f0f9ff] transition-all duration-200 cursor-pointer`}
+                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#00bcdc]/5'} hover:bg-[#f0f9ff] transition-all duration-200 cursor-pointer`}
                       >
                         {showCheckboxes && (
                           <td className="px-4 py-3">
@@ -291,6 +294,11 @@ export const RecommendationsTableV3 = ({
                             />
                           </td>
                         )}
+                        <td className="px-4 py-5">
+                          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[10px] font-bold shadow-sm">
+                            {index + 1}
+                          </div>
+                        </td>
                         <td className="px-4 py-5">
                           <div className="flex items-start gap-3">
                             {hasDetails && (

@@ -1,4 +1,5 @@
 import { opportunityIdentifierService, Opportunity, OpportunityResponse } from '../opportunity-identifier/opportunity-identifier.service';
+import { sourceAttributionService } from '../../services/source-attribution.service';
 import { supabase } from '../../config/supabase';
 import * as crypto from 'crypto';
 
@@ -32,12 +33,29 @@ export interface VolumeContext {
     criticalCount: number;
 }
 
+export interface CitationSourceStat {
+    name: string;
+    url: string;
+    type: string;
+    percentCitations: number; // Calculated as (sourceCitations / totalCitations) * 100
+    sentiment: number;
+    soa: number;
+    mentionRate: number;
+}
+
 export interface ExecutiveSummaryData {
     volumeContext: VolumeContext;
     competitorInsights: CompetitorInsight[];
     topicGaps: TopicGapStat[];
     topQueries: Opportunity[];
+    topCitationSources: CitationSourceStat[];
     dateRange: { start: string; end: string };
+    topicLeadership: {
+        visibility: number;
+        soa: number;
+        sentiment: number;
+        presence: number;
+    };
 }
 
 export class ExecutiveSummaryService {
@@ -64,12 +82,24 @@ export class ExecutiveSummaryService {
         const topicGaps = this.aggregateTopicGaps(opportunities, totalQueries);
         const topQueries = this.getTopQueries(opportunities);
 
+        // 4. Citation Analysis
+        const topCitationSources = await this.aggregateTopCitationSources(brandId, customerId, response.dateRange);
+
+        // 5. Topic Leadership
+        const topicLeadership = await opportunityIdentifierService.getTopicLeadershipStats({
+            brandId,
+            customerId,
+            days
+        });
+
         return {
             volumeContext,
             competitorInsights,
             topicGaps,
             topQueries,
-            dateRange: response.dateRange
+            topCitationSources,
+            dateRange: response.dateRange,
+            topicLeadership
         };
     }
 
@@ -339,6 +369,37 @@ export class ExecutiveSummaryService {
                 return a.queryText.localeCompare(b.queryText);
             })
             .slice(0, 10);
+    }
+    private async aggregateTopCitationSources(
+        brandId: string,
+        customerId: string,
+        dateRange: { start: string; end: string }
+    ): Promise<CitationSourceStat[]> {
+        const sourceData = await sourceAttributionService.getSourceAttribution(
+            brandId,
+            customerId,
+            dateRange
+        );
+
+        if (!sourceData || !sourceData.sources || sourceData.sources.length === 0) return [];
+
+        // totalCitations can be derived from summing up citations of all sources 
+        // OR using the maxCitations if we want relative to max (but user asked for % of total).
+        // Let's sum them up.
+        const totalCitations = sourceData.sources.reduce((sum, s) => sum + (s.citations || 0), 0);
+
+        return sourceData.sources
+            .map(s => ({
+                name: s.name,
+                url: s.url,
+                type: s.type,
+                percentCitations: totalCitations > 0 ? Math.round(((s.citations || 0) / totalCitations) * 100) : 0,
+                sentiment: Math.round(s.sentiment),
+                soa: Math.round(s.soa),
+                mentionRate: Math.round(s.mentionRate)
+            }))
+            .sort((a, b) => b.percentCitations - a.percentCitations)
+            .slice(0, 10); // Top 10
     }
 }
 

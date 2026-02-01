@@ -5,6 +5,58 @@ import { HelpButton } from '../../../components/common/HelpButton';
 import type { MetricCardProps } from '../types';
 import { InfoTooltip } from './InfoTooltip';
 
+const ZoneStatusBar = ({ value, metricType }: { value: number, metricType: string }) => {
+  const zones = {
+    visibility: { red: 17, yellow: 35 },
+    sentiment: { red: 56, yellow: 66 },
+    share: { red: 34, yellow: 67 },
+    brandPresence: { red: 34, yellow: 67 }
+  };
+
+  const currentZone = zones[metricType as keyof typeof zones];
+
+  if (!currentZone) return null;
+
+  // Clamp value between 0 and 100
+  const clampedValue = Math.min(Math.max(value, 0), 100);
+
+  // Softer/Cooler Palette
+  const colors = {
+    red: '#f87171',    // Red-400 (Softer than red-500 #ef4444)
+    yellow: '#fbbf24', // Amber-400 (Softer than amber-500 #f59e0b)
+    green: '#4ade80'   // Green-400 (Softer than green-500 #22c55e)
+  };
+
+  // Create a gradient that transitions smoothly but respects the zones
+  // We use a tight transition (e.g. +/- 5%) around the thresholds to create a "gradient" effect
+  // rather than a hard line, while still clearly indicating the zones.
+  const gradient = `linear-gradient(90deg, 
+    ${colors.red} 0%, 
+    ${colors.red} ${Math.max(0, currentZone.red - 5)}%, 
+    ${colors.yellow} ${Math.min(100, currentZone.red + 5)}%, 
+    ${colors.yellow} ${Math.max(0, currentZone.yellow - 5)}%, 
+    ${colors.green} ${Math.min(100, currentZone.yellow + 5)}%, 
+    ${colors.green} 100%)`;
+
+  return (
+    <div className="relative h-2.5 w-full">
+      {/* Gradient Bar */}
+      <div 
+        className="absolute inset-0 rounded-full overflow-hidden shadow-inner"
+        style={{ background: gradient }}
+      />
+      
+      {/* Marker - Triangle Arrow */}
+      <div
+        className="absolute -top-[1px] z-10 transform -translate-x-1/2 -translate-y-full drop-shadow-md"
+        style={{ left: `${clampedValue}%` }}
+      >
+        <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-slate-900" />
+      </div>
+    </div>
+  );
+};
+
 export const MetricCard = ({
   title,
   value,
@@ -234,21 +286,25 @@ export const MetricCard = ({
                   </div>
 
                   {/* Heatmap Bar Container */}
-                  <div className="relative h-2.5 w-full bg-slate-100/80 rounded-full overflow-hidden shadow-inner">
-                    {/* Animated Bar */}
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min(Math.max(width, 2), 100)}%` }}
-                      transition={{ duration: 0.8, ease: "easeOut", delay: index * 0.1 }}
-                      className="absolute top-0 left-0 h-full rounded-full"
-                      style={{
-                        background: `linear-gradient(90deg, ${color}40 0%, ${color} 100%)`,
-                        boxShadow: `0 0 8px ${color}20`
-                      }}
-                    />
-                    {/* Glass/Gloss Overlay effect */}
-                    <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent pointer-events-none rounded-full" />
-                  </div>
+                  {metricType ? (
+                    <ZoneStatusBar value={item.value} metricType={metricType} />
+                  ) : (
+                    <div className="relative h-2.5 w-full bg-slate-100/80 rounded-full overflow-hidden shadow-inner">
+                      {/* Animated Bar */}
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(Math.max(width, 2), 100)}%` }}
+                        transition={{ duration: 0.8, ease: "easeOut", delay: index * 0.1 }}
+                        className="absolute top-0 left-0 h-full rounded-full"
+                        style={{
+                          background: `linear-gradient(90deg, ${color}40 0%, ${color} 100%)`,
+                          boxShadow: `0 0 8px ${color}20`
+                        }}
+                      />
+                      {/* Glass/Gloss Overlay effect */}
+                      <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent pointer-events-none rounded-full" />
+                    </div>
+                  )}
                 </div>
               );
             })}

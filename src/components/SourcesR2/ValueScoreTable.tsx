@@ -1,16 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { HelpButton } from '../common/HelpButton';
+import { normalizeDomain } from '../../utils/citationAnalysisUtils';
+import { EnhancedSource } from '../../types/citation-sources';
 
-export interface ValueScoreSource {
-  name: string;
-  type: string;
-  mentionRate: number;
-  soa: number;
-  sentiment: number;
-  citations: number;
-  valueScore: number;
-  quadrant: string;
-}
+export type ValueScoreSource = Omit<EnhancedSource, 'quadrant'> & {
+  quadrant: EnhancedSource['quadrant'] | string;
+};
 
 interface ValueScoreTableProps {
   sources: ValueScoreSource[];
@@ -55,19 +50,7 @@ const zoneStyles: Record<
   monitor: { bg: '#cbd5e1', text: '#0f172a', label: 'Monitor' }
 };
 
-const normalizeDomain = (value: string | null | undefined): string => {
-  if (!value) return '';
-  const raw = value.trim().toLowerCase();
-  if (!raw) return '';
-  if (raw.startsWith('http://') || raw.startsWith('https://')) {
-    try {
-      return new URL(raw).hostname.replace(/^www\./, '');
-    } catch {
-      return raw.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-    }
-  }
-  return raw.replace(/^www\./, '').split('/')[0];
-};
+
 
 export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSelection, highlightedSourceName, disableSorting, pagination, onHelpClick }: ValueScoreTableProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('valueScore');

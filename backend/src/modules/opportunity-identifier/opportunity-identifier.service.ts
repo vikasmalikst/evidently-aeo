@@ -272,9 +272,114 @@ export class OpportunityIdentifierService {
     }
 
     /**
+     * Calculate topic leadership stats
+     * Returns % of topics where Brand leads competitors on key metrics
+     */
+    async getTopicLeadershipStats(options: OpportunityOptions): Promise<{
+        visibility: number;
+        soa: number;
+        sentiment: number;
+        presence: number;
+    }> {
+        const { brandId, customerId, days = 14, collectors } = options;
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
+
+        const startIso = startDate.toISOString();
+        const endIso = endDate.toISOString();
+
+        // 1. Fetch Data
+        const queries = await this.fetchQueriesWithMetrics(brandId, customerId, startIso, endIso, collectors);
+        const compMetricsMap = await this.fetchCompetitorMetrics(brandId, customerId, startIso, endIso);
+
+        // 2. Aggregate by Topic
+        const topicStats = new Map<string, {
+            brand: { visibility: number; soa: number; sentiment: number; count: number; presenceCount: number };
+            competitors: Map<string, { visibility: number; soa: number; sentiment: number; count: number; presenceCount: number }>;
+        }>();
+
+        for (const query of queries) {
+            const topic = query.topic || 'Uncategorized';
+            if (!topicStats.has(topic)) {
+                topicStats.set(topic, {
+                    brand: { visibility: 0, soa: 0, sentiment: 0, count: 0, presenceCount: 0 },
+                    competitors: new Map()
+                });
+            }
+
+            const stats = topicStats.get(topic)!;
+
+            // Brand Stats
+            stats.brand.count++;
+            stats.brand.visibility += query.visibility || 0;
+            stats.brand.soa += query.soa || 0;
+            stats.brand.sentiment += query.sentiment || 0;
+            if ((query.visibility || 0) > 0) stats.brand.presenceCount++;
+
+            // Competitor Stats
+            const qComps = compMetricsMap.get(query.queryId);
+            if (qComps) {
+                for (const [compName, metrics] of qComps) {
+                    if (!stats.competitors.has(compName)) {
+                        stats.competitors.set(compName, { visibility: 0, soa: 0, sentiment: 0, count: 0, presenceCount: 0 });
+                    }
+                    const cStats = stats.competitors.get(compName)!;
+                    cStats.count++;
+                    cStats.visibility += metrics.visibility || 0;
+                    cStats.soa += metrics.soa || 0;
+                    cStats.sentiment += metrics.sentiment || 0;
+                    if ((metrics.visibility || 0) > 0) cStats.presenceCount++;
+                }
+            }
+        }
+
+        // 3. Determine Leadership per Topic
+        let wins = { visibility: 0, soa: 0, sentiment: 0, presence: 0 };
+        let totalTopics = topicStats.size;
+
+        if (totalTopics === 0) return { visibility: 0, soa: 0, sentiment: 0, presence: 0 };
+
+        for (const [topic, stats] of topicStats) {
+            // Averages
+            const bCounts = Math.max(1, stats.brand.count);
+            const bVis = stats.brand.visibility / bCounts;
+            const bSoa = stats.brand.soa / bCounts;
+            const bSent = stats.brand.sentiment / bCounts;
+            const bPres = (stats.brand.presenceCount / bCounts) * 100; // As percentage
+
+            // Check against best competitor for this topic
+            let maxCVis = 0;
+            let maxCSoa = 0;
+            let maxCSent = 0;
+            let maxCPres = 0;
+
+            for (const [comp, cStats] of stats.competitors) {
+                const cCount = Math.max(1, cStats.count);
+                maxCVis = Math.max(maxCVis, cStats.visibility / cCount);
+                maxCSoa = Math.max(maxCSoa, cStats.soa / cCount);
+                maxCSent = Math.max(maxCSent, cStats.sentiment / cCount);
+                maxCPres = Math.max(maxCPres, (cStats.presenceCount / cCount) * 100);
+            }
+
+            if (bVis > maxCVis) wins.visibility++;
+            if (bSoa > maxCSoa) wins.soa++;
+            if (bSent > maxCSent) wins.sentiment++;
+            if (bPres > maxCPres) wins.presence++;
+        }
+
+        return {
+            visibility: Math.round((wins.visibility / totalTopics) * 100),
+            soa: Math.round((wins.soa / totalTopics) * 100),
+            sentiment: Math.round((wins.sentiment / totalTopics) * 100),
+            presence: Math.round((wins.presence / totalTopics) * 100)
+        };
+    }
+
+    /**
      * Fetch queries with aggregated brand metrics
      */
-    private async fetchQueriesWithMetrics(
+    public async fetchQueriesWithMetrics(
         brandId: string,
         customerId: string,
         startDate: string,
@@ -413,7 +518,7 @@ export class OpportunityIdentifierService {
     /**
      * Fetch competitor metrics grouped by query
      */
-    private async fetchCompetitorMetrics(
+    public async fetchCompetitorMetrics(
         brandId: string,
         customerId: string,
         startDate: string,

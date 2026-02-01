@@ -44,6 +44,16 @@ export interface Opportunity {
     topic?: string | null;
 }
 
+export interface CitationSourceStat {
+    name: string;
+    url: string;
+    type: string;
+    percentCitations: number;
+    sentiment: number;
+    soa: number;
+    mentionRate: number;
+}
+
 export interface ExecutiveSummaryResponse {
     meta: {
         brandId: string;
@@ -59,6 +69,13 @@ export interface ExecutiveSummaryResponse {
         competitorInsights: CompetitorInsight[];
         topicGaps: TopicGapStat[];
         topQueries: Opportunity[];
+        topCitationSources: CitationSourceStat[];
         dateRange: { start: string; end: string };
+        topicLeadership?: {
+            visibility: number;
+            soa: number;
+            sentiment: number;
+            presence: number;
+        };
     };
 }

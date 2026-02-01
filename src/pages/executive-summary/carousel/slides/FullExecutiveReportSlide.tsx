@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { apiClient } from '../../lib/apiClient';
-import { useManualBrandDashboard } from '../../manual-dashboard';
-import { ExecutiveSummaryResponse, TopicGapStat, Opportunity } from '../../types/executive-summary'; // Will define CompetitorInsight locally for now or update types file
+import { apiClient } from '../../../../lib/apiClient';
+import { useManualBrandDashboard } from '../../../../manual-dashboard';
+import { ExecutiveSummaryResponse, TopicGapStat, Opportunity } from '../../../../types/executive-summary';
 import { Loader2, AlertTriangle, CheckCircle, TrendingDown, TrendingUp, Target, Zap, Sparkles, Activity, ChevronRight, Info, ShieldAlert, BrainCircuit, Lightbulb, UserX, BarChart2, Calendar } from 'lucide-react';
-import { Layout } from '../../components/Layout/Layout';
-import { getLatestGenerationV3, RecommendationV3 } from '../../api/recommendationsV3Api';
-import { ExecutiveSummaryCarousel } from './carousel/ExecutiveSummaryCarousel';
+import { getLatestGenerationV3, RecommendationV3 } from '../../../../api/recommendationsV3Api';
+import { SafeLogo } from '../../../../components/Onboarding/common/SafeLogo';
 
 interface CompetitorInsight {
     competitorName: string;
@@ -34,7 +33,7 @@ interface ExecutiveNarrative {
     actions: ExecutiveSummarySection;
 }
 
-export const ExecutiveSummaryPage: React.FC = () => {
+export const FullExecutiveReportSlide: React.FC = () => {
     const { selectedBrandId } = useManualBrandDashboard();
     const [stats, setStats] = useState<ExecutiveSummaryResponse['data'] | null>(null);
     const [narrative, setNarrative] = useState<ExecutiveNarrative | string | null>(null);
@@ -99,7 +98,7 @@ export const ExecutiveSummaryPage: React.FC = () => {
         }
     };
 
-    if (!selectedBrandId) return <Layout><div className="p-8">Please select a brand.</div></Layout>;
+    if (!selectedBrandId) return <div className="p-8">Please select a brand.</div>;
 
     // Calculate Health Color
     const getHealthColor = (score: number) => {
@@ -109,8 +108,8 @@ export const ExecutiveSummaryPage: React.FC = () => {
     };
 
     return (
-        <Layout>
-            <div className="p-6 max-w-7xl mx-auto space-y-8">
+        <div className="h-full overflow-y-auto">
+            <div className="p-6 max-w-7xl mx-auto space-y-8 pb-20">
 
                 {/* Header Section */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -157,15 +156,124 @@ export const ExecutiveSummaryPage: React.FC = () => {
                     <div className="p-6 bg-red-50 text-red-700 rounded-lg border border-red-100">{error}</div>
                 ) : stats ? (
                     <>
-                        {/* Carousel View */}
-                        <div className="mt-6">
-                            <ExecutiveSummaryCarousel />
+                        {/* 1. High-Level Stats Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* Health Score */}
+                            <div
+                                onClick={() => setIsHealthModalOpen(true)}
+                                className={`p-6 rounded-xl border ${getHealthColor(stats.volumeContext.healthScore)} flex items-center justify-between cursor-pointer hover:shadow-md transition-all group`}
+                                title="Click to analyze health score details"
+                            >
+                                <div>
+                                    <div className="text-sm font-semibold uppercase tracking-wide opacity-80 flex items-center">
+                                        Global Health
+                                        <Info className="w-3.5 h-3.5 ml-2 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </div>
+                                    <div className="text-3xl font-bold mt-1">{stats.volumeContext.healthScore}/100</div>
+                                </div>
+                                <Activity className="w-8 h-8 opacity-50 group-hover:scale-110 transition-transform" />
+                            </div>
+
+                            {/* Gap Impact */}
+                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                                <div>
+                                    <div className="text-sm font-medium text-gray-500 uppercase tracking-wide">Impact Scope</div>
+                                    <div className="text-3xl font-bold text-gray-900 mt-1">{stats.volumeContext.gapPercentage}%</div>
+                                    <div className="text-xs text-gray-400 mt-1">of queries have gaps</div>
+                                </div>
+                                <Target className="w-8 h-8 text-blue-100 text-blue-500" />
+                            </div>
+
+                            {/* Critical Severity */}
+                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                                <div>
+                                    <div className="flex items-center space-x-2 mb-1">
+                                        <div className="text-sm font-medium text-gray-500 uppercase tracking-wide">Critical Risk</div>
+                                        <div className="group relative">
+                                            <Info className="w-4 h-4 text-gray-400 cursor-help" />
+                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-50 pointer-events-none">
+                                                Percentage of queries where your brand is either invisible/unmentioned OR has specific negative sentiment issues.
+                                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="text-3xl font-bold text-gray-900">{stats.volumeContext.criticalPercentage}%</div>
+                                    <div className="text-xs text-gray-400 mt-1">queries in critical state</div>
+                                </div>
+                                <AlertTriangle className="w-8 h-8 text-orange-100 text-orange-500" />
+                            </div>
                         </div>
+
+                        {/* 2. Narrative Section (Conditional) */}
+                        {narrative ? (
+                            typeof narrative === 'string' ? (
+                                // Legacy Markdown Support
+                                <div className="bg-white rounded-xl shadow-lg border border-blue-100 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-blue-50 to-white px-8 py-4 border-b border-blue-100 flex justify-between items-center">
+                                        <div className="flex items-center space-x-2">
+                                            <Sparkles className="w-5 h-5 text-blue-600" />
+                                            <h2 className="text-lg font-bold text-gray-900">Strategic Analysis</h2>
+                                        </div>
+                                        <span className="text-xs text-gray-400">Generated: {new Date(generatedAt || '').toLocaleDateString()}</span>
+                                    </div>
+                                    <div className="p-8 prose prose-blue max-w-none prose-headings:font-bold prose-h3:text-gray-800 prose-p:text-gray-600 prose-li:text-gray-600">
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                            {narrative}
+                                        </ReactMarkdown>
+                                    </div>
+                                </div>
+                            ) : (
+                                // New Structured UI
+                                <div className="space-y-6">
+                                    <ExecutiveOverviewCard data={narrative.overview} />
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <DefenseGapCard data={narrative.defenseGap} />
+                                        <ThematicRisksCard data={narrative.thematicRisks} />
+                                        <StrategicActionsCard data={narrative.actions} />
+                                    </div>
+
+                                    <div className="flex justify-end text-xs text-gray-400 mt-2">
+                                        Generated: {new Date(generatedAt || '').toLocaleDateString()}
+                                    </div>
+                                </div>
+                            )
+                        ) : (
+                            <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
+                                <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Sparkles className="w-8 h-8 text-blue-500" />
+                                </div>
+                                <h3 className="text-lg font-semibold text-gray-900">Generate Your Strategy Report</h3>
+                                <p className="text-gray-500 max-w-md mx-auto mt-2 mb-6">
+                                    Unlock usage of our advanced LLM to analyze your performance gaps and write a personalized executive summary.
+                                </p>
+                                <button
+                                    onClick={handleGenerate}
+                                    className="inline-flex items-center space-x-2 text-blue-600 font-medium hover:text-blue-800 transition-colors"
+                                >
+                                    <span>Generate Report Now</span>
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
+
+                        {/* 3. Competitor Battleground */}
+                        <div className="mt-8">
+                            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                                <Target className="w-5 h-5 mr-2 text-red-500" />
+                                Competitor Battleground
+                            </h3>
+                            <CompetitorBattleground
+                                data={stats.competitorInsights}
+                                onOpenRecommendations={(compName) => setSelectedCompetitorForRecs(compName)}
+                            />
+                        </div>
+
                     </>
                 ) : null}
             </div>
 
-            {/* Health Analysis Modal - Kept for potential re-use or if linked from elsewhere, though currently unused in Carousel */}
+            {/* Modal */}
             {stats && (
                 <HealthAnalysisModal
                     isOpen={isHealthModalOpen}
@@ -174,7 +282,7 @@ export const ExecutiveSummaryPage: React.FC = () => {
                 />
             )}
 
-            {/* Competitor Recommendations Modal - Kept for potential re-use */}
+            {/* Competitor Recommendations Modal */}
             {selectedCompetitorForRecs && (
                 <CompetitorRecommendationsModal
                     isOpen={!!selectedCompetitorForRecs}
@@ -183,13 +291,11 @@ export const ExecutiveSummaryPage: React.FC = () => {
                     recommendations={recommendations}
                 />
             )}
-        </Layout>
+        </div>
     );
 };
 
 // --- Sub-Components ---
-
-import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 
 // New Modal for Competitor Recommendations
 const CompetitorRecommendationsModal: React.FC<{ isOpen: boolean; onClose: () => void; competitorName: string; recommendations: RecommendationV3[] }> = ({ isOpen, onClose, competitorName, recommendations }) => {

@@ -469,6 +469,15 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
       let visibilityScore = rec.visibility_score;
       let mentionRate = rec.mention_rate;
 
+      // Extract assetType from explanation (e.g., "[Video] Create a video..." -> "Video")
+      let assetType = null;
+      if (rec.explanation) {
+        const match = rec.explanation.match(/^\[(.*?)\]/);
+        if (match && match[1]) {
+          assetType = match[1];
+        }
+      }
+
       if (stepNum === 4) {
         // Backfill kpiBeforeValue if null (legacy rows): use brand's overall KPI from KPI table
         if (kpiBeforeValue === null && rec.kpi_id) {
@@ -507,6 +516,9 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
         completedAt: rec.completed_at,
         kpiBeforeValue: kpiBeforeValue,
         kpiAfterValue: rec.kpi_after_value,
+        howToFix: rec.how_to_fix,
+        assetType: assetType,
+        regenRetry: rec.regen_retry,
         reviewStatus: (rec.metadata as any)?.is_removed ? 'removed' : (rec.review_status || 'pending_review'),
         competitors_target: Array.isArray(rec.competitors_target) 
         ? rec.competitors_target.map((name: string) => {

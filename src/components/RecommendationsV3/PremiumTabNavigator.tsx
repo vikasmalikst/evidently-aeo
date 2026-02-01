@@ -12,6 +12,7 @@ interface PremiumTabNavigatorProps {
   currentStep: number;
   onStepClick?: (step: number) => void;
   attentionSteps?: Partial<Record<number, boolean>>;
+  counts?: Record<number, number>;
 }
 
 const tabs = [
@@ -21,7 +22,7 @@ const tabs = [
   { number: 4, label: 'Outcome Tracker', description: 'Track ROI', icon: IconTargetArrow }
 ];
 
-export const PremiumTabNavigator = ({ currentStep, onStepClick, attentionSteps }: PremiumTabNavigatorProps) => {
+export const PremiumTabNavigator = ({ currentStep, onStepClick, attentionSteps, counts }: PremiumTabNavigatorProps) => {
   const [hoveredTab, setHoveredTab] = useState<number | null>(null);
   const isTabClickable = (_tab: number) => Boolean(onStepClick);
 
@@ -59,6 +60,7 @@ export const PremiumTabNavigator = ({ currentStep, onStepClick, attentionSteps }
           const isActive = tab.number === currentStep;
           const isHovered = hoveredTab === tab.number && !isActive;
           const attention = Boolean(attentionSteps?.[tab.number]) && !isActive;
+          const count = counts?.[tab.number];
 
           return (
             <button
@@ -92,15 +94,28 @@ export const PremiumTabNavigator = ({ currentStep, onStepClick, attentionSteps }
               </motion.div>
 
               {/* Labels */}
-              <div className="flex flex-col items-start min-w-0">
-                <motion.span
-                  animate={{ fontWeight: isActive ? 600 : 500 }}
-                  className={`text-[14px] leading-tight transition-colors duration-200 ${
-                    isActive ? 'text-white' : isHovered ? 'text-[#00bcdc]' : 'text-[#1e293b]'
-                  }`}
-                >
-                  {tab.label}
-                </motion.span>
+              <div className="flex flex-col items-start min-w-0 flex-1">
+                <div className="flex items-center gap-2 w-full">
+                  <motion.span
+                    animate={{ fontWeight: isActive ? 600 : 500 }}
+                    className={`text-[14px] leading-tight transition-colors duration-200 ${
+                      isActive ? 'text-white' : isHovered ? 'text-[#00bcdc]' : 'text-[#1e293b]'
+                    }`}
+                  >
+                    {tab.label}
+                  </motion.span>
+                  
+                  {/* Count Badge */}
+                  {count !== undefined && (
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ml-auto ${
+                      isActive 
+                        ? 'bg-white/20 text-white' 
+                        : 'bg-slate-100 text-slate-500 border border-slate-200'
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </div>
                 <span
                   className={`text-[10px] leading-tight transition-colors duration-200 ${
                     isActive ? 'text-white/75' : 'text-[#94a3b8]'

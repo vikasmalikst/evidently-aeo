@@ -120,6 +120,14 @@ export class OpportunityRecommendationService {
             // Find matching opportunity for metadata if needed
             const opp = opportunities.find(o => o.queryId === l.queryId);
 
+            // Derive target competitors from all opportunities associated with this query
+            const relatedOpps = opportunities.filter(o => o.queryId === l.queryId);
+            const targetCompetitors = Array.from(new Set(
+                relatedOpps
+                    .map(o => o.competitor)
+                    .filter((c): c is string => c !== null)
+            ));
+
             // Map focusArea and kpi based on opportunity or LLM response
             let focusArea: 'visibility' | 'soa' | 'sentiment' = 'visibility';
             if (opp?.metricName?.toLowerCase().includes('soa') || opp?.metricName?.toLowerCase().includes('answer')) focusArea = 'soa';
@@ -143,7 +151,8 @@ export class OpportunityRecommendationService {
                 focus_sources: l.Amplification,
                 kpi: opp?.metricName || 'Visibility Index',
                 display_order: index,
-                is_approved: false
+                is_approved: false,
+                competitors_target: targetCompetitors
             };
         });
 

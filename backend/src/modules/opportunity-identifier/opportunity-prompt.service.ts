@@ -39,12 +39,16 @@ export class OpportunityPromptService {
                     queryText: opp.queryText,
                     topic: opp.topic,
                     metrics: [],
+                    competitors: [],
                     sources: opp.topSources.map(s => s.domain)
                 });
             }
             const q = queryMap.get(opp.queryId);
             if (!q.metrics.includes(opp.metricName)) {
                 q.metrics.push(opp.metricName);
+            }
+            if (opp.competitor && !q.competitors.includes(opp.competitor)) {
+                q.competitors.push(opp.competitor);
             }
         });
 
@@ -54,6 +58,7 @@ ID: ${q.id}
 Text: "${q.queryText}"
 Topic: ${q.topic || 'Not specified'}
 KPIs to Improve: ${q.metrics.join(', ')}
+Competitors to Target: ${q.competitors.length > 0 ? q.competitors.join(', ') : 'General (Brand Only)'}
 Available Channels: ${q.sources.join(', ') || 'No specific sources identified'}`;
         }).join('\n\n');
 

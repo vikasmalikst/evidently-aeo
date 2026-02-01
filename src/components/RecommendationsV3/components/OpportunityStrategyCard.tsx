@@ -1,6 +1,7 @@
 import React from 'react';
 import { RecommendationV3 } from '../../../api/recommendationsV3Api';
-import { IconClock, IconBolt, IconTarget, IconArrowUpRight } from '@tabler/icons-react';
+import { IconClock, IconBolt, IconTarget, IconArrowUpRight, IconUsers } from '@tabler/icons-react';
+import { SafeLogo } from '../../Onboarding/common/SafeLogo';
 
 interface OpportunityStrategyCardProps {
     recommendation: RecommendationV3;
@@ -134,6 +135,36 @@ export const OpportunityStrategyCard: React.FC<OpportunityStrategyCardProps> = (
                         Use targeted email newsletters to existing subscribers highlighting exclusive insights.
                     </p>
                 </div>
+
+                {/* Target Competitors Section */}
+                {recommendation.competitors_target && recommendation.competitors_target.length > 0 && (
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <IconUsers size={14} className="text-gray-400" />
+                            <h4 className="text-[11px] uppercase tracking-wider text-gray-500 font-bold">Target Competitors</h4>
+                        </div>
+                        <div className="flex flex-wrap gap-3 pl-6 border-l-2 border-gray-100">
+                            {recommendation.competitors_target.map((competitor) => {
+                                const name = typeof competitor === 'string' ? competitor : competitor.name;
+                                const domain = typeof competitor === 'string' ? competitor : (competitor.domain || competitor.name);
+                                const logo = typeof competitor === 'string' ? undefined : (competitor.logo || undefined);
+                                
+                                return (
+                                <div key={name} className="flex items-center gap-2 bg-gray-50 px-2 py-1.5 rounded-lg border border-gray-100">
+                                    <SafeLogo
+                                        domain={domain}
+                                        src={logo}
+                                        alt={name}
+                                        className="w-5 h-5 rounded-full object-contain bg-white"
+                                        size={20}
+                                    />
+                                    <span className="text-xs font-medium text-gray-700">{name}</span>
+                                </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* 3. Data Table Section */}

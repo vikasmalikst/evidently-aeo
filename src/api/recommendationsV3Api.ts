@@ -24,6 +24,12 @@ export interface IdentifiedKPI {
   displayOrder: number;
 }
 
+export interface CompetitorTarget {
+  name: string;
+  domain?: string | null;
+  logo?: string | null;
+}
+
 /**
  * Recommendation for V3 (simplified structure)
  */
@@ -66,6 +72,7 @@ export interface RecommendationV3 {
   howToFix?: string[];  // Step-by-step fix instructions (for domain audit recs)
   regenRetry?: number;  // Number of times content has been regenerated
   assetType?: string;   // Content Asset Type (e.g. 'article', 'short_video') 
+  competitors_target?: (string | CompetitorTarget)[]; // Competitors to target
 }
 
 /**

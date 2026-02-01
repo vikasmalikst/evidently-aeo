@@ -48,6 +48,7 @@ export interface OpportunityResponse {
     opportunities: Opportunity[];
     summary: OpportunitySummary;
     dateRange: { start: string; end: string };
+    totalAnalyzedQueries: number;
 }
 
 export interface OpportunityOptions {
@@ -265,7 +266,8 @@ export class OpportunityIdentifierService {
         return {
             opportunities,
             summary,
-            dateRange: { start: startIso, end: endIso }
+            dateRange: { start: startIso, end: endIso },
+            totalAnalyzedQueries: queriesWithMetrics.length
         };
     }
 

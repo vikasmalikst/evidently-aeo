@@ -20,6 +20,7 @@ import { brandService } from '../services/brand.service';
 import { brandDashboardService } from '../services/brand-dashboard';
 import { regenerateContentService } from '../services/recommendations/regenerate-content.service';
 import { graphRecommendationService } from '../services/recommendations/graph-recommendation.service';
+import { competitorCrudService } from '../services/competitor-management/competitor-crud.service';
 
 const router = express.Router();
 
@@ -241,6 +242,17 @@ router.get('/:generationId', authenticateToken, requireFeatureEntitlement('recom
       });
     }
 
+    // Fetch active competitors for enrichment
+    let competitorMap = new Map<string, any>();
+    try {
+        const competitorsData = await competitorCrudService.getActiveCompetitors(generation.brand_id, customerId);
+        competitorsData.competitors.forEach(c => {
+            competitorMap.set(c.name.toLowerCase().trim(), c);
+        });
+    } catch (err) {
+        console.warn('⚠️ [RecommendationsV3] Failed to fetch competitors for enrichment:', err);
+    }
+
     // Transform to API format
     const kpis = (kpisData || []).map(kpi => ({
       id: kpi.id,
@@ -280,6 +292,19 @@ router.get('/:generationId', authenticateToken, requireFeatureEntitlement('recom
       kpiBeforeValue: rec.kpi_before_value,
       kpiAfterValue: rec.kpi_after_value,
       reviewStatus: (rec.metadata as any)?.is_removed ? 'removed' : (rec.review_status || 'pending_review'),
+      competitors_target: Array.isArray(rec.competitors_target) 
+        ? rec.competitors_target.map((name: string) => {
+            // Handle case where it might already be an object (if saved differently in future)
+            if (typeof name === 'object' && name !== null) return name;
+            
+            const comp = competitorMap.get(String(name).toLowerCase().trim());
+            return {
+                name: name,
+                domain: comp?.domain || null,
+                logo: comp?.logo || null
+            };
+        })
+        : [],
       metadata: rec.metadata
     }));
 
@@ -339,7 +364,7 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
     // Verify generation belongs to customer
     const { data: generation } = await supabaseAdmin
       .from('recommendation_generations')
-      .select('id, customer_id, metadata')
+      .select('id, customer_id, metadata, brand_id')
       .eq('id', generationId)
       .eq('customer_id', customerId)
       .single();
@@ -349,6 +374,19 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
         success: false,
         error: 'Generation not found'
       });
+    }
+
+    // Fetch active competitors for enrichment
+    let competitorMap = new Map<string, any>();
+    if (generation.brand_id) {
+        try {
+            const competitorsData = await competitorCrudService.getActiveCompetitors(generation.brand_id, customerId);
+            competitorsData.competitors.forEach(c => {
+                competitorMap.set(c.name.toLowerCase().trim(), c);
+            });
+        } catch (err) {
+            console.warn('⚠️ [RecommendationsV3] Failed to fetch competitors for enrichment in step view:', err);
+        }
     }
 
     // Build query based on step - IMPORTANT: Always filter by customer_id
@@ -470,6 +508,19 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
         kpiBeforeValue: kpiBeforeValue,
         kpiAfterValue: rec.kpi_after_value,
         reviewStatus: (rec.metadata as any)?.is_removed ? 'removed' : (rec.review_status || 'pending_review'),
+        competitors_target: Array.isArray(rec.competitors_target) 
+        ? rec.competitors_target.map((name: string) => {
+            // Handle case where it might already be an object
+            if (typeof name === 'object' && name !== null) return name;
+            
+            const comp = competitorMap.get(String(name).toLowerCase().trim());
+            return {
+                name: name,
+                domain: comp?.domain || null,
+                logo: comp?.logo || null
+            };
+        })
+        : [],
         metadata: rec.metadata
       };
     });

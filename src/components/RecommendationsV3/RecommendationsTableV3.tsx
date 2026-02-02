@@ -429,37 +429,81 @@ export const RecommendationsTableV3 = ({
 
                                 if (isGenerating) {
                                   return (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border bg-[#fef3c7] text-[#92400e] border-[#fde68a]">
-                                      <div className="w-3 h-3 border-2 border-[#92400e] border-t-transparent rounded-full animate-spin mr-1.5" />
+                                    <motion.span 
+                                      initial={{ opacity: 0, scale: 0.9 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold border bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200 shadow-sm"
+                                    >
+                                      <motion.div 
+                                        className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full mr-2"
+                                        animate={{ rotate: 360 }}
+                                        transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                                      />
                                       Generating...
-                                    </span>
+                                    </motion.span>
                                   );
                                 }
 
                                 if (isGenerated) {
                                   return (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border bg-[#d1fae5] text-[#065f46] border-[#a7f3d0]">
-                                      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <motion.span 
+                                      initial={{ opacity: 0, scale: 0.8 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                                      className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold border bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-700 border-emerald-200 shadow-sm"
+                                    >
+                                      <motion.svg 
+                                        className="w-3.5 h-3.5 mr-1.5" 
+                                        fill="currentColor" 
+                                        viewBox="0 0 20 20"
+                                        initial={{ scale: 0 }}
+                                        animate={{ scale: 1 }}
+                                        transition={{ type: "spring", stiffness: 500, damping: 15, delay: 0.1 }}
+                                      >
                                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                      </svg>
+                                      </motion.svg>
                                       {generatedLabel}
-                                    </span>
+                                    </motion.span>
                                   );
                                 }
 
                                 return (
-                                  <button
+                                  <motion.button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       onAction(rec, actionType);
                                     }}
-                                    className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border bg-[#06c686] text-white border-[#05a870] hover:bg-[#05a870] transition-colors cursor-pointer"
+                                    whileHover={{ scale: 1.05, y: -1 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                                    className="group relative inline-flex items-center px-4 py-2 rounded-lg text-[12px] font-bold border-0 bg-gradient-to-r from-emerald-500 via-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-200/50 hover:shadow-xl hover:shadow-emerald-300/50 cursor-pointer overflow-hidden"
                                   >
-                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    </svg>
-                                    {actionLabel}
-                                  </button>
+                                    {/* Animated shimmer effect */}
+                                    <motion.div
+                                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12"
+                                      initial={{ x: "-100%" }}
+                                      animate={{ x: "200%" }}
+                                      transition={{
+                                        duration: 2,
+                                        repeat: Infinity,
+                                        repeatDelay: 3,
+                                        ease: "easeInOut"
+                                      }}
+                                    />
+                                    {/* Lightning icon with pulse */}
+                                    <motion.svg 
+                                      className="w-4 h-4 mr-1.5 relative" 
+                                      fill="none" 
+                                      stroke="currentColor" 
+                                      viewBox="0 0 24 24"
+                                      initial={{ opacity: 0.8 }}
+                                      animate={{ opacity: [0.8, 1, 0.8] }}
+                                      transition={{ duration: 2, repeat: Infinity }}
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </motion.svg>
+                                    <span className="relative">{actionLabel}</span>
+                                  </motion.button>
                                 );
                               })()}
                               {onStopTracking && (

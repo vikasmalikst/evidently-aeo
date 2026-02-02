@@ -195,21 +195,28 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
                         <AnimatePresence>
                             {saveFeedback && (
                                 <motion.div
-                                    initial={{ opacity: 0, x: -10 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0, x: 10 }}
+                                    initial={{ opacity: 0, x: -10, scale: 0.95 }}
+                                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                                    exit={{ opacity: 0, x: 10, scale: 0.95 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 25 }}
                                     className={`text-[12px] font-semibold py-2 px-4 rounded-lg flex items-center gap-2 ${saveFeedback.type === 'success'
                                         ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
                                         : 'bg-red-50 text-red-600 border border-red-100'
                                         }`}
                                 >
-                                    <IconCheck size={14} />
+                                    <motion.div
+                                        initial={{ scale: 0, rotate: -180 }}
+                                        animate={{ scale: 1, rotate: 0 }}
+                                        transition={{ type: "spring", stiffness: 500, damping: 20, delay: 0.1 }}
+                                    >
+                                        <IconCheck size={14} />
+                                    </motion.div>
                                     {saveFeedback.message}
                                 </motion.div>
                             )}
                         </AnimatePresence>
                     </div>
-                    <button
+                    <motion.button
                         onClick={async () => {
                             try {
                                 await onSave(sections);
@@ -219,20 +226,38 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
                             }
                         }}
                         disabled={isSaving || sections.length === 0}
-                        className="flex items-center gap-2.5 px-6 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-[13px] font-bold hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm active:scale-[0.98]"
+                        whileHover={{ scale: 1.02, y: -1 }}
+                        whileTap={{ scale: 0.98 }}
+                        transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                        className="group relative flex items-center gap-2.5 px-6 py-2.5 bg-gradient-to-r from-slate-50 to-white border border-slate-200 text-slate-700 rounded-xl text-[13px] font-bold hover:border-slate-300 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm overflow-hidden"
                     >
+                        {/* Subtle hover glow */}
+                        <motion.div 
+                            className="absolute inset-0 bg-gradient-to-r from-slate-100/0 via-slate-100/50 to-slate-100/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                            initial={false}
+                        />
                         {isSaving ? (
                             <>
-                                <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                                Saving...
+                                <motion.div 
+                                    className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full"
+                                    animate={{ rotate: 360 }}
+                                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                />
+                                <span className="relative">Saving...</span>
                             </>
                         ) : (
                             <>
-                                <IconDeviceFloppy size={18} />
-                                Save Configuration
+                                <motion.div
+                                    className="relative"
+                                    whileHover={{ rotate: [0, -10, 10, 0] }}
+                                    transition={{ duration: 0.4 }}
+                                >
+                                    <IconDeviceFloppy size={18} className="text-slate-500 group-hover:text-slate-700 transition-colors" />
+                                </motion.div>
+                                <span className="relative">Save Configuration</span>
                             </>
                         )}
-                    </button>
+                    </motion.button>
                 </div>
             </div>
         </div>

@@ -1065,6 +1065,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           }
         }}
         isSaving={generatingContentIds.has(recommendation.id!)}
+        competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name) || []}
       />
     );
   };

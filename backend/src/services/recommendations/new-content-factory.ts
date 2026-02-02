@@ -49,7 +49,8 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
         case 'podcast':
             return buildPodcastPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         case 'comparison_table':
-            return buildComparisonTablePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+            const competitors = ctx.recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name) || [];
+            return buildComparisonTablePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig, competitors);
         case 'social_media_thread':
             return buildSocialMediaThreadPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         default:

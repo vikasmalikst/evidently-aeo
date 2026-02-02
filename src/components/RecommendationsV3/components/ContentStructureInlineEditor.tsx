@@ -12,6 +12,7 @@ interface ContentStructureInlineEditorProps {
     onSave: (sections: StructureSection[]) => void;
     onChange?: (sections: StructureSection[]) => void; // Live update parent
     isSaving: boolean;
+    competitors?: string[]; // New prop
 }
 
 export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditorProps> = ({
@@ -20,7 +21,8 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
     initialSections,
     onSave,
     onChange,
-    isSaving
+    isSaving,
+    competitors
 }) => {
     // Initialize sections: Use provided initialSections OR fallback to the correct template based on contentType
     const [sections, setSections] = useState<StructureSection[]>(
@@ -36,13 +38,30 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
     }, [saveFeedback]);
 
     // Update sections if contentType changes and we are using defaults (no initialSections passed)
+    // Also re-applies if competitors change for fresh templates
     useEffect(() => {
         if (!initialSections && contentType) {
-            const newSections = CONTENT_TEMPLATES[contentType] || CONTENT_TEMPLATES['article'];
-            setSections(newSections);
-            onChange?.(newSections);
+            let template = CONTENT_TEMPLATES[contentType] || CONTENT_TEMPLATES['article'];
+
+            // Dynamic override for comparison table
+            if (contentType === 'comparison_table' && competitors && competitors.length > 0) {
+                 // Deep copy to avoid mutating constant
+                 template = JSON.parse(JSON.stringify(template));
+                 const tableSection = template.find((s: any) => s.id === 'table');
+                 if (tableSection) {
+                     const brandCol = '[Brand Name]';
+                     const compCols = competitors.map(c => `[${c}]`).join(' | ');
+                     const header = `| Feature | ${brandCol} | ${compCols} |`;
+                     const separator = `|---|---|${competitors.map(() => '---').join('|')}|`;
+                     const row = `| [Feature 1] | [Value] | ${competitors.map(() => '[Value]').join(' | ')} |`;
+                     tableSection.content = `${header}\n${separator}\n${row}`;
+                 }
+            }
+            
+            setSections(template);
         }
-    }, [contentType, initialSections, onChange]);
+    }, [contentType, initialSections]); // Intentionally omitting competitors from dep to avoid overwrite on edit, unless intentional reset logic is needed
+
 
     // Notify parent of changes whenever sections update
     const updateSections = (newSections: StructureSection[]) => {

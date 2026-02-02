@@ -246,17 +246,19 @@ interface TopicsFilters {
 import { getDefaultDateRange } from './dashboard/utils';
 
 export const Topics = () => {
-  const { queryTags } = useDashboardStore();
+  const { queryTags, startDate, endDate, setStartDate, setEndDate } = useDashboardStore();
   const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
   const [filters, setFilters] = useState<TopicsFilters>(() => {
-    const defaults = getDefaultDateRange();
-    return { startDate: defaults.start, endDate: defaults.end };
+    return { startDate, endDate };
   });
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const lastEndpointRef = useRef<string | null>(null);
 
   // Define updateFilters first so it can be used in competitor handlers
   const updateFilters = useCallback((next: TopicsFilters) => {
+    if (next.startDate) setStartDate(next.startDate);
+    if (next.endDate) setEndDate(next.endDate);
+
     setFilters((prev) => {
       const updated = { ...prev, ...next };
       // If competitors filter is provided, ensure it's properly set
@@ -265,7 +267,7 @@ export const Topics = () => {
       }
       return updated;
     });
-  }, []);
+  }, [setStartDate, setEndDate]);
 
   // Fetch competitors early to avoid delay in TopicsAnalysisPage
   const [competitors, setCompetitors] = useState<ManagedCompetitor[]>([]);
@@ -360,8 +362,8 @@ export const Topics = () => {
   // Memoize filters to prevent unnecessary endpoint recalculations
   const filtersKey = useMemo(() => {
     return JSON.stringify({
-      startDate: filters.startDate || '',
-      endDate: filters.endDate || '',
+      startDate: startDate || '',
+      endDate: endDate || '',
       collectorType: filters.collectorType || '',
       country: filters.country || '',
       competitors: filters.competitors ? filters.competitors.sort().join(',') : ''
@@ -374,8 +376,8 @@ export const Topics = () => {
     if (!filters.startDate || !filters.endDate) return null;
 
     // Parse calendar dates (YYYY-MM-DD)
-    const [startYear, startMonth, startDay] = filters.startDate.split('-').map(Number);
-    const [endYear, endMonth, endDay] = filters.endDate.split('-').map(Number);
+    const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+    const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
 
     // Create local date boundaries
     const start = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
@@ -385,7 +387,7 @@ export const Topics = () => {
       startDate: start.toISOString(),
       endDate: end.toISOString()
     };
-  }, [filters.startDate, filters.endDate]);
+  }, [startDate, endDate]);
 
   const topicsEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
@@ -449,9 +451,9 @@ export const Topics = () => {
 
   // Calculate previous period date range for comparison
   const previousPeriodRange = useMemo(() => {
-    if (!filters.startDate || !filters.endDate) return null;
-    return calculatePreviousPeriod(filters.startDate, filters.endDate);
-  }, [filters.startDate, filters.endDate]);
+    if (!startDate || !endDate) return null;
+    return calculatePreviousPeriod(startDate, endDate);
+  }, [startDate, endDate]);
 
   // Build previous period endpoint
   const previousPeriodEndpoint = useMemo(() => {
@@ -624,8 +626,8 @@ export const Topics = () => {
         onFiltersChange={updateFilters}
         availableModels={availableModels}
         currentCollectorType={filters.collectorType}
-        currentStartDate={filters.startDate}
-        currentEndDate={filters.endDate}
+        currentStartDate={startDate}
+        currentEndDate={endDate}
         competitors={competitors}
         selectedCompetitors={selectedCompetitors}
         onCompetitorToggle={handleCompetitorToggle}

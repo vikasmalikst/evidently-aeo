@@ -41,10 +41,7 @@ export const Prompts = () => {
   const navigate = useNavigate();
   const [selectedLLMs, setSelectedLLMs] = useState<string[]>([]);
   const [hoveredLlmIndex, setHoveredLlmIndex] = useState<number | null>(null); // State for hover effect
-  const defaultDateRange = getDefaultDateRange();
-  const [startDate, setStartDate] = useState<string>(defaultDateRange.start);
-  const [endDate, setEndDate] = useState<string>(defaultDateRange.end);
-  const { queryTags } = useDashboardStore();
+  const { queryTags, startDate, endDate, setStartDate, setEndDate } = useDashboardStore();
   const [allCompetitors, setAllCompetitors] = useState<ManagedCompetitor[]>([]);
   const [selectedCompetitors, setSelectedCompetitors] = useState<string[]>([]);
   const [metricType, setMetricType] = useState<'visibility' | 'sentiment' | 'mentions' | 'position' | 'share'>('visibility');

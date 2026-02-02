@@ -37,16 +37,13 @@ export const SearchSourcesR2 = () => {
   const [searchParams] = useSearchParams();
   const authLoading = useAuthStore((state) => state.isLoading);
   const { selectedBrandId, selectedBrand, isLoading: brandsLoading } = useManualBrandDashboard();
-  const { llmFilters, setLlmFilters, queryTags } = useDashboardStore();
+  const { llmFilters, setLlmFilters, queryTags, startDate, endDate, setStartDate, setEndDate } = useDashboardStore();
 
   // Read date range from URL params if available
   const urlStartDate = searchParams.get('startDate');
   const urlEndDate = searchParams.get('endDate');
   const highlightSource = searchParams.get('highlightSource');
 
-  const { start: defaultStart, end: defaultEnd } = getDefaultDateRange();
-  const [startDate, setStartDate] = useState<string>(urlStartDate || defaultStart);
-  const [endDate, setEndDate] = useState<string>(urlEndDate || defaultEnd);
   const [activeQuadrant, setActiveQuadrant] = useState<EnhancedSource['quadrant'] | null>(null);
   const [selectedTrendSources, setSelectedTrendSources] = useState<string[]>([]);
   const [trendMetric, setTrendMetric] = useState<'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations'>('impactScore');
@@ -73,7 +70,7 @@ export const SearchSourcesR2 = () => {
     if (highlightSource && !sourceSearchQuery) {
       setSourceSearchQuery(highlightSource);
     }
-  }, [urlStartDate, urlEndDate, startDate, endDate, highlightSource, sourceSearchQuery]);
+  }, [urlStartDate, urlEndDate, startDate, endDate, highlightSource, sourceSearchQuery, setStartDate, setEndDate]);
 
   const sourcesEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;

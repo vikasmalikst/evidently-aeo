@@ -11,7 +11,7 @@
  * Supports expandable rows with detailed information
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { IconChevronDown, IconChevronUp, IconTrash } from '@tabler/icons-react';
 import { RecommendationV3 } from '../../api/recommendationsV3Api';
 import { SafeLogo } from '../Onboarding/common/SafeLogo';
@@ -68,8 +68,7 @@ const JourneyTracker = ({
     targetStep = 2;
   }
 
-  return (
-    <div
+  return (    <div
       className="flex flex-col items-start justify-center cursor-pointer group py-1"
       onClick={(e) => {
         e.stopPropagation();
@@ -78,38 +77,51 @@ const JourneyTracker = ({
     >
       <div className="flex items-center gap-1.5 mb-1.5">
         {[1, 2, 3, 4].map((step) => {
-          // Color logic:
-          // Past steps: Solid Green
-          // Current step: Solid Green (or highlighted)
-          // Future steps: Gray
+          // Determine step state
+          const isComplete = step <= currentStage;
+          const isCurrent = step === currentStage;
+          const isFuture = step > currentStage;
 
-          let colorClass = 'bg-gray-200';
-
-          // Step 1 (Approved) is always done if we see this
-          if (step === 1) {
-            colorClass = 'bg-[#06c686]';
-          }
-          // For other steps
-          else if (step <= currentStage) {
-            colorClass = 'bg-[#06c686]';
-            // Add ring for current active stage
-            if (step === currentStage) {
-              colorClass += ' ring-2 ring-[#06c686]/30';
-            }
+          // Color grading: Subtle emerald tones
+          let dotClass = 'bg-slate-200';
+          if (isComplete) {
+            dotClass = 'bg-emerald-500';
           }
 
           return (
-            <div
+            <motion.div
               key={step}
-              className={`w-2 h-2 rounded-full transition-all duration-300 ${colorClass}`}
+              initial={false}
+              animate={{
+                scale: isCurrent ? 1.35 : 1,
+                opacity: isFuture ? 0.3 : 1
+              }}
+              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              className={`w-2 h-2 rounded-full transition-all duration-300 ${dotClass} ${
+                isCurrent ? 'ring-2 ring-emerald-400/30 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : ''
+              } ${
+                isComplete ? 'shadow-sm shadow-emerald-200' : ''
+              }`}
+              style={{
+                background: isComplete 
+                  ? 'radial-gradient(circle at 30% 30%, #34d399, #059669)' 
+                  : isFuture 
+                    ? '#cbd5e1' 
+                    : undefined
+              }}
             />
           );
         })}
       </div>
-      <span className="text-[10px] font-bold text-[#06c686] uppercase tracking-wide group-hover:text-[#05a870] flex items-center gap-1">
+      <motion.span 
+        initial={{ opacity: 0.9 }}
+        animate={{ opacity: [0.9, 1, 0.9] }}
+        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+        className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide group-hover:text-emerald-700 flex items-center gap-1"
+      >
         {stageLabel}
-        <strong className="text-xs">→</strong>
-      </span>
+        <strong className="text-xs opacity-60">→</strong>
+      </motion.span>
     </div>
   );
 };
@@ -131,28 +143,30 @@ const FocusAreaBadge = ({ area }: { area: 'visibility' | 'soa' | 'sentiment' }) 
 };
 
 const PriorityBadge = ({ priority }: { priority: 'High' | 'Medium' | 'Low' }) => {
-  const colors = {
-    High: 'bg-[#fee2e2] text-[#991b1b] border-[#fecaca]',
-    Medium: 'bg-[#fef3c7] text-[#92400e] border-[#fde68a]',
-    Low: 'bg-[#f3f4f6] text-[#4b5563] border-[#e5e7eb]'
+  // Elegant text-only: using opacity and weight to create hierarchy
+  const styles = {
+    High: 'text-slate-900 font-bold opacity-100',
+    Medium: 'text-slate-700 font-semibold opacity-80',
+    Low: 'text-slate-500 font-medium opacity-60'
   };
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${colors[priority]}`}>
+    <span className={`inline-flex items-center text-[10px] uppercase tracking-[0.2em] transition-opacity hover:opacity-100 min-w-[60px] ${styles[priority]}`}>
       {priority}
     </span>
   );
 };
 
 const EffortBadge = ({ effort }: { effort: 'Low' | 'Medium' | 'High' }) => {
-  const colors = {
-    High: 'bg-[#fed7aa] text-[#9a3412] border-[#fdba74]',
-    Medium: 'bg-[#fef3c7] text-[#92400e] border-[#fde68a]',
-    Low: 'bg-[#d1fae5] text-[#065f46] border-[#a7f3d0]'
+  // Elegant text-only
+  const styles = {
+    High: 'text-slate-900 font-bold opacity-100',
+    Medium: 'text-slate-700 font-semibold opacity-80',
+    Low: 'text-slate-500 font-medium opacity-60'
   };
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${colors[effort]}`}>
+    <span className={`inline-flex items-center text-[10px] uppercase tracking-[0.2em] transition-opacity hover:opacity-100 min-w-[60px] ${styles[effort]}`}>
       {effort}
     </span>
   );
@@ -195,6 +209,13 @@ export const RecommendationsTableV3 = ({
   // Only calculate selection state if checkboxes are shown
   const allSelected = showCheckboxes && recommendations.length > 0 && recommendations.every(r => r.id && selectedIds.has(r.id));
   const someSelected = showCheckboxes && recommendations.some(r => r.id && selectedIds.has(r.id));
+
+  // Auto-expand the first recommendation on mount if available
+  useEffect(() => {
+    if (recommendations.length > 0 && recommendations[0].id) {
+        setExpandedRows(new Set([recommendations[0].id]));
+    }
+  }, [recommendations.length]); // Only run when recommendations list loads/changes significantly
 
   const toggleExpand = (id: string) => {
     setExpandedRows(prev => {
@@ -310,7 +331,9 @@ export const RecommendationsTableV3 = ({
                             {hasDetails && (
                               <button
                                 onClick={() => toggleExpand(recId)}
-                                className="p-1.5 hover:bg-[#00bcdc]/10 rounded-lg transition-all duration-200 flex-shrink-0 mt-0.5 group"
+                                className={`p-1.5 hover:bg-[#00bcdc]/10 rounded-lg transition-all duration-200 flex-shrink-0 mt-0.5 group relative ${
+                                  !isExpanded && index === 0 ? 'animate-pulse ring-2 ring-[#00bcdc]/30' : ''
+                                }`}
                                 aria-label={isExpanded ? 'Collapse' : 'Expand'}
                               >
                                 {isExpanded ? (
@@ -348,24 +371,14 @@ export const RecommendationsTableV3 = ({
                         {/* Priority Column */}
                         <td className="px-4 py-6">
                           {rec.priority && (
-                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-bold ${rec.priority === 'High' ? 'bg-[#fee2e2] text-[#991b1b]' :
-                              rec.priority === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
-                                'bg-[#f3f4f6] text-[#4b5563]'
-                              }`} title={`Priority: ${rec.priority}`}>
-                              {rec.priority.charAt(0)}
-                            </span>
+                            <PriorityBadge priority={rec.priority} />
                           )}
                         </td>
 
                         {/* Effort Column */}
                         <td className="px-4 py-6">
                           {rec.effort && (
-                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-bold ${rec.effort === 'Low' ? 'bg-[#d1fae5] text-[#065f46]' :
-                              rec.effort === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
-                                'bg-[#fee2e2] text-[#991b1b]'
-                              }`} title={`Effort: ${rec.effort}`}>
-                              {rec.effort.charAt(0)}
-                            </span>
+                            <EffortBadge effort={rec.effort} />
                           )}
                         </td>
 

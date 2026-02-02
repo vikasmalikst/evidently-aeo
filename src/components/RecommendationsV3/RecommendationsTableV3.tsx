@@ -55,16 +55,16 @@ const JourneyTracker = ({
 
   if (rec.isCompleted) {
     currentStage = 4;
-    stageLabel = 'Tracking';
+    stageLabel = 'Approved';
     targetStep = 4;
   } else if (rec.isContentGenerated) {
     currentStage = 3;
-    stageLabel = 'Refine';
+    stageLabel = 'Approved';
     targetStep = 3;
   } else {
     // Just approved
     currentStage = 2;
-    stageLabel = 'Drafting';
+    stageLabel = 'Approved';
     targetStep = 2;
   }
 
@@ -236,6 +236,12 @@ export const RecommendationsTableV3 = ({
               <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[200px]">
                 Source/Domain
               </th>
+              <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[80px]">
+                Priority
+              </th>
+              <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[80px]">
+                Effort
+              </th>
               {showStatusDropdown && (
                 <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[160px]">
                   Status
@@ -324,8 +330,8 @@ export const RecommendationsTableV3 = ({
                         </td>
 
                         <td className="px-4 py-5">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-shrink-0 w-5 h-5 rounded overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
+                          <div className="flex flex-col items-start gap-1">
+                            <div className="flex-shrink-0 w-6 h-6 rounded overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
                               <SafeLogo
                                 domain={rec.citationSource}
                                 className="w-4 h-4 object-contain"
@@ -333,11 +339,36 @@ export const RecommendationsTableV3 = ({
                                 alt={rec.citationSource}
                               />
                             </div>
-                            <p className="text-[12px] text-[var(--text-body)] truncate max-w-[150px]" title={rec.citationSource}>
+                            <p className="text-[11px] text-[var(--text-body)] truncate max-w-[150px] leading-tight" title={rec.citationSource}>
                               {rec.citationSource}
                             </p>
                           </div>
                         </td>
+
+                        {/* Priority Column */}
+                        <td className="px-4 py-5">
+                          {rec.priority && (
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-bold ${rec.priority === 'High' ? 'bg-[#fee2e2] text-[#991b1b]' :
+                                rec.priority === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
+                                  'bg-[#f3f4f6] text-[#4b5563]'
+                              }`} title={`Priority: ${rec.priority}`}>
+                              {rec.priority.charAt(0)}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Effort Column */}
+                        <td className="px-4 py-5">
+                          {rec.effort && (
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-bold ${rec.effort === 'Low' ? 'bg-[#d1fae5] text-[#065f46]' :
+                                rec.effort === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
+                                  'bg-[#fee2e2] text-[#991b1b]'
+                              }`} title={`Effort: ${rec.effort}`}>
+                              {rec.effort.charAt(0)}
+                            </span>
+                          )}
+                        </td>
+
                         {showStatusDropdown && (
                           <td className="px-4 py-3">
                             <div className="relative group min-w-[140px]">
@@ -450,7 +481,7 @@ export const RecommendationsTableV3 = ({
                       </motion.tr>
                       {isExpanded && (
                         <tr key={`${recId}-details`} className="bg-white">
-                          <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-0 py-0">
+                          <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 8 : 7) : (showActions ? 7 : 6)) : (showStatusDropdown ? (showActions ? 7 : 6) : (showActions ? 6 : 5))} className="px-0 py-0">
                             {/* Content Area - Unified with table row */}
                             {renderExpandedContent ? (
                               <div className="border-t border-[#e2e8f0]">
@@ -483,19 +514,6 @@ export const RecommendationsTableV3 = ({
                                       <div>
                                         <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wide mb-1">Timeline</p>
                                         <p className="text-[13px] font-semibold text-[#0f172a]">{rec.timeline}</p>
-                                      </div>
-                                    )}
-
-                                    {/* Effort */}
-                                    {rec.effort && (
-                                      <div>
-                                        <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wide mb-1">Effort</p>
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${rec.effort === 'Low' ? 'bg-[#d1fae5] text-[#065f46]' :
-                                          rec.effort === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
-                                            'bg-[#fee2e2] text-[#991b1b]'
-                                          }`}>
-                                          {rec.effort}
-                                        </span>
                                       </div>
                                     )}
 

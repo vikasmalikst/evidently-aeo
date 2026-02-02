@@ -5,9 +5,10 @@ import { VideoAEOScoringService } from './video-aeo-scoring.service';
 import { PodcastAEOScoringService } from './podcast-aeo-scoring.service';
 import { ComparisonTableAEOScoringService } from './comparison-table-aeo-scoring.service';
 import { ExpertCommunityResponseAEOScoringService } from './expert-community-response-aeo-scoring.service';
+import { SocialMediaAEOScoringService } from './social-media-aeo-scoring.service';
 
 // Update ContentType to match keys we expect from frontend
-export type ContentType = 'article' | 'whitepaper' | 'video' | 'short_video' | 'podcast' | 'comparison_table' | 'expert_community_response';
+export type ContentType = 'article' | 'whitepaper' | 'video' | 'short_video' | 'podcast' | 'comparison_table' | 'expert_community_response' | 'social_media_thread';
 
 export class AEOScoringFactory {
     private static services: Record<string, IAEOScoringService> = {
@@ -17,7 +18,8 @@ export class AEOScoringFactory {
         'short_video': new VideoAEOScoringService(), // Map short_video to video scorer
         'podcast': new PodcastAEOScoringService(),
         'comparison_table': new ComparisonTableAEOScoringService(), // Dedicated scorer
-        'expert_community_response': new ExpertCommunityResponseAEOScoringService() // Dedicated scorer
+        'expert_community_response': new ExpertCommunityResponseAEOScoringService(), // Dedicated scorer
+        'social_media_thread': new SocialMediaAEOScoringService() // Dedicated scorer
     };
 
     public static getService(type: ContentType = 'article'): IAEOScoringService {

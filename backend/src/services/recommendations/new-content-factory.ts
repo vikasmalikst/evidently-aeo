@@ -8,6 +8,9 @@ import { buildShortVideoPrompt } from './prompts/short-video-prompt';
 import { buildExpertResponsePrompt } from './prompts/expert-response-prompt';
 import { buildPodcastPrompt } from './prompts/podcast-prompt';
 import { buildComparisonTablePrompt } from './prompts/comparison-table-prompt';
+import { buildSocialMediaThreadPrompt } from './prompts/social-media-thread-prompt';
+
+// ... (existing imports)
 
 // ... (existing imports)
 
@@ -47,6 +50,8 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
             return buildPodcastPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         case 'comparison_table':
             return buildComparisonTablePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+        case 'social_media_thread':
+            return buildSocialMediaThreadPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         default:
             return null;
     }

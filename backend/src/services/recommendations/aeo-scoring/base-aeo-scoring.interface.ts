@@ -29,6 +29,17 @@ export interface AEOScoreBreakdown {
     edgeCaseCoverage?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
     timeliness?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
     llmReadiness?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    // Social Media Thread Specific
+    openingAnswerQuality?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    threadStructure?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    informationalDensity_sm?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string }; // _sm suffix to avoid conflict if desired, or reuse generic
+    languageTone_sm?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    llmParsability?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    semanticClarity_sm?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    comparativeReasoning_sm?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    completenessOfExplanation?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    trustAuthoritySignals?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    followUpReadiness_sm?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
 }
 
 export interface AEOScoreResult {

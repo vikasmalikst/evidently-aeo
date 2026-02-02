@@ -11,40 +11,6 @@ export function buildPodcastPrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Default structure for Podcast (AEO-Optimized)
-    const defaultSections = [
-        {
-            id: "intro",
-            title: "Introduction & Topic Setup",
-            content: "<Host introduces the core question/problem clearly>",
-            sectionType: "intro"
-        },
-        {
-            id: "core_concept",
-            title: "The Core Insight",
-            content: "<Expert defines the solution/concept explicitly>",
-            sectionType: "explanation"
-        },
-        {
-            id: "deep_dive",
-            title: "Deep Dive Analysis",
-            content: "<Discussion on the 'how' and 'why' mechanisms>",
-            sectionType: "discussion"
-        },
-        {
-            id: "nuance",
-            title: "Limitations & Real-World Nuance",
-            content: "<'It depends on...' discussion>",
-            sectionType: "context"
-        },
-        {
-            id: "key_takeaways",
-            title: "Key Takeaways",
-            content: "<Host summarizes the 3 main points>",
-            sectionType: "summary"
-        }
-    ];
-
     const sectionsToUse = structureConfig?.sections && structureConfig.sections.length > 0
         ? structureConfig.sections.map(s => ({
             id: s.id,
@@ -52,7 +18,7 @@ export function buildPodcastPrompt(
             content: `<${s.content || 'Generate podcast dialogue for this segment'}>`,
             sectionType: s.sectionType || "custom"
         }))
-        : defaultSections;
+        : [];
 
     const sectionsJson = JSON.stringify(sectionsToUse, null, 2);
 

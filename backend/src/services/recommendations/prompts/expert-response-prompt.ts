@@ -11,40 +11,6 @@ export function buildExpertResponsePrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Default structure for Expert Responses (AEO-Optimized)
-    const defaultSections = [
-        {
-            id: "direct_stance",
-            title: "The Verdict",
-            content: "<Clear, decisive answer based on experience (e.g., 'Yes, but only if...')>",
-            sectionType: "answer"
-        },
-        {
-            id: "experience_context",
-            title: "Real-World Experience",
-            content: "<'In my experience...' / 'We ran this in production...'>",
-            sectionType: "context"
-        },
-        {
-            id: "reasoning",
-            title: "The 'Why'",
-            content: "<Technical or strategic reasoning behind the verdict>",
-            sectionType: "explanation"
-        },
-        {
-            id: "tradeoffs",
-            title: "Trade-offs & Alternatives",
-            content: "<Honest comparison (upsides/downsides)>",
-            sectionType: "comparison"
-        },
-        {
-            id: "conclusion",
-            title: "Final Recommendation",
-            content: "<Summing it up>",
-            sectionType: "summary"
-        }
-    ];
-
     const sectionsToUse = structureConfig?.sections && structureConfig.sections.length > 0
         ? structureConfig.sections.map(s => ({
             id: s.id,
@@ -52,7 +18,7 @@ export function buildExpertResponsePrompt(
             content: `<${s.content || 'Generate expert insight for this section'}>`,
             sectionType: s.sectionType || "custom"
         }))
-        : defaultSections;
+        : [];
 
     const sectionsJson = JSON.stringify(sectionsToUse, null, 2);
 

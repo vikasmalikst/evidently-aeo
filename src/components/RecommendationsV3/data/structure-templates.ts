@@ -64,28 +64,16 @@ export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> 
     ],
     short_video: [
         {
-            id: "hook",
-            title: "The Hook (0-3s)",
-            content: "Visual/Text hook that states the specific problem immediately",
-            sectionType: "hook"
+            id: "transcript",
+            title: "Full Audio Transcript",
+            content: "Verbatim spoken-word script optimized for high-velocity reading. Must include a 'Hook' (0-3s), direct 'Answer' (3-20s), 'Explanation' (20-50s) and a quotable 'Takeaway' (50-60s).",
+            sectionType: "transcript"
         },
         {
-            id: "direct_answer",
-            title: "The Answer (Core Concept)",
-            content: "The single, explicit answer/solution. No fluff.",
-            sectionType: "answer"
-        },
-        {
-            id: "explanation",
-            title: "The Why (Explanation)",
-            content: "Brief explanation of mechanism or proof (1-2 sentences)",
-            sectionType: "explanation"
-        },
-        {
-            id: "takeaway",
-            title: "The Takeaway (Quotable)",
-            content: "One memorable, quotable statement summarizing the value",
-            sectionType: "summary"
+            id: "production_tips",
+            title: "Production Guidelines",
+            content: "Strategic visual & audio direction. Include camera angles, tone of voice, text overlays for key terms, and timing cues to maximize retention and AEO signals.",
+            sectionType: "tips"
         }
     ],
     expert_community_response: [

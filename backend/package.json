@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/app.js",
+    "verify-scoring": "ts-node src/scripts/verify-aeo-scoring.ts",
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "dev:safe": "./start-dev.sh",
     "cleanup": "./cleanup-ports.sh",

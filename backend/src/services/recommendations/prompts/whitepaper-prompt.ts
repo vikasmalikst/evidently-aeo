@@ -11,46 +11,6 @@ export function buildWhitepaperPrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Default structure for Whitepapers (AEO-Optimized)
-    const defaultSections = [
-        {
-            id: "exec_summary",
-            title: "Executive Summary",
-            content: "<Standalone answer to the core problem (200-300 words)>",
-            sectionType: "summary"
-        },
-        {
-            id: "problem_context",
-            title: "Problem Statement & Context",
-            content: "<Explicit definition of the problem and key concepts>",
-            sectionType: "context"
-        },
-        {
-            id: "methodology",
-            title: "Methodology & Approach",
-            content: "<How we arrived at these conclusions>",
-            sectionType: "explanation"
-        },
-        {
-            id: "analysis",
-            title: "In-Depth Analysis",
-            content: "<Detailed breakdown with causal relationships (Why > What)>",
-            sectionType: "analysis"
-        },
-        {
-            id: "limitations",
-            title: "Limitations & Scope",
-            content: "<Explicitly state what this does NOT cover>",
-            sectionType: "constraints"
-        },
-        {
-            id: "conclusion",
-            title: "Key Takeaways",
-            content: "<Bullet points for AI extraction>",
-            sectionType: "summary"
-        }
-    ];
-
     const sectionsToUse = structureConfig?.sections && structureConfig.sections.length > 0
         ? structureConfig.sections.map(s => ({
             id: s.id,
@@ -58,7 +18,7 @@ export function buildWhitepaperPrompt(
             content: `<${s.content || 'Generate authoritative content for this section'}>`,
             sectionType: s.sectionType || "custom"
         }))
-        : defaultSections;
+        : [];
 
     const sectionsJson = JSON.stringify(sectionsToUse, null, 2);
 

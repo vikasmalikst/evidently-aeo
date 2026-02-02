@@ -92,7 +92,9 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
                             <IconSparkles size={20} className="text-white" />
                         </div>
                         <div>
-                            <h4 className="text-[15px] font-bold text-slate-800">Article Template</h4>
+                            <h4 className="text-[15px] font-bold text-slate-800 capitalize">
+                                {contentType.replace(/_/g, ' ')} Template
+                            </h4>
                             <p className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">Customize the flow for AI Generation</p>
                         </div>
                     </div>

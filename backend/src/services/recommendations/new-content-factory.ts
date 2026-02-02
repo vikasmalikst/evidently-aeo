@@ -122,34 +122,6 @@ function buildBlogArticlePrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Default structure if none provided
-    const defaultSections = [
-        {
-            id: "direct_answer",
-            title: "Direct Answer",
-            content: "<Concise answer to the primary question (80–120 words)>",
-            sectionType: "answer"
-        },
-        {
-            id: "how_it_works",
-            title: "How It Works",
-            content: "<Explain mechanism step-by-step>",
-            sectionType: "explanation"
-        },
-        {
-            id: "comparison",
-            title: "Comparison With Alternatives",
-            content: "<Objective comparison with competitors>",
-            sectionType: "comparison"
-        },
-        {
-            id: "limitations",
-            title: "Limitations and Trade-Offs",
-            content: "<What this does NOT solve>",
-            sectionType: "constraints"
-        }
-    ];
-
     const sectionsToUse = structureConfig?.sections && structureConfig.sections.length > 0
         ? structureConfig.sections.map(s => ({
             id: s.id,
@@ -161,7 +133,7 @@ function buildBlogArticlePrompt(
             content: `<${s.content || 'Generate relevant content for this section'}>`,
             sectionType: s.sectionType || "custom"
         }))
-        : defaultSections;
+        : [];
 
     // Convert sections to JSON string for the prompt example, but we need to ensure formatting is clean
     const sectionsJson = JSON.stringify(sectionsToUse, null, 2);

@@ -410,7 +410,7 @@ export const ScheduledJobs = () => {
     }
     try {
       setOllamaLoading(true);
-      setOllamaError(null);
+      // Don't clear error here - it clears user feedback messages
       const response = await apiClient.get<
         ApiResponse<{ ollamaUrl: string; ollamaModel: string; useOllama: boolean }>
       >(`/admin/brands/${selectedBrandId}/local-llm`);
@@ -419,7 +419,10 @@ export const ScheduledJobs = () => {
       }
     } catch (error) {
       console.error('Failed to load Ollama settings:', error);
-      setOllamaError('Failed to load Ollama settings');
+      // Only set error if there's no existing success message being shown
+      if (!ollamaSuccess) {
+        setOllamaError('Failed to load Ollama settings');
+      }
     } finally {
       setOllamaLoading(false);
     }
@@ -431,13 +434,14 @@ export const ScheduledJobs = () => {
     }
     try {
       setOllamaHealthChecking(true);
-      setOllamaError(null);
+      // Don't clear error here - it clears user feedback messages
       const response = await apiClient.get<
         ApiResponse<{ healthy: boolean; error?: string; responseTime?: number }>
       >(`/admin/brands/${selectedBrandId}/local-llm/health`);
       if (response.success && response.data) {
         setOllamaHealth(response.data);
-        if (!response.data.healthy) {
+        // Only set error if health check shows unhealthy AND no success message is showing
+        if (!response.data.healthy && !ollamaSuccess) {
           setOllamaError(response.data.error || 'Ollama is not available');
         }
       }
@@ -482,7 +486,8 @@ export const ScheduledJobs = () => {
 
       if (response.success) {
         setOllamaSuccess('Ollama settings saved successfully!');
-        setTimeout(() => setOllamaSuccess(null), 3000);
+        setOllamaError(null); // Only clear error on explicit success
+        setTimeout(() => setOllamaSuccess(null), 5000); // Increased from 3s to 5s
 
         // Auto-check health after saving if Ollama is enabled
         if (ollamaSettings.useOllama) {
@@ -556,7 +561,11 @@ export const ScheduledJobs = () => {
 
   const loadJobs = async () => {
     try {
-      setLoading(true);
+      // Only show full loading state on initial load
+      if (jobs.length === 0) {
+        setLoading(true);
+      }
+
       if (!effectiveCustomerId) return;
       const params = new URLSearchParams({ customer_id: effectiveCustomerId });
       if (effectiveBrandId) {
@@ -976,8 +985,13 @@ export const ScheduledJobs = () => {
     }
   };
 
-  if (loading) {
-    return <div className="p-8">Loading...</div>;
+  if (loading && jobs.length === 0) {
+    return (
+      <div className="flex items-center justify-center p-20">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <span className="ml-4 text-xl font-medium text-gray-600">Loading Scheduled Jobs...</span>
+      </div>
+    );
   }
 
   return (

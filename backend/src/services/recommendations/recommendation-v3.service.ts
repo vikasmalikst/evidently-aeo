@@ -868,6 +868,30 @@ Return ONLY a JSON array with the personalized recommendations.`;
       }
 
       console.log(`💾 [RecommendationV3Service] Saved ${kpis.length} KPIs and ${finalForInsert.length} recommendations (${recommendations.length - finalForInsert.length} filtered out)`);
+
+      // Clear onboarding_active flag if present
+      try {
+        const { data: brand } = await supabaseAdmin
+          .from('brands')
+          .select('metadata')
+          .eq('id', brandId)
+          .single();
+
+        if (brand?.metadata?.onboarding_active) {
+          const updatedMetadata = {
+            ...brand.metadata,
+            onboarding_active: false
+          };
+          await supabaseAdmin
+            .from('brands')
+            .update({ metadata: updatedMetadata })
+            .eq('id', brandId);
+          console.log(`✅ [RecommendationV3Service] Cleared onboarding_active flag for brand ${brandId}`);
+        }
+      } catch (e) {
+        console.warn(`⚠️ [RecommendationV3Service] Failed to clear onboarding_active flag:`, e);
+      }
+
       return generationId;
 
     } catch (error) {

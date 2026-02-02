@@ -280,7 +280,7 @@ export const MeasurePage = () => {
   const authLoading = useAuthStore((state) => state.isLoading);
 
   // Orchestrate automated onboarding steps
-  useOnboardingOrchestrator(selectedBrandId);
+  useOnboardingOrchestrator(selectedBrand);
 
   // Process dashboard data into chart models
   const processedData = useMemo(() => {

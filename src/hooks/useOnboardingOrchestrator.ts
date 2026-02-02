@@ -10,8 +10,10 @@ import { apiClient } from '../lib/apiClient';
  * 3. Waits for Audit to complete.
  * 4. Triggers Recommendation Generation.
  */
-export const useOnboardingOrchestrator = (brandId: string | null) => {
-    const { data: progress } = useOnboardingProgress(brandId);
+export const useOnboardingOrchestrator = (brand: any | null) => {
+    const brandId = brand?.id;
+    const isOnboardingActive = brand?.metadata?.onboarding_active === true;
+    const { data: progress } = useOnboardingProgress(brandId, isOnboardingActive);
 
     // Use refs to prevent double-firing strict mode or rapid updates
     const hasTriggeredAudit = useRef(false);

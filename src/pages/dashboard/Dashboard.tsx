@@ -47,7 +47,7 @@ export const Dashboard = () => {
   } = useDashboardData();
 
   // Orchestrate automated onboarding steps (Domain Audit -> Recommendations)
-  useOnboardingOrchestrator(selectedBrandId);
+  useOnboardingOrchestrator(selectedBrand);
 
   // Progress UI is now accessed via the Header bell (minimizable modal)
   // so we no longer render a separate full-screen processing state here.

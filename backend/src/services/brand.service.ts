@@ -293,6 +293,7 @@ export class BrandService {
           headquarters: brandData.metadata?.headquarters,
           founded_year: brandData.metadata?.founded_year,
           brand_logo: (brandData as any).logo || brandData.metadata?.logo || undefined,
+          onboarding_active: true // Mark as active during update/onboarding
         };
 
         const { data: updatedBrand, error: updateError } = await supabaseAdmin
@@ -423,7 +424,8 @@ export class BrandService {
           headquarters: brandData.metadata?.headquarters,
           founded_year: brandData.metadata?.founded_year,
           brand_logo: (brandData as any).logo || brandData.metadata?.logo || undefined,
-          competitors_detail: verifiedCompetitors
+          competitors_detail: verifiedCompetitors,
+          onboarding_active: true // Mark as active during creation
         };
 
         const brandSlug = brandData.brand_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');

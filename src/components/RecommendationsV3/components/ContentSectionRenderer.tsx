@@ -141,26 +141,11 @@ function getSectionIcon(sectionType: ContentSectionType): React.ReactNode {
 }
 
 /**
- * Returns a badge color for the section type
+ * Returns a badge color for the section type - Grayscale Palette
  */
-function getSectionBadgeStyle(sectionType: ContentSectionType): string {
-  switch (sectionType) {
-    case 'comparison_table':
-      return 'bg-[#e0f2fe] text-[#0369a1]';
-    case 'interactive_tool_spec':
-      return 'bg-[#ede9fe] text-[#7c3aed]';
-    case 'code_block':
-    case 'schema_markup':
-      return 'bg-[#d1fae5] text-[#047857]';
-    case 'whitepaper_metadata':
-      return 'bg-[#fef3c7] text-[#92400e]';
-    case 'faq':
-      return 'bg-[#fce7f3] text-[#be185d]';
-    case 'cta':
-      return 'bg-[#bbf7d0] text-[#166534]';
-    default:
-      return 'bg-[#e2e8f0] text-[#64748b]';
-  }
+function getSectionBadgeStyle(_sectionType: ContentSectionType): string {
+  // Uniform grayscale for clean, professional look
+  return 'bg-slate-100 text-slate-500 border border-slate-200';
 }
 
 /**

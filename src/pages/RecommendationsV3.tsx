@@ -2257,10 +2257,15 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                     return (
                                       <div className="space-y-4">
-                                        {/* Header with overall title */}
-                                        <div className="bg-gradient-to-r from-[#00bcdc] to-[#06c686] rounded-lg p-4 text-white">
-                                          <h3 className="text-[18px] font-bold">{contentTitle}</h3>
-                                          <p className="text-[12px] opacity-80 mt-1">v4.0 · Sectioned Content · {sections.length} sections</p>
+                                        {/* Header with overall title - Clean Design */}
+                                        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                                          <div className="flex items-center gap-3">
+                                            <div className="w-1 h-10 bg-gradient-to-b from-slate-300 to-slate-400 rounded-full" />
+                                            <div>
+                                              <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
+                                              <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections · v4.0</p>
+                                            </div>
+                                          </div>
                                         </div>
 
                                         {/* Section Cards */}
@@ -2271,13 +2276,13 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                           return (
                                             <div key={section.id} className="bg-white border border-[#e2e8f0] rounded-lg shadow-sm overflow-hidden">
-                                              {/* Section Header */}
-                                              <div className="flex items-center justify-between p-3 bg-[#f8fafc] border-b border-[#e2e8f0]">
-                                                <div className="flex items-center gap-2">
-                                                  <span className="w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[11px] font-bold flex items-center justify-center">
-                                                    {idx + 1}
+                                              {/* Section Header - Clean Muted Style */}
+                                              <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50 border-b border-slate-100">
+                                                <div className="flex items-center gap-3">
+                                                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                                                    {String(idx + 1).padStart(2, '0')}
                                                   </span>
-                                                  <h4 className="text-[14px] font-medium text-[#1a1d29]">{section.title}</h4>
+                                                  <h4 className="text-[14px] font-medium text-slate-800">{section.title}</h4>
                                                   <SectionTypeBadge sectionType={section.sectionType} />
                                                 </div>
                                                 <div className="flex items-center gap-2">
@@ -2286,7 +2291,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                       const sectionKey = `${recId}_${section.id}`;
                                                       setActiveFeedbackSection(activeFeedbackSection === sectionKey ? null : sectionKey);
                                                     }}
-                                                    className={`p-1 rounded-md transition-colors relative ${feedback.trim().length > 0 ? 'text-[#f59e0b] bg-[#fff7ed]' : 'text-[#64748b] hover:text-[#00bcdc] hover:bg-[#f1f5f9]'}`}
+                                                    className={`p-1.5 rounded-md transition-colors relative ${feedback.trim().length > 0 ? 'text-slate-600 bg-slate-100' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
                                                     title="Feedback"
                                                   >
                                                     <IconMessageCircle size={16} />
@@ -2302,7 +2307,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                         setEditingId(`${recId}_${section.id}`);
                                                       }
                                                     }}
-                                                    className="px-2 py-1 text-[11px] text-[#64748b] hover:text-[#00bcdc] transition-colors"
+                                                    className="px-2.5 py-1 text-[11px] text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
                                                   >
                                                     {isEditingSection ? '✓ Done' : '✎ Edit'}
                                                   </button>

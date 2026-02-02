@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { IconPlus, IconTrash, IconChevronUp, IconChevronDown, IconCheck, IconSparkles, IconGripVertical } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconSparkles, IconGripVertical, IconDeviceFloppy, IconCheck } from '@tabler/icons-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { StructureSection } from './ContentStructureEditor';
 import { TableStructureEditor } from './TableStructureEditor';
@@ -10,6 +10,7 @@ interface ContentStructureInlineEditorProps {
     contentType?: ContentTemplateType; // New prop for dynamic templating
     initialSections?: StructureSection[];
     onSave: (sections: StructureSection[]) => void;
+    onChange?: (sections: StructureSection[]) => void; // Live update parent
     isSaving: boolean;
 }
 
@@ -18,6 +19,7 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
     contentType = 'article', // Default to article
     initialSections,
     onSave,
+    onChange,
     isSaving
 }) => {
     // Initialize sections: Use provided initialSections OR fallback to the correct template based on contentType
@@ -36,14 +38,22 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
     // Update sections if contentType changes and we are using defaults (no initialSections passed)
     useEffect(() => {
         if (!initialSections && contentType) {
-            setSections(CONTENT_TEMPLATES[contentType] || CONTENT_TEMPLATES['article']);
+            const newSections = CONTENT_TEMPLATES[contentType] || CONTENT_TEMPLATES['article'];
+            setSections(newSections);
+            onChange?.(newSections);
         }
-    }, [contentType, initialSections]);
+    }, [contentType, initialSections, onChange]);
+
+    // Notify parent of changes whenever sections update
+    const updateSections = (newSections: StructureSection[]) => {
+        setSections(newSections);
+        onChange?.(newSections);
+    };
 
     const handleAddSection = () => {
         const newId = `custom_section_${Date.now()}`;
         // Insert at the top instead of bottom
-        setSections([
+        const newSections = [
             {
                 id: newId,
                 title: "New Section",
@@ -51,35 +61,25 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
                 sectionType: "custom"
             },
             ...sections
-        ]);
+        ];
+        updateSections(newSections);
     };
 
     const handleRemoveSection = (index: number) => {
         const newSections = [...sections];
         newSections.splice(index, 1);
-        setSections(newSections);
+        updateSections(newSections);
     };
 
     const handleUpdateSection = (index: number, field: keyof StructureSection, value: string) => {
         const newSections = [...sections];
         newSections[index] = { ...newSections[index], [field]: value };
-        setSections(newSections);
+        updateSections(newSections);
     };
 
     // Reorder handler for framer-motion
     const handleReorder = (newOrder: StructureSection[]) => {
-        setSections(newOrder);
-    };
-
-    // Explicit move handler relative to index (kept for accessibility if needed, though drag is primary)
-    const handleMoveSection = (index: number, direction: 'up' | 'down') => {
-        if (direction === 'up' && index === 0) return;
-        if (direction === 'down' && index === sections.length - 1) return;
-
-        const newSections = [...sections];
-        const targetIndex = direction === 'up' ? index - 1 : index + 1;
-        [newSections[index], newSections[targetIndex]] = [newSections[targetIndex], newSections[index]];
-        setSections(newSections);
+        updateSections(newOrder);
     };
 
     return (
@@ -188,7 +188,7 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
                 )}
             </div>
 
-            {/* Footer - Generate Button */}
+            {/* Footer - Save Configuration Button */}
             <div className="px-6 py-4 bg-gradient-to-r from-slate-50/50 to-white border-t border-slate-100">
                 <div className="flex items-center justify-between">
                     <div className="flex-1 mr-4">
@@ -219,17 +219,17 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
                             }
                         }}
                         disabled={isSaving || sections.length === 0}
-                        className="flex items-center gap-2.5 px-6 py-2.5 bg-gradient-to-r from-[#00bcdc] to-[#0891b2] text-white rounded-xl text-[13px] font-bold hover:from-[#00a8c6] hover:to-[#0780a3] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-cyan-200/40 hover:shadow-xl hover:shadow-cyan-200/50 active:scale-[0.98]"
+                        className="flex items-center gap-2.5 px-6 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-[13px] font-bold hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm active:scale-[0.98]"
                     >
                         {isSaving ? (
                             <>
-                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                Generating...
+                                <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                                Saving...
                             </>
                         ) : (
                             <>
-                                <IconSparkles size={18} />
-                                Generate Content
+                                <IconDeviceFloppy size={18} />
+                                Save Configuration
                             </>
                         )}
                     </button>

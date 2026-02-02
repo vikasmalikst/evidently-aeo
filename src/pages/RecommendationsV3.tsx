@@ -144,6 +144,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [globalReferences, setGlobalReferences] = useState<Map<string, string>>(new Map()); // recId -> references
   const [refiningIds, setRefiningIds] = useState<Set<string>>(new Set()); // Track which recommendations are being refined
   const [refinedContent, setRefinedContent] = useState<Map<string, any>>(new Map()); // recId -> refined v4.0 content
+  
+  // Custom Structure State (Lifted from Inline Editor)
+  const [customizedStructures, setCustomizedStructures] = useState<Map<string, StructureSection[]>>(new Map());
+
   const [stepCounts, setStepCounts] = useState<Record<number, number>>({});
 
   // Fetch counts for all steps
@@ -1036,16 +1040,22 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       <ContentStructureInlineEditor
         recommendationId={recommendation.id!}
         contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
+        initialSections={customizedStructures.get(recommendation.id!)}
+        onChange={(sections) => {
+          setCustomizedStructures(prev => {
+            const next = new Map(prev);
+            next.set(recommendation.id!, sections);
+            return next;
+          });
+        }}
         onSave={async (sections) => {
           setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
           try {
+            // Only save to DB, do not generate
             const res = await saveContentDraftV3(recommendation.id!, sections);
             if (!res.success) {
               throw new Error(res.error || 'Failed to save content structure');
             }
-
-            // Proceed to generate content using the saved structure
-            await executeContentGeneration(recommendation.id!, sections);
           } finally {
             setGeneratingContentIds(prev => {
               const next = new Set(prev);
@@ -1064,8 +1074,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     if (!recommendation.id || action !== 'generate-content') return;
     if (generatingContentIds.has(recommendation.id)) return;
 
-    // Trigger generation directly
-    executeContentGeneration(recommendation.id, []);
+    // Use customized structure if available, otherwise empty array (default)
+    const customizedSections = customizedStructures.get(recommendation.id) || [];
+
+    // Trigger generation using the consolidated function
+    executeContentGeneration(recommendation.id, customizedSections);
   };
 
   // Execution of content generation after structure confirmation

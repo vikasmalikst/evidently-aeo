@@ -70,7 +70,7 @@ interface JobRun {
 
 export const ScheduledJobs = () => {
   const navigate = useNavigate();
-  const { selectedBrandId, brands, selectBrand } = useManualBrandDashboard();
+  const { selectedBrandId: hookSelectedBrandId, brands, selectBrand } = useManualBrandDashboard();
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -113,38 +113,19 @@ export const ScheduledJobs = () => {
   const [localOllamaScoringLogs, setLocalOllamaScoringLogs] = useState<Array<{ ts: string; message: string }>>([]);
 
   const handleGenerateRecommendations = async () => {
-    if (!selectedBrandId && !generateRecsForAllBrands) return;
-
-    if (!confirm(`Generate recommendations for ${generateRecsForAllBrands ? 'ALL active brands' : 'the selected brand'}? This may take a while.`)) {
-      return;
-    }
+    if (!effectiveBrandId && !generateRecsForAllBrands) return;
 
     setGeneratingRecommendations(true);
     try {
       if (generateRecsForAllBrands) {
-        let successCount = 0;
-        let failCount = 0;
-
-        // Filter out empty IDs just in case
-        const targetBrands = brands.filter(b => b.id);
-
-        for (const brand of targetBrands) {
-          console.log(`Generating for ${brand.name}...`);
-          try {
-            const result = await generateRecommendationsV3({ brandId: brand.id });
-            if (result.success) successCount++;
-            else {
-              console.error(`Failed for ${brand.name}:`, result.error);
-              failCount++;
-            }
-          } catch (e) {
-            console.error(`Exception for ${brand.name}:`, e);
-            failCount++;
-          }
+        if (!confirm('Generate recommendations for ALL brands? This will take a few minutes.')) {
+          setGeneratingRecommendations(false);
+          return;
         }
-        alert(`Generation complete. Success: ${successCount}, Failed: ${failCount}`);
+        await apiClient.post('/admin/recommendations/generate-all');
+        alert('Global recommendations generation started');
       } else {
-        const result = await generateRecommendationsV3({ brandId: selectedBrandId! });
+        const result = await generateRecommendationsV3({ brandId: effectiveBrandId! });
         if (result.success) {
           alert('Recommendations generated successfully!');
         } else {
@@ -160,18 +141,17 @@ export const ScheduledJobs = () => {
   };
 
   const handleRefreshBrandProducts = async () => {
-    if (!selectedBrandId && !enrichAllBrands) return;
-    if (enrichAllBrands && !customerId) return;
+    if (!effectiveBrandId && !enrichAllBrands) return;
 
     setEnrichmentRunning(true);
     setEnrichmentLogs([]);
 
     try {
-      const endpoint = enrichAllBrands
-        ? `${apiClient.baseUrl}/admin/brands/bulk/refresh-products?customer_id=${customerId}`
-        : `${apiClient.baseUrl}/admin/brands/${selectedBrandId}/refresh-products`;
+      const url = enrichAllBrands
+        ? `${apiClient.baseUrl}/admin/brands/all/refresh-products`
+        : `${apiClient.baseUrl}/admin/brands/${effectiveBrandId}/refresh-products`;
 
-      const response = await fetch(endpoint, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiClient.getAccessToken()}`,
@@ -318,12 +298,13 @@ export const ScheduledJobs = () => {
 
   // Use admin selections if available, otherwise fall back to normal flow
   const effectiveCustomerId = adminSelectedCustomerId || customerId;
-  const effectiveBrandId = adminSelectedBrandId || selectedBrandId;
+  const effectiveBrandId = adminSelectedBrandId || hookSelectedBrandId;
+  const effectiveBrandName = brands.find(b => b.id === effectiveBrandId)?.name || 'Selected Brand';
 
   // Fetch customer_id from the selected brand
   useEffect(() => {
     const fetchCustomerId = async () => {
-      if (!selectedBrandId) {
+      if (!effectiveBrandId) {
         setCustomerId(null);
         return;
       }
@@ -338,7 +319,7 @@ export const ScheduledJobs = () => {
 
         // Try to fetch brand details to get customer_id
         const response = await apiClient.get<ApiResponse<{ customer_id?: string }>>(
-          `/brands/${selectedBrandId}`
+          `/brands/${effectiveBrandId}`
         );
         if (response.success && response.data) {
           const brandCustomerId = response.data.customer_id;
@@ -348,20 +329,18 @@ export const ScheduledJobs = () => {
             return;
           }
         }
+
+        // Last resort: Use known customer_id for specific brand
+        if (effectiveBrandId === '838ba1a6-3dec-433d-bea9-a9bc278969ea') {
+          setCustomerId('157c845c-9e87-4146-8479-cb8d045212bf');
+        }
       } catch (error) {
         console.error('Failed to fetch brand customer_id:', error);
-      }
-
-      // Last resort: Use known customer_id for specific brand
-      // Based on user's info: brand '838ba1a6-3dec-433d-bea9-a9bc278969ea' has customer_id = '157c845c-9e87-4146-8479-cb8d045212bf'
-      if (selectedBrandId === '838ba1a6-3dec-433d-bea9-a9bc278969ea') {
-        setCustomerId('157c845c-9e87-4146-8479-cb8d045212bf');
-        console.log(`[ScheduledJobs] Using known customer_id for brand: 157c845c-9e87-4146-8479-cb8d045212bf`);
       }
     };
 
     fetchCustomerId();
-  }, [selectedBrandId, authUser?.customerId]);
+  }, [effectiveBrandId, authUser?.customerId]);
 
   const getErrorMessage = (error: unknown): string => {
     if (error instanceof Error) return error.message;
@@ -376,11 +355,14 @@ export const ScheduledJobs = () => {
   useEffect(() => {
     if (effectiveCustomerId) {
       loadJobs();
-      if (effectiveBrandId) {
-        loadDiagnostic();
-      }
     }
-  }, [effectiveCustomerId, effectiveBrandId]);
+  }, [effectiveCustomerId, effectiveBrandId]); // Added effectiveBrandId to trigger reload when brand changes
+
+  useEffect(() => {
+    if (effectiveBrandId) {
+      loadDiagnostic();
+    }
+  }, [effectiveBrandId, effectiveCustomerId]); // Added effectiveCustomerId
 
   useEffect(() => {
     return () => {
@@ -397,15 +379,15 @@ export const ScheduledJobs = () => {
 
   // Check health when Ollama is enabled
   useEffect(() => {
-    if (ollamaSettings.useOllama && ollamaSettings.ollamaUrl) {
+    if (ollamaSettings.useOllama && ollamaSettings.ollamaUrl && effectiveBrandId) { // Added effectiveBrandId
       checkOllamaHealth();
     } else {
       setOllamaHealth(null);
     }
-  }, [ollamaSettings.useOllama, ollamaSettings.ollamaUrl]);
+  }, [ollamaSettings.useOllama, ollamaSettings.ollamaUrl, effectiveBrandId]); // Added effectiveBrandId
 
   const loadOllamaSettings = async () => {
-    if (!selectedBrandId) {
+    if (!effectiveBrandId) {
       return;
     }
     try {
@@ -413,7 +395,7 @@ export const ScheduledJobs = () => {
       // Don't clear error here - it clears user feedback messages
       const response = await apiClient.get<
         ApiResponse<{ ollamaUrl: string; ollamaModel: string; useOllama: boolean }>
-      >(`/admin/brands/${selectedBrandId}/local-llm`);
+      >(`/admin/brands/${effectiveBrandId}/local-llm`);
       if (response.success && response.data) {
         setOllamaSettings(response.data);
       }
@@ -429,7 +411,7 @@ export const ScheduledJobs = () => {
   };
 
   const checkOllamaHealth = async () => {
-    if (!selectedBrandId) {
+    if (!effectiveBrandId) {
       return;
     }
     try {
@@ -437,7 +419,7 @@ export const ScheduledJobs = () => {
       // Don't clear error here - it clears user feedback messages
       const response = await apiClient.get<
         ApiResponse<{ healthy: boolean; error?: string; responseTime?: number }>
-      >(`/admin/brands/${selectedBrandId}/local-llm/health`);
+      >(`/admin/brands/${effectiveBrandId}/local-llm/health`);
       if (response.success && response.data) {
         setOllamaHealth(response.data);
         // Only set error if health check shows unhealthy AND no success message is showing
@@ -457,7 +439,7 @@ export const ScheduledJobs = () => {
   };
 
   const saveOllamaSettings = async () => {
-    if (!selectedBrandId) {
+    if (!effectiveBrandId) {
       setOllamaError('Please select a brand first');
       return;
     }
@@ -476,7 +458,7 @@ export const ScheduledJobs = () => {
       }
 
       const response = await apiClient.put<ApiResponse<unknown>>(
-        `/admin/brands/${selectedBrandId}/local-llm`,
+        `/admin/brands/${effectiveBrandId}/local-llm`,
         {
           ollamaUrl: ollamaSettings.ollamaUrl,
           ollamaModel: ollamaSettings.ollamaModel,
@@ -507,7 +489,7 @@ export const ScheduledJobs = () => {
   };
 
   const testOllamaPrompt = async () => {
-    if (!selectedBrandId) {
+    if (!effectiveBrandId) {
       setTestError('Please select a brand first');
       return;
     }
@@ -522,7 +504,7 @@ export const ScheduledJobs = () => {
       setTestResponse(null);
 
       const response = await apiClient.post<ApiResponse<{ response: string }>>(
-        `/admin/brands/${selectedBrandId}/local-llm/test`,
+        `/admin/brands/${effectiveBrandId}/local-llm/test`,
         {
           prompt: testPrompt,
         }
@@ -589,7 +571,7 @@ export const ScheduledJobs = () => {
       const response = await apiClient.post<ApiResponse<unknown>>('/admin/scheduled-jobs', {
         ...jobData,
         customer_id: effectiveCustomerId,
-        brand_id: selectedBrandId || brands[0]?.id,
+        brand_id: effectiveBrandId || brands[0]?.id,
       });
       if (response.success) {
         setShowCreateModal(false);
@@ -643,7 +625,7 @@ export const ScheduledJobs = () => {
     let currentDiagnostic = diagnostic;
 
     // If diagnostic is not loaded or for a different brand, try to load it now
-    if ((!currentDiagnostic || selectedBrandId !== brandId) && brandId && effectiveCustomerId) {
+    if ((!currentDiagnostic || effectiveBrandId !== brandId) && brandId && effectiveCustomerId) {
       try {
         const response = await apiClient.get<ApiResponse<QueriesDiagnosticPayload>>(
           `/admin/brands/${brandId}/queries-diagnostic?customer_id=${effectiveCustomerId}`
@@ -817,7 +799,7 @@ export const ScheduledJobs = () => {
   };
 
   const handleOpenBackfillModal = () => {
-    if (!selectedBrandId) {
+    if (!effectiveBrandId) {
       alert('Please select a brand first');
       return;
     }
@@ -826,12 +808,12 @@ export const ScheduledJobs = () => {
   };
 
   const handleRunBackfillScoring = async () => {
-    if (!selectedBrandId || !backfillStartDate || !backfillEndDate) {
-      alert('Please select a brand and both start and end dates');
+    if (!effectiveBrandId || !backfillStartDate || !backfillEndDate) {
+      alert('Missing required fields');
       return;
     }
 
-    if (!confirm(`Run scoring backfill for ${brands.find(b => b.id === selectedBrandId)?.name} from ${backfillStartDate} to ${backfillEndDate}? This will use existing cached analysis.`)) {
+    if (!confirm(`Run scoring backfill for ${effectiveBrandName} from ${backfillStartDate} to ${backfillEndDate}? This will use existing cached analysis.`)) {
       return;
     }
 
@@ -839,11 +821,11 @@ export const ScheduledJobs = () => {
     setScoringBackfillLogs([]);
 
     try {
-      const response = await fetch(`${apiClient.baseUrl}/admin/brands/${selectedBrandId}/backfill-scoring`, {
+      const response = await fetch(`${apiClient.baseUrl}/admin/brands/${effectiveBrandId}/backfill-scoring`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiClient.getAccessToken()}`,
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiClient.getAccessToken()}`,
         },
         body: JSON.stringify({
           startDate: backfillStartDate,
@@ -985,7 +967,7 @@ export const ScheduledJobs = () => {
     }
   };
 
-  if (loading && jobs.length === 0) {
+  if (loading && jobs.length === 0 && !effectiveBrandId) {
     return (
       <div className="flex items-center justify-center p-20">
         <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -1004,12 +986,12 @@ export const ScheduledJobs = () => {
       {/* Admin Customer & Brand Selector removed - now in AdminLayout */}
 
       {/* Quick Actions */}
-      {selectedBrandId && (
+      {effectiveBrandId && (
         <div className="mb-6 space-y-4">
           <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-semibold text-gray-900">
-                Quick Actions for {brands.find(b => b.id === selectedBrandId)?.name || 'Selected Brand'}
+                Quick Actions for {brands.find(b => b.id === effectiveBrandId)?.name || 'Selected Brand'}
               </h3>
               <button
                 onClick={() => {
@@ -1144,20 +1126,20 @@ export const ScheduledJobs = () => {
                   Immediately collects data using all active queries from onboarding
                 </p>
                 <button
-                  onClick={() => handleCollectDataNow(selectedBrandId)}
+                  onClick={() => handleCollectDataNow(effectiveBrandId!)}
                   disabled={collecting || scoring || backfillRunning}
                   className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {collecting ? 'Collecting...' : 'Start Collection'}
+                  {collecting ? 'Collecting...' : 'Collect Data Now'}
                 </button>
               </div>
               <div className="bg-white p-4 rounded border border-purple-200">
-                <h4 className="font-medium text-gray-900 mb-2">Score Now</h4>
+                <h4 className="font-medium text-purple-800 mb-2">Run Scoring</h4>
                 <p className="text-sm text-gray-600 mb-3">
                   Immediately processes and scores all unprocessed collector results
                 </p>
                 <button
-                  onClick={() => handleScoreNow(selectedBrandId)}
+                  onClick={() => handleScoreNow(effectiveBrandId!)}
                   disabled={collecting || scoring || backfillRunning}
                   className="w-full px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -1253,7 +1235,7 @@ export const ScheduledJobs = () => {
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Backfill Scoring</h3>
                 <div className="mt-2 px-7 py-3">
                   <p className="text-sm text-gray-500 mb-4">
-                    Select time period for {brands.find(b => b.id === selectedBrandId)?.name}.
+                    Select time period for {effectiveBrandName}.
                     This will re-run scoring using existing analysis data.
                   </p>
                   <div className="mb-4 text-left">
@@ -1469,12 +1451,12 @@ export const ScheduledJobs = () => {
                 <label className="text-sm font-medium text-gray-900">Use Ollama for Scoring</label>
                 <p className="text-xs text-gray-500 mt-1">
                   When enabled, scoring will use your local Ollama instance instead of cloud APIs
-                  {selectedBrandId && (
+                  {effectiveBrandId && (
                     <span className="block mt-1 text-blue-600 font-medium">
                       (Brand-specific settings)
                     </span>
                   )}
-                  {!selectedBrandId && (
+                  {!effectiveBrandId && (
                     <span className="block mt-1 text-amber-600 font-medium">
                       Please select a brand to configure Ollama settings
                     </span>
@@ -1768,7 +1750,7 @@ export const ScheduledJobs = () => {
             onClose={() => setShowCreateModal(false)}
             onSubmit={handleCreateJob}
             brands={brands}
-            defaultBrandId={selectedBrandId ?? undefined}
+            defaultBrandId={effectiveBrandId ?? undefined}
           />
         )
       }

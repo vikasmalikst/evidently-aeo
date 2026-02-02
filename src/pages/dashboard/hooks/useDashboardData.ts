@@ -17,7 +17,7 @@ export const useDashboardData = () => {
   const pageMountTime = useRef(performance.now());
   const authLoading = useAuthStore((state) => state.isLoading);
   // Replaced local state with global store
-  const { startDate, endDate, setStartDate, setEndDate, llmFilters } = useDashboardStore();
+  const { startDate, endDate, setStartDate, setEndDate, llmFilters, queryTags } = useDashboardStore();
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
@@ -206,6 +206,11 @@ export const useDashboardData = () => {
       params.append('collectors', llmFilters.join(','));
     }
 
+    // Add query tag filter
+    if (queryTags && queryTags.length > 0) {
+      params.append('queryTags', queryTags.join(','));
+    }
+
     // Only bypass cache when we explicitly need freshest data.
     // Default behavior should leverage client cache for fast navigation.
     if (isDataCollectionInProgress || reloadKey > 0) {
@@ -217,7 +222,7 @@ export const useDashboardData = () => {
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     console.debug(`[useDashboardData] Endpoint created: ${endpoint}`);
     return endpoint;
-  }, [selectedBrandId, startDate, endDate, reloadKey, isDataCollectionInProgress, brandsLoading, brands, llmFilters]);
+  }, [selectedBrandId, startDate, endDate, reloadKey, isDataCollectionInProgress, brandsLoading, brands, llmFilters, queryTags]);
 
   const dataFetchStart = useRef(performance.now());
   const {

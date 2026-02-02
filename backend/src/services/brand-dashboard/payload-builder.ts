@@ -41,7 +41,7 @@ export async function buildDashboardPayload(
   brand: BrandRow,
   customerId: string,
   range: NormalizedDashboardRange,
-  options: { collectors?: string[]; timezoneOffset?: number; skipCitations?: boolean } = {}
+  options: { collectors?: string[]; timezoneOffset?: number; skipCitations?: boolean; queryTags?: string[] } = {}
 ): Promise<BrandDashboardPayload> {
   const requestStart = Date.now()
   let lastMark = requestStart
@@ -104,12 +104,18 @@ export async function buildDashboardPayload(
           topic,
           processed_at,
           created_at,
-          collector_results!inner(brand)
+          collector_results!inner(brand),
+          generated_queries!inner(query_tag)
         `)
         .eq('brand_id', brand.id)
         .gte(dateColumn, startIsoBound)
         .lte(dateColumn, endIsoBound)
         .order(dateColumn, { ascending: true })
+
+      if (options.queryTags && options.queryTags.length > 0) {
+        // Filter by query_tag if provided
+        metricFactsQuery = metricFactsQuery.in('generated_queries.query_tag', options.queryTags)
+      }
 
       if (includeCustomer && customerId) {
         metricFactsQuery = metricFactsQuery.eq('customer_id', customerId)
@@ -145,16 +151,16 @@ export async function buildDashboardPayload(
           if (!result.error) {
             return { data: result.data ?? [], error: null }
           }
-          
+
           // Check if error is retryable (502, 503, 504, timeout, etc.)
-          const isRetryableError = isRetryable(result.error) || 
+          const isRetryableError = isRetryable(result.error) ||
             (result.error && typeof result.error === 'object' && 'message' in result.error &&
-             (String(result.error.message).includes('502') ||
-              String(result.error.message).includes('503') ||
-              String(result.error.message).includes('504') ||
-              String(result.error.message).includes('timeout') ||
-              String(result.error.message).includes('Bad Gateway')))
-          
+              (String(result.error.message).includes('502') ||
+                String(result.error.message).includes('503') ||
+                String(result.error.message).includes('504') ||
+                String(result.error.message).includes('timeout') ||
+                String(result.error.message).includes('Bad Gateway')))
+
           if (!isRetryableError || attempt === maxAttempts) {
             if (chunkInfo && attempt === maxAttempts) {
               console.error(`[Dashboard] Failed to fetch chunk after ${maxAttempts} attempts: ${chunkInfo}`, result.error)
@@ -163,7 +169,7 @@ export async function buildDashboardPayload(
             // Instead, return the error so caller can handle it
             return { data: [], error: result.error }
           }
-          
+
           // Exponential backoff with jitter
           const baseDelay = 250 * Math.pow(2, attempt - 1)
           const jitter = Math.random() * 100
@@ -260,7 +266,7 @@ export async function buildDashboardPayload(
         brandSentiment: any[]
         competitorSentiment: any[]
       }> = []
-      
+
       for (let i = 0; i < chunks.length; i += concurrency) {
         const batch = chunks.slice(i, i + concurrency)
         const batchResults = await Promise.all(
@@ -421,7 +427,7 @@ export async function buildDashboardPayload(
   const positionsPromise = (async () => {
     // Always use created_at for date queries (standardized approach)
     const primary = await fetchPositions(true, true)
-    
+
     // Check if primary query returned data that spans the full date range
     // If customer_id was changed, old data might have old customer_id, causing sparse results
     if (!primary.error && (primary.data?.length ?? 0) > 0) {
@@ -433,12 +439,12 @@ export async function buildDashboardPayload(
           if (date) returnedDates.add(date)
         }
       })
-      
+
       // Check if we have data for at least 50% of the requested date range
       // If not, likely customer_id mismatch - use fallback
       const dateCoverage = returnedDates.size / expectedDays
       const hasGoodCoverage = dateCoverage >= 0.5
-      
+
       if (hasGoodCoverage) {
         return primary
       } else {
@@ -460,7 +466,7 @@ export async function buildDashboardPayload(
         }
       })
       const fallbackCoverage = fallbackDates.size / expectedDays
-      
+
       console.warn(
         `[Dashboard] Fallback used for extracted_positions (brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}. ` +
         `Fallback coverage: ${fallbackDates.size}/${expectedDays} dates (${(fallbackCoverage * 100).toFixed(1)}%)`
@@ -473,7 +479,7 @@ export async function buildDashboardPayload(
   })()
 
   const queryCountPromise = (async () => {
-    const scoped = await supabaseAdmin
+    let scopedQuery = supabaseAdmin
       .from('generated_queries')
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brand.id)
@@ -481,16 +487,28 @@ export async function buildDashboardPayload(
       .gte('created_at', startIsoBound)
       .lte('created_at', endIsoBound)
 
+    if (options.queryTags && options.queryTags.length > 0) {
+      scopedQuery = scopedQuery.in('query_tag', options.queryTags)
+    }
+
+    const scoped = await scopedQuery
+
     if ((scoped.count ?? 0) > 0 || scoped.error) {
       return scoped
     }
 
-    const fallback = await supabaseAdmin
+    let fallbackQuery = supabaseAdmin
       .from('generated_queries')
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brand.id)
       .gte('created_at', startIsoBound)
       .lte('created_at', endIsoBound)
+
+    if (options.queryTags && options.queryTags.length > 0) {
+      fallbackQuery = fallbackQuery.in('query_tag', options.queryTags)
+    }
+
+    const fallback = await fallbackQuery
 
     if ((fallback.count ?? 0) > 0) {
       console.warn(
@@ -2867,7 +2885,7 @@ export async function buildDashboardPayload(
 
     allDates.forEach(date => {
       const dayData = dailyData.get(date)
-      
+
       // Always push the date to maintain complete time series
       // This ensures all collectors have the same date array length as allDates
       dates.push(date)
@@ -2926,9 +2944,9 @@ export async function buildDashboardPayload(
 
     // Validate that all arrays have the same length (should match allDates.length)
     const expectedLength = allDates.length
-    if (dates.length !== expectedLength || visibility.length !== expectedLength || 
-        share.length !== expectedLength || sentiment.length !== expectedLength || 
-        brandPresence.length !== expectedLength || isRealData.length !== expectedLength) {
+    if (dates.length !== expectedLength || visibility.length !== expectedLength ||
+      share.length !== expectedLength || sentiment.length !== expectedLength ||
+      brandPresence.length !== expectedLength || isRealData.length !== expectedLength) {
       console.error(`[TimeSeries] ⚠️ Collector ${collectorType} array length mismatch! Expected ${expectedLength}, got dates=${dates.length}, visibility=${visibility.length}, share=${share.length}, sentiment=${sentiment.length}, brandPresence=${brandPresence.length}, isRealData=${isRealData.length}`)
     }
 
@@ -3491,8 +3509,8 @@ export async function buildDashboardPayload(
       // Validate that all arrays have the same length (should match allDates.length)
       const expectedBrandLength = allDates.length
       if (aggregatedVisibility.length !== expectedBrandLength || aggregatedShare.length !== expectedBrandLength ||
-          aggregatedSentiment.length !== expectedBrandLength || aggregatedBrandPresence.length !== expectedBrandLength ||
-          aggregatedIsRealData.length !== expectedBrandLength) {
+        aggregatedSentiment.length !== expectedBrandLength || aggregatedBrandPresence.length !== expectedBrandLength ||
+        aggregatedIsRealData.length !== expectedBrandLength) {
         console.error(`[TimeSeries] ⚠️ Brand summary array length mismatch! Expected ${expectedBrandLength}, got visibility=${aggregatedVisibility.length}, share=${aggregatedShare.length}, sentiment=${aggregatedSentiment.length}, brandPresence=${aggregatedBrandPresence.length}, isRealData=${aggregatedIsRealData.length}`)
       }
 

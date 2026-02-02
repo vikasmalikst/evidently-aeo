@@ -67,12 +67,13 @@ export class DashboardService {
     brandKey: string,
     customerId: string,
     dateRange?: DashboardDateRange,
-    options: { skipCache?: boolean; collectors?: string[]; timezoneOffset?: number; skipCitations?: boolean } = {}
+    options: { skipCache?: boolean; collectors?: string[]; timezoneOffset?: number; skipCitations?: boolean; queryTags?: string[] } = {}
   ): Promise<BrandDashboardPayload> {
     try {
-      const { skipCache = false, collectors, timezoneOffset = 0, skipCitations = false } = options
+      const { skipCache = false, collectors, timezoneOffset = 0, skipCitations = false, queryTags } = options
       const hasCollectorFilter = Array.isArray(collectors) && collectors.length > 0
-      const effectiveSkipCache = skipCache || hasCollectorFilter
+      const hasQueryTagFilter = Array.isArray(queryTags) && queryTags.length > 0
+      const effectiveSkipCache = skipCache || hasCollectorFilter || hasQueryTagFilter
       const brand = await this.resolveBrand(brandKey, customerId)
 
       const normalizedRange = normalizeDateRange(dateRange)
@@ -222,7 +223,12 @@ export class DashboardService {
       }
 
       // Cache miss: Build fresh payload
-      const payload = await this.buildDashboardPayload(brand, customerId, normalizedRange, collectors, timezoneOffset, skipCitations)
+      const payload = await buildDashboardPayload(brand, customerId, normalizedRange, {
+        collectors,
+        timezoneOffset,
+        skipCitations,
+        queryTags
+      })
 
       // Ensure required fields exist with proper defaults
       if (!payload.llmVisibility) {

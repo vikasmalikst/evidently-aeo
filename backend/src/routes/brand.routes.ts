@@ -118,13 +118,21 @@ router.get('/:brandId/keywords', authenticateToken, async (req: Request, res: Re
             .filter(Boolean)
           : undefined;
 
+    const queryTagsQuery = req.query.queryTags;
+    const queryTags = typeof queryTagsQuery === 'string'
+      ? queryTagsQuery.split(',').map(t => t.trim()).filter(Boolean)
+      : Array.isArray(queryTagsQuery)
+        ? queryTagsQuery.map(t => String(t).trim()).filter(Boolean)
+        : undefined;
+
     const payload = await keywordsAnalyticsService.getKeywordAnalytics({
       brandId,
       customerId,
       startDate,
       endDate,
       collectorType,
-      collectorTypes
+      collectorTypes,
+      queryTags
     });
 
     res.json({ success: true, data: payload });
@@ -457,6 +465,19 @@ router.get(
               .map((value) => value.trim())
               .filter((value) => value.length > 0)
             : undefined;
+      const queryTagsQuery = req.query.queryTags;
+      const queryTags =
+        typeof queryTagsQuery === 'string'
+          ? queryTagsQuery
+            .split(',')
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+          : Array.isArray(queryTagsQuery)
+            ? queryTagsQuery
+              .map((value) => (typeof value === 'string' ? value : String(value ?? '')))
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0)
+            : undefined;
       const skipCacheQuery = Array.isArray(req.query.skipCache) ? req.query.skipCache[0] : req.query.skipCache;
       const skipCache =
         typeof skipCacheQuery === 'string' &&
@@ -536,7 +557,8 @@ router.get(
         skipCache,
         collectors,
         timezoneOffset,
-        skipCitations
+        skipCitations,
+        queryTags
       });
 
       res.json({
@@ -582,6 +604,7 @@ router.get(
       const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
       const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
       const collectorsQuery = req.query.collectors;
+      const queryTagsQuery = req.query.queryTags;
 
       let collectors: string[] | undefined;
       if (typeof collectorsQuery === 'string') {
@@ -605,6 +628,11 @@ router.get(
           ? req.query.competitors.split(',').map(c => c.trim()).filter(Boolean)
           : Array.isArray(req.query.competitors)
             ? req.query.competitors.map(c => String(c).trim()).filter(Boolean)
+            : undefined,
+        queryTags: typeof queryTagsQuery === 'string'
+          ? queryTagsQuery.split(',').map(t => t.trim()).filter(Boolean)
+          : Array.isArray(queryTagsQuery)
+            ? queryTagsQuery.map(t => String(t).trim()).filter(Boolean)
             : undefined
       });
 
@@ -647,7 +675,8 @@ router.get(
       const { id } = req.params;
       const customerId = req.user!.customer_id;
       // Accept both 'collectors' (same as Prompts API) and 'collectorType' for backward compatibility
-      const { startDate, endDate, collectorType, collectors, country, competitors } = req.query;
+      // Accept both 'collectors' (same as Prompts API) and 'collectorType' for backward compatibility
+      const { startDate, endDate, collectorType, collectors, country, competitors, queryTags } = req.query;
 
       // Use collectors param if provided, otherwise fall back to collectorType
       const modelFilter = collectors || collectorType;
@@ -661,6 +690,15 @@ router.get(
             : undefined)
         : undefined;
 
+      // Parse queryTags filter
+      const queryTagsFilter = queryTags
+        ? (typeof queryTags === 'string'
+          ? queryTags.split(',').map(t => t.trim()).filter(Boolean)
+          : Array.isArray(queryTags)
+            ? queryTags.map(t => String(t).trim()).filter(Boolean)
+            : undefined)
+        : undefined;
+
       console.log(`🎯 Fetching AEO topics with analytics for brand ${id}, customer ${customerId}`);
       console.log(`🔍 Filters: model=${modelFilter}, country=${country}, competitors=${competitorFilter?.join(',') || 'all'}, dateRange=${startDate} to ${endDate}`);
 
@@ -671,7 +709,8 @@ router.get(
         endDate as string | undefined,
         modelFilter as string | undefined,
         country as string | undefined,
-        competitorFilter
+        competitorFilter,
+        queryTagsFilter
       );
 
       // The service always returns { topics: [], availableModels: [] }
@@ -803,6 +842,12 @@ router.get(
       const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
       const collectorsQuery = typeof req.query.collectors === 'string' ? req.query.collectors : undefined;
       const collectors = collectorsQuery ? collectorsQuery.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+      const queryTagsQuery = req.query.queryTags;
+      const queryTags = typeof queryTagsQuery === 'string'
+        ? queryTagsQuery.split(',').map(t => t.trim()).filter(Boolean)
+        : Array.isArray(queryTagsQuery)
+          ? queryTagsQuery.map(t => String(t).trim()).filter(Boolean)
+          : undefined;
 
       console.log(`[SourceAttribution API] 📊 Params: brandId=${brandId}, customerId=${customerId}`);
       console.log(`[SourceAttribution API] 📅 Date Range: startDate=${startQuery || 'default'}, endDate=${endQuery || 'default'}`);
@@ -868,7 +913,8 @@ router.get(
         customerId,
         dateRange,
         undefined, // comparisonRange
-        collectors
+        collectors,
+        queryTags
       );
 
       const serviceEndTime = Date.now();

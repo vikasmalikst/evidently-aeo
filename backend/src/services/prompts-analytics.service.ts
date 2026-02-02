@@ -9,6 +9,7 @@ interface PromptAnalyticsOptions {
   endDate?: string
   collectors?: string[]
   competitors?: string[]
+  queryTags?: string[]
   limit?: number
 }
 
@@ -315,7 +316,7 @@ const normalizeRange = (start?: string, end?: string): NormalizedRange => {
 
 export class PromptsAnalyticsService {
   async getPromptAnalytics(options: PromptAnalyticsOptions): Promise<PromptAnalyticsPayload> {
-    const { brandId, customerId, startDate, endDate, collectors } = options
+    const { brandId, customerId, startDate, endDate, collectors, queryTags } = options
     const limit = options.limit ?? DEFAULT_LIMIT
 
     const { data: brandRow, error: brandError } = await supabaseAdmin
@@ -444,10 +445,16 @@ export class PromptsAnalyticsService {
     >()
 
     if (filteredQueryIds.length > 0) {
-      const { data: queryRows, error: queryError } = await supabaseAdmin
+      let query = supabaseAdmin
         .from('generated_queries')
         .select('id, query_text, metadata')
         .in('id', filteredQueryIds)
+
+      if (queryTags && queryTags.length > 0) {
+        query = query.in('query_tag', queryTags)
+      }
+
+      const { data: queryRows, error: queryError } = await query
 
       if (queryError) {
         throw new DatabaseError(`Failed to load query metadata: ${queryError.message}`)
@@ -486,13 +493,26 @@ export class PromptsAnalyticsService {
     const promptAggregates = new Map<string, PromptAggregate>()
     let missingKeyCounter = 0
 
-    // Filter rows to only include those with queries in the current version
-    const filteredRows = currentVersionQueryIds
-      ? rows.filter(row => {
-        const queryId = typeof row.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
-        return queryId && currentVersionQueryIds.has(queryId)
-      })
-      : rows
+    // Filter rows to only include those with queries in the current version AND matching query tags
+    const filteredRows = rows.filter(row => {
+      const queryId = typeof row.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+
+      // Filter by version
+      if (currentVersionQueryIds && (!queryId || !currentVersionQueryIds.has(queryId))) {
+        return false
+      }
+
+      // Filter by query tags (if active)
+      // If queryTags are active, we must match against the loaded queryMetadataMap
+      // (which only contains queries that matched the tags)
+      if (queryTags && queryTags.length > 0) {
+        if (!queryId || !queryMetadataMap.has(queryId)) {
+          return false
+        }
+      }
+
+      return true
+    })
 
     for (const row of filteredRows) {
       const collectorResultId = typeof row.id === 'number' ? row.id : null

@@ -14,6 +14,8 @@ interface DashboardState {
     resetDateRange: () => void;
     llmFilters: string[];
     setLlmFilters: (filters: string[]) => void;
+    queryTags: string[];
+    setQueryTags: (tags: string[]) => void;
 }
 
 const defaultRange = getDefaultDateRange();
@@ -29,5 +31,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         set({ startDate: freshDefault.start, endDate: freshDefault.end });
     },
     llmFilters: [],
-    setLlmFilters: (llmFilters) => set({ llmFilters })
+    setLlmFilters: (llmFilters) => set({ llmFilters }),
+    queryTags: [],
+    setQueryTags: (queryTags) => set({ queryTags })
 }));

@@ -245,12 +245,12 @@ router.get('/:generationId', authenticateToken, requireFeatureEntitlement('recom
     // Fetch active competitors for enrichment
     let competitorMap = new Map<string, any>();
     try {
-        const competitorsData = await competitorCrudService.getActiveCompetitors(generation.brand_id, customerId);
-        competitorsData.competitors.forEach(c => {
-            competitorMap.set(c.name.toLowerCase().trim(), c);
-        });
+      const competitorsData = await competitorCrudService.getActiveCompetitors(generation.brand_id, customerId);
+      competitorsData.competitors.forEach(c => {
+        competitorMap.set(c.name.toLowerCase().trim(), c);
+      });
     } catch (err) {
-        console.warn('⚠️ [RecommendationsV3] Failed to fetch competitors for enrichment:', err);
+      console.warn('⚠️ [RecommendationsV3] Failed to fetch competitors for enrichment:', err);
     }
 
     // Transform to API format
@@ -292,17 +292,17 @@ router.get('/:generationId', authenticateToken, requireFeatureEntitlement('recom
       kpiBeforeValue: rec.kpi_before_value,
       kpiAfterValue: rec.kpi_after_value,
       reviewStatus: (rec.metadata as any)?.is_removed ? 'removed' : (rec.review_status || 'pending_review'),
-      competitors_target: Array.isArray(rec.competitors_target) 
+      competitors_target: Array.isArray(rec.competitors_target)
         ? rec.competitors_target.map((name: string) => {
-            // Handle case where it might already be an object (if saved differently in future)
-            if (typeof name === 'object' && name !== null) return name;
-            
-            const comp = competitorMap.get(String(name).toLowerCase().trim());
-            return {
-                name: name,
-                domain: comp?.domain || null,
-                logo: comp?.logo || null
-            };
+          // Handle case where it might already be an object (if saved differently in future)
+          if (typeof name === 'object' && name !== null) return name;
+
+          const comp = competitorMap.get(String(name).toLowerCase().trim());
+          return {
+            name: name,
+            domain: comp?.domain || null,
+            logo: comp?.logo || null
+          };
         })
         : [],
       metadata: rec.metadata
@@ -379,14 +379,14 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
     // Fetch active competitors for enrichment
     let competitorMap = new Map<string, any>();
     if (generation.brand_id) {
-        try {
-            const competitorsData = await competitorCrudService.getActiveCompetitors(generation.brand_id, customerId);
-            competitorsData.competitors.forEach(c => {
-                competitorMap.set(c.name.toLowerCase().trim(), c);
-            });
-        } catch (err) {
-            console.warn('⚠️ [RecommendationsV3] Failed to fetch competitors for enrichment in step view:', err);
-        }
+      try {
+        const competitorsData = await competitorCrudService.getActiveCompetitors(generation.brand_id, customerId);
+        competitorsData.competitors.forEach(c => {
+          competitorMap.set(c.name.toLowerCase().trim(), c);
+        });
+      } catch (err) {
+        console.warn('⚠️ [RecommendationsV3] Failed to fetch competitors for enrichment in step view:', err);
+      }
     }
 
     // Build query based on step - IMPORTANT: Always filter by customer_id
@@ -520,19 +520,19 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
         assetType: assetType,
         regenRetry: rec.regen_retry,
         reviewStatus: (rec.metadata as any)?.is_removed ? 'removed' : (rec.review_status || 'pending_review'),
-        competitors_target: Array.isArray(rec.competitors_target) 
-        ? rec.competitors_target.map((name: string) => {
+        competitors_target: Array.isArray(rec.competitors_target)
+          ? rec.competitors_target.map((name: string) => {
             // Handle case where it might already be an object
             if (typeof name === 'object' && name !== null) return name;
-            
+
             const comp = competitorMap.get(String(name).toLowerCase().trim());
             return {
-                name: name,
-                domain: comp?.domain || null,
-                logo: comp?.logo || null
+              name: name,
+              domain: comp?.domain || null,
+              logo: comp?.logo || null
             };
-        })
-        : [],
+          })
+          : [],
         metadata: rec.metadata
       };
     });
@@ -1955,6 +1955,30 @@ router.get('/analyze/keyword-mapping-graph', authenticateToken, async (req, res)
     // Filter by source if provided
     if (source && String(source).trim() !== '') {
       query = query.ilike('collector_results.source', `%${String(source).trim()}%`);
+    }
+
+    // Filter by queryTags if provided
+    const queryTagsQuery = req.query.queryTags;
+    const queryTags = typeof queryTagsQuery === 'string'
+      ? queryTagsQuery.split(',').map(t => t.trim()).filter(Boolean)
+      : Array.isArray(queryTagsQuery)
+        ? queryTagsQuery.map(t => String(t).trim()).filter(Boolean)
+        : undefined;
+
+    if (queryTags && queryTags.length > 0) {
+      const { data: taggedQueries } = await supabaseAdmin
+        .from('generated_queries')
+        .select('id')
+        .in('query_tag', queryTags)
+        .eq('brand_id', brandId);
+
+      if (taggedQueries && taggedQueries.length > 0) {
+        const allowedQueryIds = taggedQueries.map(q => q.id);
+        query = query.in('collector_results.query_id', allowedQueryIds);
+      } else {
+        // No match -> empty result
+        return res.json({ success: true, data: [] });
+      }
     }
 
     const { data: cacheData, error: cacheError } = await query;

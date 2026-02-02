@@ -32,6 +32,8 @@ interface ApiResponse<T> {
 }
 
 import { getDefaultDateRange } from './dashboard/utils';
+import { useDashboardStore } from '../store/dashboardStore';
+import { QueryTagFilter } from '../components/common/QueryTagFilter';
 
 export const Prompts = () => {
   const pageLoadStart = useRef(performance.now());
@@ -42,6 +44,7 @@ export const Prompts = () => {
   const defaultDateRange = getDefaultDateRange();
   const [startDate, setStartDate] = useState<string>(defaultDateRange.start);
   const [endDate, setEndDate] = useState<string>(defaultDateRange.end);
+  const { queryTags } = useDashboardStore();
   const [allCompetitors, setAllCompetitors] = useState<ManagedCompetitor[]>([]);
   const [selectedCompetitors, setSelectedCompetitors] = useState<string[]>([]);
   const [metricType, setMetricType] = useState<'visibility' | 'sentiment' | 'mentions' | 'position' | 'share'>('visibility');
@@ -73,6 +76,10 @@ export const Prompts = () => {
       params.set('competitors', selectedCompetitors.join(','));
     }
 
+    if (queryTags && queryTags.length > 0) {
+      params.set('queryTags', queryTags.join(','));
+    }
+
     // Filter by collector on backend so visibility/sentiment reflect the selected LLMs
     if (selectedLLMs.length > 0) {
       // Explicitly selected models: pass them as comma-separated list
@@ -87,7 +94,7 @@ export const Prompts = () => {
     const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
     perfLog('Prompts: Endpoint computation', endpointStart);
     return endpoint;
-  }, [selectedBrandId, startDate, endDate, brandsLoading, selectedLLMs, selectedCompetitors]);
+  }, [selectedBrandId, startDate, endDate, brandsLoading, selectedLLMs, selectedCompetitors, queryTags]);
 
   // Use cached data hook
   const fetchStart = useRef(performance.now());
@@ -286,6 +293,8 @@ export const Prompts = () => {
               showComparisonInfo={false}
               className="flex-shrink-0"
             />
+
+            <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm" />
 
             {/* LLM Selector/Filter Icons */}
             <div className="flex items-center gap-4">

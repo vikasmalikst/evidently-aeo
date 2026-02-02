@@ -1785,7 +1785,8 @@ export class BrandService {
     endDate?: string,
     collectorType?: string,
     country?: string,
-    competitorNames?: string[] // Optional: filter by specific competitor names (lowercase)
+    competitorNames?: string[], // Optional: filter by specific competitor names (lowercase)
+    queryTags?: string[] // Optional: filter by query tags (bias, blind)
   ): Promise<{ topics: any[]; availableModels: string[] }> {
     const overallStart = performance.now();
     try {
@@ -1871,6 +1872,7 @@ export class BrandService {
         startDate: startIso,
         endDate: endIso,
         collectorTypes: mappedCollectorTypes.length > 0 ? mappedCollectorTypes : undefined,
+        queryTags: queryTags
       });
 
       const step2Time = performance.now() - step2Start;

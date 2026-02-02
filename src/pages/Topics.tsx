@@ -8,6 +8,8 @@ import { calculatePreviousPeriod } from '../components/DateRangePicker/DateRange
 import { getActiveCompetitors, type ManagedCompetitor } from '../api/competitorManagementApi';
 import type { TopicsAnalysisData, TopicSource } from './TopicsAnalysis/types';
 
+import { useDashboardStore } from '../store/dashboardStore';
+// QueryTagFilter moved to TopicsAnalysisPage
 interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -244,6 +246,7 @@ interface TopicsFilters {
 import { getDefaultDateRange } from './dashboard/utils';
 
 export const Topics = () => {
+  const { queryTags } = useDashboardStore();
   const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
   const [filters, setFilters] = useState<TopicsFilters>(() => {
     const defaults = getDefaultDateRange();
@@ -398,12 +401,17 @@ export const Topics = () => {
     }
 
     // Use 'collectors' parameter (same as Prompts page) instead of 'collectorType'
-    if (filters.collectorType) params.append('collectors', filters.collectorType);
+    if (filters.collectorType) params.append('collectorType', filters.collectorType);
     if (filters.country) params.append('country', filters.country);
-    // Add competitor filter if provided
     if (filters.competitors && filters.competitors.length > 0) {
-      params.append('competitors', filters.competitors.join(','));
+      params.append('competitors', filters.competitors.sort().join(','));
     }
+    if (queryTags && queryTags.length > 0) {
+      params.append('queryTags', queryTags.join(','));
+    }
+
+    // Always fetch available models (even if not filtering by collector type) to show in UI
+    // The backend should handle this optimally
     const queryString = params.toString();
     const endpoint = `/brands/${selectedBrandId}/topics${queryString ? `?${queryString}` : ''}`;
 
@@ -412,7 +420,7 @@ export const Topics = () => {
       lastEndpointRef.current = endpoint;
     }
     return endpoint;
-  }, [selectedBrandId, isoDateRange, filters.collectorType, filters.country, filters.competitors]);
+  }, [selectedBrandId, isoDateRange, filters.collectorType, filters.country, filters.competitors, queryTags]);
 
   // Use cached data hook - refetch when filters change
   // Response can be either BackendTopic[] (old format) or { topics: BackendTopic[], availableModels: string[], avgSoADelta?: number } (new format)

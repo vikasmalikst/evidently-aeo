@@ -55,6 +55,7 @@ import '../../styles/visibility.css';
 import { formatDateLabel } from '../../utils/dateFormatting';
 import { AnalyzePrefetcher } from './AnalyzePrefetcher';
 import { EducationalContentDrawer, KpiType as DrawerKpiType } from '../../components/EducationalDrawer/EducationalContentDrawer';
+import { QueryTagFilter } from '../../components/common/QueryTagFilter';
 
 
 
@@ -921,6 +922,10 @@ export const MeasurePage = () => {
 
             {/* Right Side: Date Selector + Filters Stack */}
             <div className="flex flex-col items-end gap-3">
+              <QueryTagFilter
+                variant="outline"
+                className="border-gray-300/60 shadow-sm"
+              />
               <DateRangeSelector
                 startDate={startDate}
                 endDate={endDate}

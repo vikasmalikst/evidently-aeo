@@ -17,6 +17,7 @@ import type { Competitor } from './utils/competitorColors';
 import type { TopicsAnalysisData, Topic } from './types';
 import type { PodId } from './components/CompactMetricsPods';
 import { EducationalContentDrawer, type KpiType } from '../../components/EducationalDrawer/EducationalContentDrawer';
+import { QueryTagFilter } from '../../components/common/QueryTagFilter';
 
 type TopicsMetricType = 'share' | 'visibility' | 'sentiment';
 
@@ -572,6 +573,7 @@ export const TopicsAnalysisPage = ({
                 showComparisonInfo={false}
                 className="flex-shrink-0"
               />
+              <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm" />
 
               {/* LLM Selector/Filter Icons */}
               <div className="flex items-center gap-4">

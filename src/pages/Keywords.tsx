@@ -18,6 +18,8 @@ import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { apiClient } from '../lib/apiClient';
 import { useChartResize } from '../hooks/useChartResize';
 import { getLLMIcon } from '../components/Visibility/LLMIcons';
+import { useDashboardStore } from '../store/dashboardStore';
+import { QueryTagFilter } from '../components/common/QueryTagFilter';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -70,10 +72,10 @@ interface KeywordData {
 }
 
 interface SentimentKeywordData {
-    topic: string;
-    sentiment: number;
-    strength: number;
-    narrative: string;
+  topic: string;
+  sentiment: number;
+  strength: number;
+  narrative: string;
 }
 
 // API payload shape from backend
@@ -201,15 +203,12 @@ const DetailPanel = ({ keyword, onClose }: DetailPanelProps) => (
       </div>
 
       <div style={{ marginBottom: '24px' }}>
-        <div style={{ fontSize: '13px', fontWeight: '600', color: COLORS.textHeadings, marginBottom: '12px' }}>
-          LLM Sources
-        </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           {keyword.llmProviders.map((provider) => (
             <span
               key={provider}
               style={{
-                padding: '4px 10px',
+                padding: '4px 8px',
                 backgroundColor: COLORS.bgSecondary,
                 borderRadius: '4px',
                 fontSize: '12px',
@@ -221,6 +220,7 @@ const DetailPanel = ({ keyword, onClose }: DetailPanelProps) => (
           ))}
         </div>
       </div>
+
 
       <div style={{ marginBottom: '24px' }}>
         <div style={{ fontSize: '13px', fontWeight: '600', color: COLORS.textHeadings, marginBottom: '12px' }}>
@@ -327,16 +327,16 @@ const DetailPanel = ({ keyword, onClose }: DetailPanelProps) => (
         </div>
       )}
     </div>
-  </div>
+  </div >
 );
 
 interface SentimentKeywordData {
-    keyword: string;
-    sentiment: number;
-    sentimentLabel: string;
-    mentions: number;
-    citationDomains?: string[];
-    citationCategories?: { category: string; count: number }[];
+  keyword: string;
+  sentiment: number;
+  sentimentLabel: string;
+  mentions: number;
+  citationDomains?: string[];
+  citationCategories?: { category: string; count: number }[];
 }
 
 const SentimentDetailPanel = ({ keyword, onClose }: { keyword: SentimentKeywordData; onClose: () => void }) => (
@@ -437,8 +437,8 @@ const SentimentDetailPanel = ({ keyword, onClose }: { keyword: SentimentKeywordD
         </div>
       ) : null}
 
-       <p style={{ fontSize: '13px', color: '#64748b' }}>
-          Sentiment score is derived from the overall brand sentiment in responses where this keyword appeared. Higher score = more positive.
+      <p style={{ fontSize: '13px', color: '#64748b' }}>
+        Sentiment score is derived from the overall brand sentiment in responses where this keyword appeared. Higher score = more positive.
       </p>
     </div>
   </div>
@@ -447,6 +447,7 @@ const SentimentDetailPanel = ({ keyword, onClose }: { keyword: SentimentKeywordD
 export const Keywords = () => {
   const authLoading = useAuthStore((state) => state.isLoading);
   const { selectedBrandId, selectedBrand, brands, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+  const { queryTags } = useDashboardStore();
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'market' | 'sentiment'>('market');
   const [keywordData, setKeywordData] = useState<KeywordData[]>([]);
@@ -479,6 +480,9 @@ export const Keywords = () => {
           if (collectorTypes.length > 0) {
             params.set('collectorTypes', collectorTypes.join(','));
           }
+        }
+        if (queryTags && queryTags.length > 0) {
+          params.set('queryTags', queryTags.join(','));
         }
         // optional: add date range later
         const endpoint = `/brands/${selectedBrandId}/keywords?${params.toString()}`;
@@ -522,29 +526,29 @@ export const Keywords = () => {
         setLoading(false);
       }
     };
-    
+
     if (viewMode === 'market') {
-        fetchKeywords();
+      fetchKeywords();
     } else {
-        const fetchSentiment = async () => {
-            if (authLoading || brandsLoading || !selectedBrandId) return;
-            setLoading(true);
-            try {
-                const response = await apiClient.request<ApiResponse<SentimentKeywordData[]>>(`/recommendations-v3/analyze/keyword-mapping?brandId=${selectedBrandId}`);
-                if (response.success && response.data) {
-                    setSentimentData(response.data);
-                } else {
-                    setSentimentData([]);
-                }
-            } catch (e) {
-                console.error('Failed to load sentiment mapping', e);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchSentiment();
+      const fetchSentiment = async () => {
+        if (authLoading || brandsLoading || !selectedBrandId) return;
+        setLoading(true);
+        try {
+          const response = await apiClient.request<ApiResponse<SentimentKeywordData[]>>(`/recommendations-v3/analyze/keyword-mapping?brandId=${selectedBrandId}`);
+          if (response.success && response.data) {
+            setSentimentData(response.data);
+          } else {
+            setSentimentData([]);
+          }
+        } catch (e) {
+          console.error('Failed to load sentiment mapping', e);
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchSentiment();
     }
-  }, [authLoading, brandsLoading, selectedBrandId, selectedLlms, viewMode]);
+  }, [authLoading, brandsLoading, selectedBrandId, selectedLlms, viewMode, queryTags]);
 
   const filteredData = useMemo(() => {
     return keywordData.filter((kw) => {
@@ -613,7 +617,7 @@ export const Keywords = () => {
   // Filter sentiment data by selected domain
   const filteredSentimentData = useMemo(() => {
     if (domainFilter === 'all') return sentimentData;
-    return sentimentData.filter(kw => 
+    return sentimentData.filter(kw =>
       kw.citationDomains?.includes(domainFilter)
     );
   }, [sentimentData, domainFilter]);
@@ -656,17 +660,17 @@ export const Keywords = () => {
 
   const sentimentChartData = {
     datasets: sentimentData.map((kw) => ({
-        label: kw.keyword,
-        data: [{
-            x: kw.sentiment,
-            y: kw.mentions,
-            // Bubble size: base 8, up to 20 based on mentions
-            r: Math.min(7, 8 + kw.mentions * 2)
-        }],
-        // Color based on sentiment label
-        backgroundColor: kw.sentimentLabel === 'POSITIVE' ? COLORS.brand : kw.sentimentLabel === 'NEGATIVE' ? COLORS.competitor : COLORS.contested,
-        borderColor: '#fff',
-        borderWidth: 1
+      label: kw.keyword,
+      data: [{
+        x: kw.sentiment,
+        y: kw.mentions,
+        // Bubble size: base 8, up to 20 based on mentions
+        r: Math.min(7, 8 + kw.mentions * 2)
+      }],
+      // Color based on sentiment label
+      backgroundColor: kw.sentimentLabel === 'POSITIVE' ? COLORS.brand : kw.sentimentLabel === 'NEGATIVE' ? COLORS.competitor : COLORS.contested,
+      borderColor: '#fff',
+      borderWidth: 1
     }))
   };
 
@@ -757,10 +761,10 @@ export const Keywords = () => {
         max: 100,
       } : {
         title: {
-            display: true,
-            text: 'Mentions',
-            font: { size: 13, weight: '600' },
-            color: COLORS.textBody,
+          display: true,
+          text: 'Mentions',
+          font: { size: 13, weight: '600' },
+          color: COLORS.textBody,
         },
         grid: { color: COLORS.gridLines },
         min: 0
@@ -793,46 +797,46 @@ export const Keywords = () => {
       const yScale = chart.scales.y;
 
       if (viewMode === 'market') {
-          // Logic for market view (midpoint dynamic or 50)
-          const xMid = xScale.getPixelForValue(10000); // Or calculate dynamic mid
-          const yMid = yScale.getPixelForValue(50);
-          
-          ctx.beginPath();
-          ctx.moveTo(xMid, chartArea.top);
-          ctx.lineTo(xMid, chartArea.bottom);
-          ctx.stroke();
+        // Logic for market view (midpoint dynamic or 50)
+        const xMid = xScale.getPixelForValue(10000); // Or calculate dynamic mid
+        const yMid = yScale.getPixelForValue(50);
 
-          ctx.beginPath();
-          ctx.moveTo(chartArea.left, yMid);
-          ctx.lineTo(chartArea.right, yMid);
-          ctx.stroke();
-          
-           ctx.fillText('Golden Keywords', (xMid + chartArea.right) / 2, chartArea.top + 20);
-           ctx.fillText('Niche Dominance', (chartArea.left + xMid) / 2, chartArea.top + 20);
-           ctx.fillText('Opportunity Zone', (xMid + chartArea.right) / 2, chartArea.bottom - 10);
-           ctx.fillText('Low Priority', (chartArea.left + xMid) / 2, chartArea.bottom - 10);
+        ctx.beginPath();
+        ctx.moveTo(xMid, chartArea.top);
+        ctx.lineTo(xMid, chartArea.bottom);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, yMid);
+        ctx.lineTo(chartArea.right, yMid);
+        ctx.stroke();
+
+        ctx.fillText('Golden Keywords', (xMid + chartArea.right) / 2, chartArea.top + 20);
+        ctx.fillText('Niche Dominance', (chartArea.left + xMid) / 2, chartArea.top + 20);
+        ctx.fillText('Opportunity Zone', (xMid + chartArea.right) / 2, chartArea.bottom - 10);
+        ctx.fillText('Low Priority', (chartArea.left + xMid) / 2, chartArea.bottom - 10);
       } else {
-          // Sentiment View: Cross at 0, 0? Or 0 Sentiment?
-          // X Axis is Sentiment (-100 to 100). Mid is 0.
-          // Y Axis is Strength. Mid is ??? Let's say 50% of max.
-          const xMid = xScale.getPixelForValue(0);
-          const yMax = yScale.max || 100;
-          const yMid = yScale.getPixelForValue(yMax / 2);
+        // Sentiment View: Cross at 0, 0? Or 0 Sentiment?
+        // X Axis is Sentiment (-100 to 100). Mid is 0.
+        // Y Axis is Strength. Mid is ??? Let's say 50% of max.
+        const xMid = xScale.getPixelForValue(0);
+        const yMax = yScale.max || 100;
+        const yMid = yScale.getPixelForValue(yMax / 2);
 
-          ctx.beginPath();
-          ctx.moveTo(xMid, chartArea.top);
-          ctx.lineTo(xMid, chartArea.bottom);
-          ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(xMid, chartArea.top);
+        ctx.lineTo(xMid, chartArea.bottom);
+        ctx.stroke();
 
-          ctx.beginPath();
-          ctx.moveTo(chartArea.left, yMid);
-          ctx.lineTo(chartArea.right, yMid);
-          ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, yMid);
+        ctx.lineTo(chartArea.right, yMid);
+        ctx.stroke();
 
-           ctx.fillText('Brand Strongholds', (xMid + chartArea.right) / 2, chartArea.top + 20);
-           ctx.fillText('Critical Risks', (chartArea.left + xMid) / 2, chartArea.top + 20);
-           ctx.fillText('Potential Growth', (xMid + chartArea.right) / 2, chartArea.bottom - 10);
-           ctx.fillText('Nuisance / Ignored', (chartArea.left + xMid) / 2, chartArea.bottom - 10);
+        ctx.fillText('Brand Strongholds', (xMid + chartArea.right) / 2, chartArea.top + 20);
+        ctx.fillText('Critical Risks', (chartArea.left + xMid) / 2, chartArea.top + 20);
+        ctx.fillText('Potential Growth', (xMid + chartArea.right) / 2, chartArea.bottom - 10);
+        ctx.fillText('Nuisance / Ignored', (chartArea.left + xMid) / 2, chartArea.bottom - 10);
       }
     },
   };
@@ -863,36 +867,36 @@ export const Keywords = () => {
               <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
                 {viewMode === 'market' ? 'Analyze keyword positioning across search volume and brand ownership' : 'Map keywords by Sentiment and Importance to identify Risks and Strongholds'}
               </p>
-              
+
               <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
-                  <button 
-                    onClick={() => setViewMode('market')}
-                    style={{
-                        padding: '8px 16px',
-                        borderRadius: '6px',
-                        backgroundColor: viewMode === 'market' ? COLORS.accentPrimary : '#fff',
-                        color: viewMode === 'market' ? '#fff' : COLORS.textBody,
-                        border: '1px solid #e2e8f0',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                    }}
-                  >
-                    Market Position
-                  </button>
-                    <button 
-                    onClick={() => setViewMode('sentiment')}
-                    style={{
-                        padding: '8px 16px',
-                        borderRadius: '6px',
-                        backgroundColor: viewMode === 'sentiment' ? COLORS.accentPrimary : '#fff',
-                        color: viewMode === 'sentiment' ? '#fff' : COLORS.textBody,
-                        border: '1px solid #e2e8f0',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                    }}
-                  >
-                    Sentiment Landscape
-                  </button>
+                <button
+                  onClick={() => setViewMode('market')}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    backgroundColor: viewMode === 'market' ? COLORS.accentPrimary : '#fff',
+                    color: viewMode === 'market' ? '#fff' : COLORS.textBody,
+                    border: '1px solid #e2e8f0',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Market Position
+                </button>
+                <button
+                  onClick={() => setViewMode('sentiment')}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    backgroundColor: viewMode === 'sentiment' ? COLORS.accentPrimary : '#fff',
+                    color: viewMode === 'sentiment' ? '#fff' : COLORS.textBody,
+                    border: '1px solid #e2e8f0',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Sentiment Landscape
+                </button>
               </div>
             </div>
           </div>
@@ -957,21 +961,27 @@ export const Keywords = () => {
               </select>
             </div>
 
-            <div style={{ marginLeft: 'auto' }}>
-              <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '6px' }}>
-                &nbsp;
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={showMovement}
-                  onChange={(e) => setShowMovement(e.target.checked)}
-                  style={{ cursor: 'pointer' }}
-                />
-                <span style={{ fontSize: '13px', color: COLORS.textBody }}>
-                  Show change over last period
-                </span>
-              </label>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <div style={{ width: '200px' }}>
+                <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm w-full" />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '6px' }}>
+                  &nbsp;
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={showMovement}
+                    onChange={(e) => setShowMovement(e.target.checked)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '13px', color: COLORS.textBody }}>
+                    Show change
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -981,16 +991,16 @@ export const Keywords = () => {
                 Loading keywords…
               </div>
             ) : viewMode === 'market' ? (
-              <Scatter 
-                data={chartData} 
-                options={options} 
-                ref={chartRef} 
+              <Scatter
+                data={chartData}
+                options={options}
+                ref={chartRef}
               />
             ) : (
-              <Bubble 
-                data={sentimentChartData} 
-                options={options} 
-                ref={chartRef} 
+              <Bubble
+                data={sentimentChartData}
+                options={options}
+                ref={chartRef}
               />
             )}
           </div>
@@ -1014,170 +1024,170 @@ export const Keywords = () => {
         </div>
 
         {viewMode === 'market' && (
-        <div
-          style={{
-            backgroundColor: COLORS.bgPrimary,
-            border: `1px solid ${COLORS.gridLines}`,
-            borderRadius: '12px',
-            padding: '24px',
-          }}
-        >
-          <h2 style={{ fontSize: '18px', fontWeight: '600', color: COLORS.textHeadings, marginBottom: '16px' }}>
-            Keyword Details
-          </h2>
+          <div
+            style={{
+              backgroundColor: COLORS.bgPrimary,
+              border: `1px solid ${COLORS.gridLines}`,
+              borderRadius: '12px',
+              padding: '24px',
+            }}
+          >
+            <h2 style={{ fontSize: '18px', fontWeight: '600', color: COLORS.textHeadings, marginBottom: '16px' }}>
+              Keyword Details
+            </h2>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => setSelectedLlms([])}
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: '999px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  border: `1px solid ${selectedLlms.length === 0 ? COLORS.brand : COLORS.gridLines}`,
-                  backgroundColor: selectedLlms.length === 0 ? '#e6f7f1' : COLORS.bgPrimary,
-                  color: selectedLlms.length === 0 ? '#027a48' : '#64748b',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                }}
-                title="All Models"
-                aria-label="Show all models"
-              >
-                All
-              </button>
-              {LLM_PROVIDERS.map((llm) => {
-                const isActive = selectedLlms.includes(llm);
-                return (
-                  <button
-                    key={llm}
-                    type="button"
-                    onClick={() => {
-                      setSelectedLlms((prev) => {
-                        const currentlyActive = prev.includes(llm);
-                        if (currentlyActive) return prev.filter((m) => m !== llm);
-                        return [...prev, llm];
-                      });
-                    }}
-                    style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '999px',
-                      border: `1px solid ${isActive ? COLORS.brand : COLORS.gridLines}`,
-                      backgroundColor: isActive ? '#e6f7f1' : COLORS.bgPrimary,
-                      cursor: 'pointer',
-                      userSelect: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                    title={llm}
-                    aria-label={`Filter by ${llm}`}
-                  >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px' }}>
-                      {getLLMIcon(llm)}
-                    </span>
-                  </button>
-                );
-              })}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedLlms([])}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '999px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    border: `1px solid ${selectedLlms.length === 0 ? COLORS.brand : COLORS.gridLines}`,
+                    backgroundColor: selectedLlms.length === 0 ? '#e6f7f1' : COLORS.bgPrimary,
+                    color: selectedLlms.length === 0 ? '#027a48' : '#64748b',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                  title="All Models"
+                  aria-label="Show all models"
+                >
+                  All
+                </button>
+                {LLM_PROVIDERS.map((llm) => {
+                  const isActive = selectedLlms.includes(llm);
+                  return (
+                    <button
+                      key={llm}
+                      type="button"
+                      onClick={() => {
+                        setSelectedLlms((prev) => {
+                          const currentlyActive = prev.includes(llm);
+                          if (currentlyActive) return prev.filter((m) => m !== llm);
+                          return [...prev, llm];
+                        });
+                      }}
+                      style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '999px',
+                        border: `1px solid ${isActive ? COLORS.brand : COLORS.gridLines}`,
+                        backgroundColor: isActive ? '#e6f7f1' : COLORS.bgPrimary,
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      title={llm}
+                      aria-label={`Filter by ${llm}`}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px' }}>
+                        {getLLMIcon(llm)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: `2px solid ${COLORS.gridLines}` }}>
-                  <th
-                    onClick={() => handleSort('keyword')}
-                    style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
-                  >
-                    <span>
-                      Keyword
-                      {getSortIndicator('keyword')}
-                    </span>
-                  </th>
-                  <th
-                    onClick={() => handleSort('searchVolume')}
-                    style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
-                  >
-                    <span>
-                      Volume
-                      {getSortIndicator('searchVolume')}
-                    </span>
-                  </th>
-                  <th
-                    onClick={() => handleSort('ownership')}
-                    style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
-                  >
-                    <span>
-                      Brand Association
-                      {getSortIndicator('ownership')}
-                    </span>
-                  </th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>
-                    LLM Sources
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedData.map((kw, idx) => (
-                  <tr
-                    key={kw.keyword}
-                    onClick={() => setSelectedKeyword(kw)}
-                    style={{
-                      backgroundColor: idx % 2 === 0 ? COLORS.bgPrimary : COLORS.bgSecondary,
-                      cursor: 'pointer',
-                      transition: 'background-color 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#e6f7f1';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = idx % 2 === 0 ? COLORS.bgPrimary : COLORS.bgSecondary;
-                    }}
-                  >
-                    <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, fontWeight: '500' }}>
-                      {kw.keyword}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, textAlign: 'right' }}>
-                      {formatCount(kw.searchVolume)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, textAlign: 'right', fontWeight: '600' }}>
-                      {kw.ownership}%
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '12px', color: '#64748b' }}>
-                      {kw.llmProviders.length > 0 ? kw.llmProviders.join(', ') : '—'}
-                    </td>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${COLORS.gridLines}` }}>
+                    <th
+                      onClick={() => handleSort('keyword')}
+                      style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      <span>
+                        Keyword
+                        {getSortIndicator('keyword')}
+                      </span>
+                    </th>
+                    <th
+                      onClick={() => handleSort('searchVolume')}
+                      style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      <span>
+                        Volume
+                        {getSortIndicator('searchVolume')}
+                      </span>
+                    </th>
+                    <th
+                      onClick={() => handleSort('ownership')}
+                      style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      <span>
+                        Brand Association
+                        {getSortIndicator('ownership')}
+                      </span>
+                    </th>
+                    <th style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>
+                      LLM Sources
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {sortedData.map((kw, idx) => (
+                    <tr
+                      key={kw.keyword}
+                      onClick={() => setSelectedKeyword(kw)}
+                      style={{
+                        backgroundColor: idx % 2 === 0 ? COLORS.bgPrimary : COLORS.bgSecondary,
+                        cursor: 'pointer',
+                        transition: 'background-color 0.2s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#e6f7f1';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? COLORS.bgPrimary : COLORS.bgSecondary;
+                      }}
+                    >
+                      <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, fontWeight: '500' }}>
+                        {kw.keyword}
+                      </td>
+                      <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, textAlign: 'right' }}>
+                        {formatCount(kw.searchVolume)}
+                      </td>
+                      <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, textAlign: 'right', fontWeight: '600' }}>
+                        {kw.ownership}%
+                      </td>
+                      <td style={{ padding: '12px', fontSize: '12px', color: '#64748b' }}>
+                        {kw.llmProviders.length > 0 ? kw.llmProviders.join(', ') : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
         {/* Sentiment Table */}
         {viewMode === 'sentiment' && (
-             <div
+          <div
             style={{
-                backgroundColor: COLORS.bgPrimary,
-                border: `1px solid ${COLORS.gridLines}`,
-                borderRadius: '12px',
-                padding: '24px',
-                overflowX: 'auto'
+              backgroundColor: COLORS.bgPrimary,
+              border: `1px solid ${COLORS.gridLines}`,
+              borderRadius: '12px',
+              padding: '24px',
+              overflowX: 'auto'
             }}
-            >
-             <h2 style={{ fontSize: '18px', fontWeight: '600', color: COLORS.textHeadings, marginBottom: '16px' }}>
-                Keyword Sentiment Analysis
+          >
+            <h2 style={{ fontSize: '18px', fontWeight: '600', color: COLORS.textHeadings, marginBottom: '16px' }}>
+              Keyword Sentiment Analysis
             </h2>
-            
+
             {/* Domain Filter Dropdown */}
             <div style={{ marginBottom: '16px', position: 'relative', maxWidth: '300px' }}>
               <label style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px', display: 'block' }}>
                 Filter by Source/Domain
               </label>
-              <div 
+              <div
                 onClick={() => setShowDomainDropdown(!showDomainDropdown)}
                 style={{
                   padding: '10px 12px',
@@ -1195,7 +1205,7 @@ export const Keywords = () => {
                 <span>{domainFilter === 'all' ? 'All Sources' : domainFilter}</span>
                 <span style={{ fontSize: '10px', color: '#94a3b8' }}>{showDomainDropdown ? '▲' : '▼'}</span>
               </div>
-              
+
               {showDomainDropdown && (
                 <div style={{
                   position: 'absolute',
@@ -1228,7 +1238,7 @@ export const Keywords = () => {
                       }}
                     />
                   </div>
-                  
+
                   {/* Options List */}
                   <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
                     <div
@@ -1278,24 +1288,24 @@ export const Keywords = () => {
               )}
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
+              <thead>
                 <tr style={{ borderBottom: `2px solid ${COLORS.gridLines}` }}>
-                    <th style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Keyword</th>
-                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Sentiment</th>
-                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Score</th>
-                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Mentions</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Keyword</th>
+                  <th style={{ textAlign: 'center', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Sentiment</th>
+                  <th style={{ textAlign: 'center', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Score</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Mentions</th>
                 </tr>
-                </thead>
-                <tbody>
+              </thead>
+              <tbody>
                 {filteredSentimentData.map((kw, idx) => (
-                    <tr
+                  <tr
                     key={kw.keyword}
                     onClick={() => setSelectedKeyword(kw)}
                     style={{
-                        backgroundColor: idx % 2 === 0 ? COLORS.bgPrimary : COLORS.bgSecondary,
-                        cursor: 'pointer',
+                      backgroundColor: idx % 2 === 0 ? COLORS.bgPrimary : COLORS.bgSecondary,
+                      cursor: 'pointer',
                     }}
-                    >
+                  >
                     <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, fontWeight: '500' }}>{kw.keyword}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <span style={{
@@ -1312,11 +1322,11 @@ export const Keywords = () => {
                     </td>
                     <td style={{ padding: '12px', fontSize: '13px', color: kw.sentiment >= 50 ? COLORS.brand : COLORS.competitor, textAlign: 'center', fontWeight: '600' }}>{kw.sentiment}</td>
                     <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, textAlign: 'right' }}>{kw.mentions}</td>
-                    </tr>
+                  </tr>
                 ))}
-                </tbody>
+              </tbody>
             </table>
-            </div>
+          </div>
         )}
 
 
@@ -1324,9 +1334,9 @@ export const Keywords = () => {
           <DetailPanel keyword={selectedKeyword as KeywordData} onClose={() => setSelectedKeyword(null)} />
         )}
         {selectedKeyword && viewMode === 'sentiment' && 'sentimentLabel' in selectedKeyword && (
-            <SentimentDetailPanel keyword={selectedKeyword as SentimentKeywordData} onClose={() => setSelectedKeyword(null)} />
+          <SentimentDetailPanel keyword={selectedKeyword as SentimentKeywordData} onClose={() => setSelectedKeyword(null)} />
         )}
       </div>
-    </Layout>
+    </Layout >
   );
 };

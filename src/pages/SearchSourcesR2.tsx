@@ -15,6 +15,7 @@ import { ValueScoreTable, type ValueScoreSource } from '../components/SourcesR2/
 import { SummaryCards } from '../components/SourcesR2/SummaryCards';
 import { ImpactScoreTrendsChart } from '../components/SourcesR2/ImpactScoreTrendsChart';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
+import { QueryTagFilter } from '../components/common/QueryTagFilter';
 import { getDefaultDateRange } from './dashboard/utils';
 import { KeyTakeaways } from '../components/SourcesR2/KeyTakeaways';
 import { generateKeyTakeaways, type KeyTakeaway } from '../utils/SourcesTakeawayGenerator';
@@ -36,7 +37,7 @@ export const SearchSourcesR2 = () => {
   const [searchParams] = useSearchParams();
   const authLoading = useAuthStore((state) => state.isLoading);
   const { selectedBrandId, selectedBrand, isLoading: brandsLoading } = useManualBrandDashboard();
-  const { llmFilters, setLlmFilters } = useDashboardStore();
+  const { llmFilters, setLlmFilters, queryTags } = useDashboardStore();
 
   // Read date range from URL params if available
   const urlStartDate = searchParams.get('startDate');
@@ -85,8 +86,12 @@ export const SearchSourcesR2 = () => {
       params.append('collectors', llmFilters.join(','));
     }
 
+    if (queryTags && queryTags.length > 0) {
+      params.append('queryTags', queryTags.join(','));
+    }
+
     return `/brands/${selectedBrandId}/sources?${params.toString()}`;
-  }, [selectedBrandId, startDate, endDate, llmFilters]);
+  }, [selectedBrandId, startDate, endDate, llmFilters, queryTags]);
 
   const { data: response, loading, error } = useCachedData<ApiResponse<SourceAttributionResponse>>(
     sourcesEndpoint,
@@ -406,6 +411,8 @@ export const SearchSourcesR2 = () => {
               showComparisonInfo={false}
               className="flex-shrink-0"
             />
+
+            <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm" />
 
             {/* LLM Filters */}
             <div className="flex items-center gap-4">

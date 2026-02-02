@@ -998,6 +998,7 @@ export class OptimizedMetricsHelper {
     endDate?: string;
     collectorTypes?: string[];
     collectorResultIds?: number[];
+    queryTags?: string[];
   }): Promise<{
     success: boolean;
     data: Array<{
@@ -1014,7 +1015,7 @@ export class OptimizedMetricsHelper {
     error?: string;
   }> {
     const startTime = Date.now();
-    const { brandId, customerId, startDate, endDate, collectorTypes, collectorResultIds } = options;
+    const { brandId, customerId, startDate, endDate, collectorTypes, collectorResultIds, queryTags } = options;
 
     try {
       let query = this.supabase
@@ -1031,7 +1032,8 @@ export class OptimizedMetricsHelper {
           ),
           brand_sentiment(
             sentiment_score
-          )
+          ),
+          generated_queries!inner(query_tag)
         `)
         .eq('brand_id', brandId);
 
@@ -1053,6 +1055,9 @@ export class OptimizedMetricsHelper {
       }
       if (collectorResultIds && collectorResultIds.length > 0) {
         query = query.in('collector_result_id', collectorResultIds);
+      }
+      if (queryTags && queryTags.length > 0) {
+        query = query.in('generated_queries.query_tag', queryTags);
       }
 
       const { data, error } = await query;

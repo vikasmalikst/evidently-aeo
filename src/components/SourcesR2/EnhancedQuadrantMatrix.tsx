@@ -10,16 +10,8 @@ import { Bubble } from 'react-chartjs-2';
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
-export interface EnhancedSource {
-  name: string;
-  type: string;
-  mentionRate: number; // %
-  soa: number; // %
-  sentiment: number; // -1..1
-  citations: number;
-  valueScore: number; // 0..100
-  quadrant: 'priority' | 'reputation' | 'growth' | 'monitor';
-}
+import { EnhancedSource } from '../../types/citation-sources';
+
 
 interface EnhancedQuadrantMatrixProps {
   sources: EnhancedSource[];

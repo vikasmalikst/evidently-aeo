@@ -638,48 +638,18 @@ CONSTRAINTS:
 
 
     // v4.0 Prompt: Generate structured sections for interactive refinement
-    const contentInstructionsV4 = `You are a senior content strategist. Generate AEO-optimized content as STRUCTURED SECTIONS.
+    // DYNAMICALLY build sections based on structureConfig if present
+    const hasCustomStructure = request.structureConfig && request.structureConfig.sections && request.structureConfig.sections.length > 0;
 
-RETURN ONLY VALID JSON. No markdown, no explanations.
-
-BRAND: ${brand?.name || 'Brand'} (${brand?.industry || 'Unknown industry'})
-TARGET: ${rec.citation_source || 'Unknown'} (${sourceTypeV3})
-ACTION: ${rec.action}
-KPI: ${rec.kpi}
-
-=== OUTPUT: STRUCTURED SECTIONS ===
-
-Generate content as an array of 5-7 distinct sections. Each section should be:
-- Self-contained and valuable on its own
-- AEO-optimized with clear headings that match search queries
-- 100-200 words per section
-
-REQUIRED SECTIONS:
+    let sectionsInstruction = `REQUIRED SECTIONS:
 1. "executive_summary" - TL;DR with key takeaways (2-3 bullet points)
 2. "context" - Why this matters / The problem being solved
 3. "strategies" - Key approaches or steps (numbered list)
 4. "case_study" - Real example with metrics (use [FILL_IN:] for specifics)
 5. "faq" - 2-3 FAQ-style Q&As that AI models love to cite
-6. "cta" - Clear call to action
+6. "cta" - Clear call to action`;
 
-=== TONE: ${sourceTypeV3.toUpperCase()} ===
-${sourceTypeV3 === 'reddit' ? `Conversational, first-person, genuine questions` :
-        sourceTypeV3 === 'linkedin' ? `Professional, data-driven, thought leadership` :
-          sourceTypeV3 === 'youtube' ? `Spoken dialogue with [VISUAL:] cues` :
-            `Professional, clear, actionable`}
-
-=== CRITICAL: REAL CONTENT ===
-Write ACTUAL sentences. NOT "this section should cover..." but the REAL text.
-
-=== JSON SCHEMA v4.0 ===
-{
-  "version": "4.0",
-  "recommendationId": "${rec.id}",
-  "brandName": "${brand?.name || 'Brand'}",
-  "targetSource": { "domain": "${rec.citation_source || ''}", "sourceType": "${sourceTypeV3}" },
-  "contentTitle": "<compelling overall title>",
-  "sections": [
-    {
+    let jsonSchemaSections = `    {
       "id": "executive_summary",
       "title": "Executive Summary",
       "content": "<2-3 bullet points summarizing key takeaways>",
@@ -714,7 +684,64 @@ Write ACTUAL sentences. NOT "this section should cover..." but the REAL text.
       "title": "Next Steps",
       "content": "<actionable next steps for the reader>",
       "sectionType": "cta"
+    }`;
+
+    if (hasCustomStructure) {
+      console.log('📝 [RecommendationContentService] Using custom structure for prompt generation');
+
+      // Build instructions from custom structure
+      const customSectionsList = request.structureConfig!.sections.map((s, i) =>
+        `${i + 1}. "${s.id}" - ${s.title}` + (s.content ? `: ${s.content}` : '')
+      ).join('\n');
+
+      sectionsInstruction = `REQUIRED SECTIONS (Strictly follow this structure):
+${customSectionsList}`;
+
+      // Build JSON schema example from custom structure
+      jsonSchemaSections = request.structureConfig!.sections.map(s => `    {
+      "id": "${s.id}",
+      "title": "${s.title}",
+      "content": "<generate content for '${s.title}' based on instructions: ${s.content || 'provide relevant details'}>",
+      "sectionType": "${s.sectionType || 'custom'}"
+    }`).join(',\n');
     }
+
+    const contentInstructionsV4 = `You are a senior content strategist. Generate AEO-optimized content as STRUCTURED SECTIONS.
+
+RETURN ONLY VALID JSON. No markdown, no explanations.
+
+BRAND: ${brand?.name || 'Brand'} (${brand?.industry || 'Unknown industry'})
+TARGET: ${rec.citation_source || 'Unknown'} (${sourceTypeV3})
+ACTION: ${rec.action}
+KPI: ${rec.kpi}
+
+=== OUTPUT: STRUCTURED SECTIONS ===
+
+Generate content as an array of sections. Each section should be:
+- Self-contained and valuable on its own
+- AEO-optimized with clear headings that match search queries
+- 100-200 words per section (unless specified otherwise)
+
+${sectionsInstruction}
+
+=== TONE: ${sourceTypeV3.toUpperCase()} ===
+${sourceTypeV3 === 'reddit' ? `Conversational, first-person, genuine questions` :
+        sourceTypeV3 === 'linkedin' ? `Professional, data-driven, thought leadership` :
+          sourceTypeV3 === 'youtube' ? `Spoken dialogue with [VISUAL:] cues` :
+            `Professional, clear, actionable`}
+
+=== CRITICAL: REAL CONTENT ===
+Write ACTUAL sentences. NOT "this section should cover..." but the REAL text.
+
+=== JSON SCHEMA v4.0 ===
+{
+  "version": "4.0",
+  "recommendationId": "${rec.id}",
+  "brandName": "${brand?.name || 'Brand'}",
+  "targetSource": { "domain": "${rec.citation_source || ''}", "sourceType": "${sourceTypeV3}" },
+  "contentTitle": "<compelling overall title>",
+  "sections": [
+${jsonSchemaSections}
   ],
   "callToAction": "<final CTA with link placeholder>",
   "requiredInputs": ["<[FILL_IN: X] items across all sections>"]
@@ -786,7 +813,7 @@ ${contentStyleGuide}
     let newFactoryPrompt: string | null = null;
 
     // Supported types in New Content Factory
-    const newFactorySupportedAssets = ['article', 'whitepaper', 'short_video', 'expert_community_response', 'podcast', 'comparison_table'];
+    const newFactorySupportedAssets = ['article', 'whitepaper', 'short_video', 'expert_community_response', 'podcast', 'comparison_table', 'social_media_thread'];
 
     if (newFactorySupportedAssets.includes(assetDetection.asset)) {
       const recV3ForNew: RecommendationV3 = {
@@ -811,6 +838,7 @@ ${contentStyleGuide}
 
       console.log(`🚀 [RecommendationContentService] Attempting NEW Content Factory for asset: ${assetDetection.asset}`);
 
+      // Pass the structureConfig to the factory
       newFactoryPrompt = getNewContentPrompt({
         recommendation: recV3ForNew,
         brandContext: brandContextV3ForNew,
@@ -822,10 +850,9 @@ ${contentStyleGuide}
 
     if (newFactoryPrompt) {
       prompt = newFactoryPrompt;
-      console.log('🚀 [RecommendationContentService] Using NEW Content Factory (v2026.3) for article.');
-      console.log('🚀 [RecommendationContentService] Using NEW Content Factory (v2026.3) for article.');
+      console.log(`🚀 [RecommendationContentService] Using NEW Content Factory (v2026.3) for ${assetDetection.asset}.`);
     } else {
-      // Fallback to legacy prompt construction
+      // Fallback to legacy prompt construction (Restored to original state)
       prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${isColdStartGuide ? guideInstructions : contentInstructions}`;
     }
 

@@ -9,184 +9,20 @@ import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useDashboardStore } from '../store/dashboardStore';
 import { getLLMIcon } from '../components/Visibility/LLMIcons';
-import type { EnhancedSource } from '../components/SourcesR2/EnhancedQuadrantMatrix';
+import { EnhancedSource, SourceData, ApiResponse, SourceAttributionResponse } from '../types/citation-sources';
+import { computeEnhancedSources, normalizeDomain } from '../utils/citationAnalysisUtils';
 import { ValueScoreTable, type ValueScoreSource } from '../components/SourcesR2/ValueScoreTable';
 import { SummaryCards } from '../components/SourcesR2/SummaryCards';
 import { ImpactScoreTrendsChart } from '../components/SourcesR2/ImpactScoreTrendsChart';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
+import { QueryTagFilter } from '../components/common/QueryTagFilter';
 import { getDefaultDateRange } from './dashboard/utils';
 import { KeyTakeaways } from '../components/SourcesR2/KeyTakeaways';
 import { generateKeyTakeaways, type KeyTakeaway } from '../utils/SourcesTakeawayGenerator';
 import { SourceTypeDistribution } from '../components/SourcesR2/SourceTypeDistribution';
 import { EducationalContentDrawer, type KpiType } from '../components/EducationalDrawer/EducationalContentDrawer';
 
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  message?: string;
-}
 
-export interface SourceData {
-  name: string;
-  url: string;
-  type: 'brand' | 'editorial' | 'corporate' | 'reference' | 'ugc' | 'institutional';
-  mentionRate: number;
-  mentionChange: number;
-  soa: number;
-  soaChange: number;
-  sentiment: number;
-  sentimentChange: number;
-  citations: number;
-  topics: string[];
-  prompts: string[];
-  pages: string[];
-  value?: number;
-  visibility?: number;
-}
-
-interface SourceAttributionResponse {
-  sources: SourceData[];
-  overallMentionRate: number;
-  overallMentionChange: number;
-  avgSentiment: number;
-  avgSentimentChange: number;
-}
-
-const median = (nums: number[]): number => {
-  if (!nums.length) return 0;
-  const sorted = [...nums].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-};
-
-const percentile = (nums: number[], p: number): number => {
-  if (!nums.length) return 0;
-  const sorted = [...nums].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
-  return sorted[idx];
-};
-
-const valueScoreForSource = (src: SourceData, maxCitations: number, maxTopics: number, maxSentiment: number): number => {
-  // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed range normalization)
-  const sentimentNorm = maxSentiment > 0 ? Math.min(100, (src.sentiment / maxSentiment) * 100) : 0;
-  const citationsNorm = maxCitations > 0 ? (src.citations / maxCitations) * 100 : 0;
-  const topicsNorm = maxTopics > 0 ? (src.topics.length / maxTopics) * 100 : 0;
-  return (
-    src.mentionRate * 0.3 +
-    src.soa * 0.3 +
-    sentimentNorm * 0.2 +
-    citationsNorm * 0.1 +
-    topicsNorm * 0.1
-  );
-};
-
-const classifyQuadrant = (
-  mention: number,
-  soa: number,
-  sentiment: number,
-  citations: number,
-  thresholds: {
-    mentionMedian: number;
-    soaMedian: number;
-    sentimentMedian: number;
-    citationsMedian: number;
-    compositeMedian: number;
-    compositeTopQuartile: number;
-  },
-  maxCitations: number,
-  maxSentiment: number
-): EnhancedSource['quadrant'] => {
-  const mentionNorm = mention / 100;
-  const soaNorm = soa / 100;
-  // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed range normalization)
-  const sentimentNorm = maxSentiment > 0 ? Math.min(1, sentiment / maxSentiment) : 0;
-  const citationsNorm = maxCitations > 0 ? citations / maxCitations : 0;
-
-  const compositeScore =
-    mentionNorm * 0.35 +
-    soaNorm * 0.35 +
-    sentimentNorm * 0.2 +
-    citationsNorm * 0.1;
-
-  const visibilityStrong = mention >= thresholds.mentionMedian;
-  const soaStrong = soa >= thresholds.soaMedian;
-  const sentimentPositive = sentimentNorm >= thresholds.sentimentMedian;
-  const citationsStrong = citationsNorm >= thresholds.citationsMedian;
-  const compositeStrong = compositeScore >= thresholds.compositeTopQuartile;
-  const compositeHealthy = compositeScore >= thresholds.compositeMedian;
-
-  if (visibilityStrong && soaStrong && compositeStrong) return 'priority';
-  if (visibilityStrong && (!sentimentPositive || !citationsStrong)) return 'reputation';
-  if (!visibilityStrong && (sentimentPositive || citationsStrong) && compositeHealthy) return 'growth';
-  return 'monitor';
-};
-
-const normalizeDomain = (value: string | null | undefined): string => {
-  if (!value) return '';
-  const raw = value.trim().toLowerCase();
-  if (!raw) return '';
-  if (raw.startsWith('http://') || raw.startsWith('https://')) {
-    try {
-      return new URL(raw).hostname.replace(/^www\./, '');
-    } catch {
-      return raw.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-    }
-  }
-  return raw.replace(/^www\./, '').split('/')[0];
-};
-
-const computeEnhancedSources = (sourceData: SourceData[]): EnhancedSource[] => {
-  if (!sourceData.length) return [];
-
-  const maxCitations = Math.max(...sourceData.map((s) => s.citations), 1);
-  const maxTopics = Math.max(...sourceData.map((s) => s.topics.length), 1);
-  const maxSentiment = Math.max(...sourceData.map((s) => s.sentiment), 1);
-  const mentionMedian = median(sourceData.map((s) => s.mentionRate));
-  const soaMedian = median(sourceData.map((s) => s.soa));
-  const sentimentMedian = median(sourceData.map((s) => (maxSentiment > 0 ? s.sentiment / maxSentiment : 0)));
-  const citationsMedian = median(sourceData.map((s) => (maxCitations > 0 ? s.citations / maxCitations : 0)));
-
-  const compositeScores = sourceData.map((s) => {
-    const mentionNorm = s.mentionRate / 100;
-    const soaNorm = s.soa / 100;
-    const sentimentNorm = maxSentiment > 0 ? Math.min(1, s.sentiment / maxSentiment) : 0;
-    const citationsNorm = maxCitations > 0 ? s.citations / maxCitations : 0;
-    return mentionNorm * 0.35 + soaNorm * 0.35 + sentimentNorm * 0.2 + citationsNorm * 0.1;
-  });
-
-  const compositeMedian = median(compositeScores);
-  const compositeTopQuartile = percentile(compositeScores, 75);
-
-  return sourceData.map((s) => {
-    const valueScore = valueScoreForSource(s, maxCitations, maxTopics, maxSentiment);
-    return {
-      name: s.name,
-      type: s.type,
-      mentionRate: s.mentionRate,
-      soa: s.soa,
-      sentiment: s.sentiment,
-      citations: s.citations,
-      valueScore,
-      quadrant: classifyQuadrant(
-        s.mentionRate,
-        s.soa,
-        s.sentiment,
-        s.citations,
-        {
-          mentionMedian,
-          soaMedian,
-          sentimentMedian,
-          citationsMedian,
-          compositeMedian,
-          compositeTopQuartile
-        },
-        maxCitations,
-        maxSentiment
-      )
-    };
-  });
-};
 
 const hardcodedLlmOptions = [
   { value: 'chatgpt', label: 'ChatGPT' },
@@ -201,16 +37,13 @@ export const SearchSourcesR2 = () => {
   const [searchParams] = useSearchParams();
   const authLoading = useAuthStore((state) => state.isLoading);
   const { selectedBrandId, selectedBrand, isLoading: brandsLoading } = useManualBrandDashboard();
-  const { llmFilters, setLlmFilters } = useDashboardStore();
+  const { llmFilters, setLlmFilters, queryTags, startDate, endDate, setStartDate, setEndDate } = useDashboardStore();
 
   // Read date range from URL params if available
   const urlStartDate = searchParams.get('startDate');
   const urlEndDate = searchParams.get('endDate');
   const highlightSource = searchParams.get('highlightSource');
 
-  const { start: defaultStart, end: defaultEnd } = getDefaultDateRange();
-  const [startDate, setStartDate] = useState<string>(urlStartDate || defaultStart);
-  const [endDate, setEndDate] = useState<string>(urlEndDate || defaultEnd);
   const [activeQuadrant, setActiveQuadrant] = useState<EnhancedSource['quadrant'] | null>(null);
   const [selectedTrendSources, setSelectedTrendSources] = useState<string[]>([]);
   const [trendMetric, setTrendMetric] = useState<'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations'>('impactScore');
@@ -237,7 +70,7 @@ export const SearchSourcesR2 = () => {
     if (highlightSource && !sourceSearchQuery) {
       setSourceSearchQuery(highlightSource);
     }
-  }, [urlStartDate, urlEndDate, startDate, endDate, highlightSource, sourceSearchQuery]);
+  }, [urlStartDate, urlEndDate, startDate, endDate, highlightSource, sourceSearchQuery, setStartDate, setEndDate]);
 
   const sourcesEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
@@ -250,8 +83,12 @@ export const SearchSourcesR2 = () => {
       params.append('collectors', llmFilters.join(','));
     }
 
+    if (queryTags && queryTags.length > 0) {
+      params.append('queryTags', queryTags.join(','));
+    }
+
     return `/brands/${selectedBrandId}/sources?${params.toString()}`;
-  }, [selectedBrandId, startDate, endDate, llmFilters]);
+  }, [selectedBrandId, startDate, endDate, llmFilters, queryTags]);
 
   const { data: response, loading, error } = useCachedData<ApiResponse<SourceAttributionResponse>>(
     sourcesEndpoint,
@@ -571,6 +408,8 @@ export const SearchSourcesR2 = () => {
               showComparisonInfo={false}
               className="flex-shrink-0"
             />
+
+            <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm" />
 
             {/* LLM Filters */}
             <div className="flex items-center gap-4">

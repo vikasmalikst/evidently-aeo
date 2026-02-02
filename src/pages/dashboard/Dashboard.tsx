@@ -21,10 +21,13 @@ import { EmptyState } from './components/EmptyState';
 import { InfoTooltip } from './components/InfoTooltip';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { prefetchOnIdle } from '../../lib/prefetch';
+import { QueryTagFilter } from '../../components/common/QueryTagFilter';
+import { useDashboardStore } from '../../store/dashboardStore';
 import type { DashboardScoreMetric, LLMVisibilitySliceUI } from './types';
 import type { ApiResponse, DashboardPayload } from './types';
 
 export const Dashboard = () => {
+  const { queryTags } = useDashboardStore();
   const {
     startDate,
     endDate,
@@ -44,7 +47,7 @@ export const Dashboard = () => {
   } = useDashboardData();
 
   // Orchestrate automated onboarding steps (Domain Audit -> Recommendations)
-  useOnboardingOrchestrator(selectedBrandId);
+  useOnboardingOrchestrator(selectedBrand);
 
   // Progress UI is now accessed via the Header bell (minimizable modal)
   // so we no longer render a separate full-screen processing state here.
@@ -171,6 +174,7 @@ export const Dashboard = () => {
           linkTo: '/search-visibility',
           comparisons: buildComparisons('visibility'),
           comparisonSuffix: comparisonSuffix.visibility,
+          metricType: 'visibility' as const,
           description: 'How prominent is your brand in LLM answers.(based on number of appearances and positions)'
         },
         {
@@ -184,6 +188,7 @@ export const Dashboard = () => {
           linkTo: '/search-visibility?kpi=share',
           comparisons: buildComparisons('share'),
           comparisonSuffix: comparisonSuffix.share,
+          metricType: 'share' as const,
           description: '% of time you brand appeaars compared to your defined competitors. '
         },
         {
@@ -197,6 +202,7 @@ export const Dashboard = () => {
           linkTo: '/search-visibility?kpi=sentiment',
           comparisons: buildComparisons('sentiment'),
           comparisonSuffix: comparisonSuffix.sentiment,
+          metricType: 'sentiment' as const,
           description: 'Tone of the answers cited by LLMs from Brand\'s perspective (scaled 1-100)'
         },
         {
@@ -210,6 +216,7 @@ export const Dashboard = () => {
           linkTo: '/search-visibility?kpi=brandPresence',
           comparisons: buildComparisons('brandPresence'),
           comparisonSuffix: comparisonSuffix.brandPresence,
+          metricType: 'brandPresence' as const,
           description: '% of Answers that mention your brand\'s name in the answers.'
         }
       ];
@@ -301,20 +308,23 @@ export const Dashboard = () => {
               <p className="text-[15px] text-[#393e51]">
                 {overviewSubtitle}
               </p>
-              <DateRangeSelector
-                startDate={startDate}
-                endDate={endDate}
-                onStartDateChange={setStartDate}
-                onEndDateChange={setEndDate}
-                showComparisonInfo={false}
-              />
+              <div className="flex items-center gap-3">
+                <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm" />
+                <DateRangeSelector
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                  showComparisonInfo={false}
+                />
+              </div>
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-4 gap-5 mb-6">
           {metricCards.map(({ key, ...cardProps }) => (
-            <MetricCard key={key} {...cardProps} />
+            <MetricCard key={key} {...cardProps} queryTags={queryTags} />
           ))}
         </div>
 

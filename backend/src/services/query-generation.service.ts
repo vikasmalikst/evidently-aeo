@@ -1,6 +1,7 @@
 import { OpenAI } from 'openai';
 import { supabaseAdmin } from '../config/database';
 import { v4 as uuidv4 } from 'uuid';
+import { queryTaggingService } from './query-tagging.service';
 
 export interface QueryGenerationRequest {
   url: string;
@@ -2056,6 +2057,9 @@ CRITICAL VALIDATION BEFORE RETURNING:
         throw new Error(`Failed to save query generation: ${error.message}`);
       }
 
+      // Fetch brand terms for tagging
+      const brandTerms = await queryTaggingService.getBrandTerms(brandId, brandName);
+
       // Save individual queries
       const queryInserts = queries.map((q, index) => ({
         generation_id: generationId,
@@ -2063,6 +2067,7 @@ CRITICAL VALIDATION BEFORE RETURNING:
         // Note: brand_name column doesn't exist in generated_queries table
         customer_id: request.customer_id,
         query_text: q.query,
+        query_tag: queryTaggingService.determineTag(q.query, brandTerms),
         intent: q.intent,
         brand: brandName,
         template_id: `template-${index}`,

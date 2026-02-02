@@ -39,12 +39,16 @@ export class OpportunityPromptService {
                     queryText: opp.queryText,
                     topic: opp.topic,
                     metrics: [],
+                    competitors: [],
                     sources: opp.topSources.map(s => s.domain)
                 });
             }
             const q = queryMap.get(opp.queryId);
             if (!q.metrics.includes(opp.metricName)) {
                 q.metrics.push(opp.metricName);
+            }
+            if (opp.competitor && !q.competitors.includes(opp.competitor)) {
+                q.competitors.push(opp.competitor);
             }
         });
 
@@ -54,6 +58,7 @@ ID: ${q.id}
 Text: "${q.queryText}"
 Topic: ${q.topic || 'Not specified'}
 KPIs to Improve: ${q.metrics.join(', ')}
+Competitors to Target: ${q.competitors.length > 0 ? q.competitors.join(', ') : 'General (Brand Only)'}
 Available Channels: ${q.sources.join(', ') || 'No specific sources identified'}`;
         }).join('\n\n');
 
@@ -72,9 +77,10 @@ RULES:
 2. The "Channel" (citationSource domain) MUST NOT be any of the following competitor domains: ${competitorList}.
 3. Respect the purpose and suitability of content type for each channel.
 4. Content MUST be optimized for LLM scraping and AEO impact.
+5. VARY YOUR CONTENT TYPES: Do not use the same content type for every recommendation. Mix Short-forms videos, Comparison tables, and Articles based on the specific query nuance.
 
 CONTENT TYPE OPTIONS:
-- Short-form Video Script (TikTok/Reels/YouTube Shorts)
+- Short-form Video Script (Best for rapid answers, visual explanations, and increasing dwell time)
 - Social Media Thread (X/Threads)
 - Technical Comparison Table (Specialized for AEO comparison queries)
 

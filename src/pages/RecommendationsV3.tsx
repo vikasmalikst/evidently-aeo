@@ -14,6 +14,7 @@ import { useManualBrandDashboard } from '../manual-dashboard';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import {
   getRecommendationsByStepV3,
+  getGenerationV3,
   generateContentV3,
   generateContentBulkV3,
   generateGuideV3,
@@ -29,6 +30,8 @@ import {
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
 import { PremiumTabNavigator } from '../components/RecommendationsV3/PremiumTabNavigator';
+import { CompactStepIndicator } from '../components/RecommendationsV3/CompactStepIndicator';
+import { CollapsibleFilters } from '../components/RecommendationsV3/CollapsibleFilters';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { OpportunityStrategyCard } from '../components/RecommendationsV3/components/OpportunityStrategyCard';
 import { StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
@@ -37,6 +40,7 @@ import { getTemplateForAction } from '../components/RecommendationsV3/data/struc
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
 import { EffortFilter } from '../components/RecommendationsV3/components/EffortFilter';
+import { ContentTypeFilter } from '../components/RecommendationsV3/components/ContentTypeFilter';
 import { ContentSectionRenderer, SectionTypeBadge } from '../components/RecommendationsV3/components/ContentSectionRenderer';
 import { SEOScoreCard, ExportModal } from '../components/RecommendationsV3/components/SEOScoreCard';
 import { AEOScoreBadge } from '../components/RecommendationsV3/components/ContentAnalysisTools';
@@ -103,7 +107,19 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_review' | 'approved' | 'rejected'>('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'High' | 'Medium' | 'Low'>('all');
   const [effortFilter, setEffortFilter] = useState<'all' | 'Low' | 'Medium' | 'High'>('all');
+  const [contentTypeFilter, setContentTypeFilter] = useState<string>('all');
   const [allRecommendations, setAllRecommendations] = useState<RecommendationV3[]>([]); // Store all Step 1 recommendations for local filtering
+
+  // Calculate available content types from all recommendations
+  const availableContentTypes = React.useMemo(() => {
+    const types = new Set<string>();
+    allRecommendations.forEach(rec => {
+      if (rec.assetType) {
+        types.add(rec.assetType);
+      }
+    });
+    return Array.from(types).sort();
+  }, [allRecommendations]);
   const [generatingContentIds, setGeneratingContentIds] = useState<Set<string>>(new Set()); // Track which recommendations are generating content
   const [hasGeneratedContentForStep3, setHasGeneratedContentForStep3] = useState(false); // Drives Step 3 "attention" animation after generating content
   const [hasCompletedForStep4, setHasCompletedForStep4] = useState(false); // Drives Step 4 "attention" animation after marking completed
@@ -128,6 +144,40 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [globalReferences, setGlobalReferences] = useState<Map<string, string>>(new Map()); // recId -> references
   const [refiningIds, setRefiningIds] = useState<Set<string>>(new Set()); // Track which recommendations are being refined
   const [refinedContent, setRefinedContent] = useState<Map<string, any>>(new Map()); // recId -> refined v4.0 content
+  
+  // Custom Structure State (Lifted from Inline Editor)
+  const [customizedStructures, setCustomizedStructures] = useState<Map<string, StructureSection[]>>(new Map());
+
+  const [stepCounts, setStepCounts] = useState<Record<number, number>>({});
+
+  // Fetch counts for all steps
+  useEffect(() => {
+    if (!generationId) return;
+
+    const fetchCounts = async () => {
+      try {
+        const response = await getGenerationV3(generationId);
+        if (response.success && response.data?.recommendations) {
+          const recs = response.data.recommendations;
+
+          const counts = {
+            1: recs.filter(r => r.reviewStatus === 'pending_review' || !r.reviewStatus).length,
+            2: recs.filter(r => r.isApproved && !r.isContentGenerated).length,
+            3: recs.filter(r => r.isContentGenerated && !r.isCompleted).length,
+            4: recs.filter(r => r.isCompleted).length
+          };
+
+          setStepCounts(counts);
+        }
+      } catch (err) {
+        console.error('Error fetching generation counts:', err);
+      }
+    };
+
+    fetchCounts();
+    // Re-fetch counts when step changes to keep them somewhat in sync
+    // or when specific actions occur (though we rely on generationId mostly)
+  }, [generationId, currentStep]);
 
   const isColdStart = dataMaturity === 'cold_start';
 
@@ -439,8 +489,13 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       filtered = filtered.filter(rec => rec.effort === effortFilter);
     }
 
+    // Content Type filter
+    if (contentTypeFilter !== 'all') {
+      filtered = filtered.filter(rec => rec.assetType === contentTypeFilter);
+    }
+
     setRecommendations(filtered);
-  }, [statusFilter, priorityFilter, effortFilter, allRecommendations, currentStep]);
+  }, [statusFilter, priorityFilter, effortFilter, contentTypeFilter, allRecommendations, currentStep]);
 
   // Restore persisted step when selectedBrandId changes (e.g., brand switch)
   useEffect(() => {
@@ -985,16 +1040,22 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       <ContentStructureInlineEditor
         recommendationId={recommendation.id!}
         contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
+        initialSections={customizedStructures.get(recommendation.id!)}
+        onChange={(sections) => {
+          setCustomizedStructures(prev => {
+            const next = new Map(prev);
+            next.set(recommendation.id!, sections);
+            return next;
+          });
+        }}
         onSave={async (sections) => {
           setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
           try {
+            // Only save to DB, do not generate
             const res = await saveContentDraftV3(recommendation.id!, sections);
             if (!res.success) {
               throw new Error(res.error || 'Failed to save content structure');
             }
-
-            // Proceed to generate content using the saved structure
-            await executeContentGeneration(recommendation.id!, sections);
           } finally {
             setGeneratingContentIds(prev => {
               const next = new Set(prev);
@@ -1004,6 +1065,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           }
         }}
         isSaving={generatingContentIds.has(recommendation.id!)}
+        competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name) || []}
       />
     );
   };
@@ -1013,8 +1075,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     if (!recommendation.id || action !== 'generate-content') return;
     if (generatingContentIds.has(recommendation.id)) return;
 
-    // Trigger generation directly
-    executeContentGeneration(recommendation.id, []);
+    // Use customized structure if available, otherwise empty array (default)
+    const customizedSections = customizedStructures.get(recommendation.id) || [];
+
+    // Trigger generation using the consolidated function
+    executeContentGeneration(recommendation.id, customizedSections);
   };
 
   // Execution of content generation after structure confirmation
@@ -1350,6 +1415,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           {generationId && (
             <PremiumTabNavigator
               currentStep={currentStep}
+              counts={stepCounts}
               attentionSteps={{
                 2: (() => {
                   const sourceArray = allRecommendations.length > 0 ? allRecommendations : recommendations;
@@ -1511,10 +1577,26 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                     <h2 className="text-[20px] font-bold text-[#0f172a] mb-1">Discover Opportunities</h2>
                     <p className="text-[14px] text-[#64748b]">Review findings and prioritize recommendations</p>
                   </div>
-                  <div className="flex items-end gap-3 flex-wrap">
-                    <StatusFilter value={statusFilter} onChange={setStatusFilter} />
-                    <PriorityFilter value={priorityFilter} onChange={setPriorityFilter} />
-                    <EffortFilter value={effortFilter} onChange={setEffortFilter} />
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <CollapsibleFilters
+                      activeFilterCount={
+                        (statusFilter !== 'all' ? 1 : 0) +
+                        (priorityFilter !== 'all' ? 1 : 0) +
+                        (effortFilter !== 'all' ? 1 : 0) +
+                        (contentTypeFilter !== 'all' ? 1 : 0)
+                      }
+                      onClearAll={() => {
+                        setStatusFilter('all');
+                        setPriorityFilter('all');
+                        setEffortFilter('all');
+                        setContentTypeFilter('all');
+                      }}
+                    >
+                      <StatusFilter value={statusFilter} onChange={setStatusFilter} />
+                      <PriorityFilter value={priorityFilter} onChange={setPriorityFilter} />
+                      <EffortFilter value={effortFilter} onChange={setEffortFilter} />
+                      <ContentTypeFilter value={contentTypeFilter} onChange={setContentTypeFilter} options={availableContentTypes} />
+                    </CollapsibleFilters>
                   </div>
                 </div>
                 <RecommendationsTableV3
@@ -1653,7 +1735,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     {expandedRecId === rec.id ? <IconMinus size={20} /> : <IconPlus size={20} />}
                                   </span>
                                   <div className="flex-1">
-                                    <h3 className="text-[16px] font-semibold text-[#1a1d29] leading-tight">{rec.action}</h3>
+                                    <h3 className="text-[16px] font-medium text-[#1a1d29] leading-tight">{rec.action}</h3>
                                     <p className="text-[12px] text-[#64748b] mt-1">
                                       KPI: {rec.kpi} · Source: {rec.citationSource} · Effort: {rec.effort} · Timeline: {rec.timeline}
                                     </p>
@@ -1885,7 +1967,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     {expandedRecId === rec.id ? <IconMinus size={20} /> : <IconPlus size={20} />}
                                   </span>
                                   <div className="flex-1">
-                                    <h3 className="text-[16px] font-semibold text-[#1a1d29] mb-2 leading-tight">{rec.action}</h3>
+                                    <h3 className="text-[14px] font-normal text-[#1a1d29] mb-2 leading-relaxed">{rec.action}</h3>
                                     <div className="flex items-center gap-2">
                                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
                                         <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -2195,7 +2277,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                   <span className="w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[11px] font-bold flex items-center justify-center">
                                                     {idx + 1}
                                                   </span>
-                                                  <h4 className="text-[14px] font-semibold text-[#1a1d29]">{section.title}</h4>
+                                                  <h4 className="text-[14px] font-medium text-[#1a1d29]">{section.title}</h4>
                                                   <SectionTypeBadge sectionType={section.sectionType} />
                                                 </div>
                                                 <div className="flex items-center gap-2">

@@ -68,7 +68,7 @@ type Tracker = {
 
 const trackers = new Map<string, Tracker>();
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 15000;
 const REQUEST_TIMEOUT_MS = 45000;
 
 const computeIsComplete = (progress: OnboardingProgressData | null): boolean => {

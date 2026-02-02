@@ -11,6 +11,8 @@ import { motion } from 'framer-motion';
 
 // Components
 import { QueriesRankedTable } from './components/QueriesRankedTable';
+import { QueryTagFilter } from '../../components/common/QueryTagFilter';
+import { useDashboardStore } from '../../store/dashboardStore';
 
 // Types
 import type { QueriesAnalysisData, Query, QueriesPortfolio, QueriesPerformance } from './types';
@@ -25,6 +27,7 @@ interface ApiResponse<T> {
 
 export const QueriesAnalysisPage = () => {
     const { selectedBrand, selectedBrandId } = useManualBrandDashboard();
+    const { queryTags } = useDashboardStore();
 
     // Date Range State
     const { start: defaultStart, end: defaultEnd } = getDefaultDateRange();
@@ -48,8 +51,11 @@ export const QueriesAnalysisPage = () => {
         if (selectedModels.length > 0) {
             params.set('collectors', selectedModels.join(','));
         }
+        if (queryTags && queryTags.length > 0) {
+            params.set('queryTags', queryTags.join(','));
+        }
         return `/brands/${selectedBrandId}/prompts?${params.toString()}`;
-    }, [selectedBrandId, startDate, endDate, selectedModels]);
+    }, [selectedBrandId, startDate, endDate, selectedModels, queryTags]);
 
     const { data: response, loading, error } = useCachedData<ApiResponse<PromptAnalyticsPayload>>(
         promptsEndpoint,
@@ -246,6 +252,8 @@ export const QueriesAnalysisPage = () => {
                                 showComparisonInfo={false}
                                 className="flex-shrink-0"
                             />
+
+                            <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm" />
 
                             {/* LLM Selector/Filter Icons */}
                             <div className="flex items-center gap-4">

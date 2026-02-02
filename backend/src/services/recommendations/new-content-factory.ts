@@ -8,6 +8,9 @@ import { buildShortVideoPrompt } from './prompts/short-video-prompt';
 import { buildExpertResponsePrompt } from './prompts/expert-response-prompt';
 import { buildPodcastPrompt } from './prompts/podcast-prompt';
 import { buildComparisonTablePrompt } from './prompts/comparison-table-prompt';
+import { buildSocialMediaThreadPrompt } from './prompts/social-media-thread-prompt';
+
+// ... (existing imports)
 
 // ... (existing imports)
 
@@ -46,7 +49,10 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
         case 'podcast':
             return buildPodcastPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         case 'comparison_table':
-            return buildComparisonTablePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+            const competitors = ctx.recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name) || [];
+            return buildComparisonTablePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig, competitors);
+        case 'social_media_thread':
+            return buildSocialMediaThreadPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         default:
             return null;
     }
@@ -122,30 +128,30 @@ function buildBlogArticlePrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Default structure if none provided
+    // Default structure if none provided (Matches Frontend "Article" Template)
     const defaultSections = [
         {
             id: "direct_answer",
             title: "Direct Answer",
-            content: "<Concise answer to the primary question (80–120 words)>",
+            content: "Provide a direct, standalone answer to the main user question immediately (80-120 words). Optimize for 'featured snippet' extraction. Bold key concepts.",
             sectionType: "answer"
         },
         {
             id: "how_it_works",
             title: "How It Works",
-            content: "<Explain mechanism step-by-step>",
+            content: "Break down the mechanism or process into clear, numbered steps. Focus on 'why' it works, not just 'what' it is to build semantic depth.",
             sectionType: "explanation"
         },
         {
             id: "comparison",
             title: "Comparison With Alternatives",
-            content: "<Objective comparison with competitors>",
+            content: "Objectively compare with 2-3 main alternatives. Highlight unique differentiators without marketing fluff. Use contrastive language (e.g., 'Unlike X, Y does...').",
             sectionType: "comparison"
         },
         {
             id: "limitations",
             title: "Limitations and Trade-Offs",
-            content: "<What this does NOT solve>",
+            content: "Explicitly state 1-2 limitations or trade-offs. This increases trust and prevents 'too good to be true' penalties in AI scoring.",
             sectionType: "constraints"
         }
     ];

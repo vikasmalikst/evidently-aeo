@@ -7,32 +7,41 @@ export function buildComparisonTablePrompt(
     brandName: string,
     currentYear: number,
     rec: RecommendationV3,
-    structureConfig?: StructureConfig
+    structureConfig?: StructureConfig,
+    competitors: string[] = [] // New argument
 ): string {
+
+    // Dynamic table header
+    const competitorColumns = competitors.length > 0
+        ? competitors.map(c => `[${c}]`).join(' | ')
+        : '[Competitor]';
+    const competitorHeader = competitors.length > 0
+        ? competitors.join(' | ')
+        : '[Competitor]';
 
     const defaultSections = [
         {
             id: "overview",
             title: "Overview",
-            content: "<300-400 words introducing the comparison.>",
+            content: "A neutral, high-level summary of the comparison landscape (300-400 words). Define the criteria used for evaluation.",
             sectionType: "context"
         },
         {
             id: "table",
             title: "Comparison Table",
-            content: `| Feature | ${brandName} | [Competitor] |\n|---|---|---|\n| [Feature 1] | [Value] | [Value] |`,
+            content: `| Feature | ${brandName} | ${competitorHeader} |\n|---|---|${competitors.length > 0 ? competitors.map(() => '---').join('|') : '---'}|\n| [Feature 1] | [Value] | ${competitorColumns} |`,
             sectionType: "comparison_table"
         },
         {
             id: "detailed_analysis",
             title: "Deep Dive Analysis",
-            content: "<Comprehensive prose analysis of the differences (400-600 words).>",
+            content: "Prose analysis explaining the 'why' behind the table ratings. Focus on nuances that don't fit in the grid. 400-600 words.",
             sectionType: "strategies"
         },
         {
             id: "verdict",
             title: "Final Verdict",
-            content: "<Balanced conclusion: who should choose which option>",
+            content: "A 'Who is this for?' conclusion. Define the ideal user profile for each option rather than declaring a universal winner.",
             sectionType: "cta"
         }
     ];
@@ -58,6 +67,8 @@ This should be FAIR and BALANCED - not just marketing for ${brandName}.
 QUALITY REQUIREMENTS:
 - Compare 5-7 realistic features/criteria in DEPTH
 - **CRITICAL:** The comparison table must be valid MARKDOWN TABLE syntax.
+- **CRITICAL:** Use DESCRIPTIVE TEXT in table cells (e.g., "Native Integration", "Full Support", "Limited via API"). Do NOT use bare numbers (1-5) or ratings unless explicitly requested.
+- If comparing capabilities, explain the DIFFERENCE (e.g., "Automated" vs "Manual").
 - The prose analysis should be SUBSTANTIAL (400+ words).
 - CRITICAL: DO NOT RENAME SECTIONS. Use the exact "title" provided in the structure for each section.
 

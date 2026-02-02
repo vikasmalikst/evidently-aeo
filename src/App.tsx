@@ -35,6 +35,8 @@ import LandingPage from './pages/LandingPage';
 import { ExecutiveReportingPage } from './pages/ExecutiveReporting/ExecutiveReportingPage';
 import { QueriesAnalysisPage } from './pages/QueriesAnalysis/QueriesAnalysisPage';
 import { ManageReports } from './pages/ManageReports';
+import { ExecutiveSummaryPage } from './pages/executive-summary/ExecutiveSummaryPage';
+
 
 // New pages for restructured navigation
 import { MeasurePage } from './pages/Measure';
@@ -337,6 +339,14 @@ function App() {
             <EntitlementRoute requiredFeature="executive_reporting">
               <ExecutiveReportingPage />
             </EntitlementRoute>
+          }
+        />
+        <Route
+          path="/executive-summary"
+          element={
+            <ProtectedRoute>
+              <ExecutiveSummaryPage />
+            </ProtectedRoute>
           }
         />
 

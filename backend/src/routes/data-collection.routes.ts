@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import { dataCollectionService, QueryExecutionRequest } from '../services/data-collection/data-collection.service';
 import { priorityCollectorService } from '../services/data-collection/priority-collector.service';
 import { brandProductEnrichmentService } from '../services/onboarding/brand-product-enrichment.service';
+import { queryTaggingService } from '../services/query-tagging.service';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
@@ -124,10 +125,14 @@ router.post('/execute', async (req: Request, res: Response) => {
       });
     }
 
+    // Fetch brand terms for tagging
+    const brandTerms = await queryTaggingService.getBrandTerms(brandId);
+
     // Then insert queries into generated_queries table
     const queryInserts = queryIds.map((queryText: string, index: number) => ({
       generation_id: generation.id,
       query_text: queryText,
+      query_tag: queryTaggingService.determineTag(queryText, brandTerms),
       intent: 'data_collection',
       brand_id: brandId,
       customer_id: customerId,

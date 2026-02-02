@@ -23,9 +23,10 @@ export const keywordsAnalyticsService = {
     endDate?: string;
     collectorType?: string;
     collectorTypes?: string[];
+    queryTags?: string[];
   }): Promise<KeywordAnalyticsPayload> {
-    const { brandId, customerId, startDate, endDate, collectorType, collectorTypes } = params;
-    
+    const { brandId, customerId, startDate, endDate, collectorType, collectorTypes, queryTags } = params;
+
     // Check feature flag status
     const USE_OPTIMIZED_KEYWORDS_QUERY = process.env.USE_OPTIMIZED_KEYWORDS_QUERY === 'true';
     console.log(`🔍 [Keywords Analytics] Feature flag USE_OPTIMIZED_KEYWORDS_QUERY: ${USE_OPTIMIZED_KEYWORDS_QUERY}`);
@@ -54,12 +55,12 @@ export const keywordsAnalyticsService = {
     const mappedCollectorTypes =
       requestedCollectorTypesRaw.length > 0
         ? Array.from(
-            new Set(
-              requestedCollectorTypesRaw
-                .map((t) => normalizeCollectorType(t))
-                .filter((t): t is string => typeof t === 'string' && t.length > 0)
-            )
+          new Set(
+            requestedCollectorTypesRaw
+              .map((t) => normalizeCollectorType(t))
+              .filter((t): t is string => typeof t === 'string' && t.length > 0)
           )
+        )
         : undefined;
 
     if (mappedCollectorTypes && mappedCollectorTypes.length > 0) {
@@ -72,6 +73,29 @@ export const keywordsAnalyticsService = {
       .select('keyword, query_id, collector_result_id, created_at')
       .eq('brand_id', brandId)
       .eq('customer_id', customerId);
+
+    // If queryTags provided, fetch matching query IDs first
+    if (queryTags && queryTags.length > 0) {
+      const { data: taggedQueries, error: tagError } = await supabaseAdmin
+        .from('generated_queries')
+        .select('id')
+        .in('query_tag', queryTags)
+        .eq('brand_id', brandId);
+
+      if (tagError) {
+        console.error('Failed to fetch tagged queries for keywords:', tagError);
+      } else if (taggedQueries && taggedQueries.length > 0) {
+        const allowedQueryIds = taggedQueries.map(q => q.id);
+        keywordQuery = keywordQuery.in('query_id', allowedQueryIds);
+      } else {
+        // No queries match tags -> return empty
+        return {
+          keywords: [],
+          startDate,
+          endDate
+        };
+      }
+    }
 
     if (startDate) keywordQuery = keywordQuery.gte('created_at', startDate);
     if (endDate) keywordQuery = keywordQuery.lte('created_at', endDate);
@@ -97,7 +121,7 @@ export const keywordsAnalyticsService = {
 
     const collectorIdList = Array.from(collectorIds.values());
     console.log(`📊 [Keywords Analytics] Found ${collectorIdList.length} unique collector_result_ids`);
-    
+
     const brandPresenceByCollector = new Map<number, { brand: number; total: number; type: string | null }>();
 
     if (collectorIdList.length > 0) {
@@ -107,7 +131,7 @@ export const keywordsAnalyticsService = {
         .from('collector_results')
         .select('id, collector_type')
         .in('id', collectorIdList);
-      
+
       if (mappedCollectorTypes && mappedCollectorTypes.length > 0) {
         collectorQuery = collectorQuery.in('collector_type', mappedCollectorTypes);
       }
@@ -117,7 +141,7 @@ export const keywordsAnalyticsService = {
       if (collectorError) {
         throw new Error(`Failed to fetch collector types for keywords: ${collectorError.message}`);
       }
-      
+
       // Get valid collector IDs (filtered by collector_type if provided)
       const validCollectorIds = new Set<number>();
       const collectorTypeMap = new Map<number, string>();
@@ -160,7 +184,7 @@ export const keywordsAnalyticsService = {
       // 3) Pull brand presence from positions table for valid collector_result_ids
       // Filter by collector_type if provided
       // Volume should only count brand positions (not competitor positions)
-      
+
       let positionRows: any[] | null = null
       let positionsError: any = null
 
@@ -235,10 +259,10 @@ export const keywordsAnalyticsService = {
         const id = typeof row.collector_result_id === 'number' ? row.collector_result_id : null;
         if (id === null) continue;
         if (!brandPresenceByCollector.has(id)) {
-          brandPresenceByCollector.set(id, { 
-            brand: 0, 
-            total: 0, 
-            type: collectorTypeMap.get(id) || null 
+          brandPresenceByCollector.set(id, {
+            brand: 0,
+            total: 0,
+            type: collectorTypeMap.get(id) || null
           });
         }
         const agg = brandPresenceByCollector.get(id)!;

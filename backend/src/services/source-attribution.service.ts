@@ -108,7 +108,8 @@ export class SourceAttributionService {
     customerId: string,
     dateRange?: { start: string; end: string },
     comparisonRange?: { start: string; end: string },
-    collectors?: string[]
+    collectors?: string[],
+    queryTags?: string[]
   ): Promise<SourceAttributionResponse> {
     const serviceStartTime = Date.now();
     const stepTimings: Record<string, number> = {};
@@ -139,12 +140,41 @@ export class SourceAttributionService {
       const startIso = normalizedRange.startIso
       const endIso = normalizedRange.endIso
 
-      // Step 2: Try Supabase cache first (skip if collectors filter is active)
+      // Step 1b: If queryTags are provided, fetch matching query IDs
+      let allowedQueryIds: string[] | null = null;
+      if (queryTags && queryTags.length > 0) {
+        const { data: taggedQueries, error: tagError } = await supabaseAdmin
+          .from('generated_queries')
+          .select('id')
+          .in('query_tag', queryTags)
+          .eq('brand_id', brandId);
+
+        if (tagError) {
+          console.error('Failed to fetch tagged queries:', tagError);
+        } else {
+          allowedQueryIds = taggedQueries.map(q => q.id);
+          // If no queries match the tags, we can return early with empty results
+          if (allowedQueryIds.length === 0) {
+            return {
+              sources: [],
+              overallMentionRate: 0,
+              overallMentionChange: 0,
+              avgSentiment: 0,
+              avgSentimentChange: 0,
+              totalSources: 0,
+              dateRange: { start: startIso, end: endIso }
+            }
+          }
+        }
+      }
+
+      // Step 2: Try Supabase cache first (skip if collectors or queryTags filter is active)
       const hasCollectorsFilter = collectors && collectors.length > 0;
+      const hasQueryTagsFilter = queryTags && queryTags.length > 0;
       let cached: any = null;
 
       const cacheStartTime = Date.now();
-      if (!hasCollectorsFilter) {
+      if (!hasCollectorsFilter && !hasQueryTagsFilter) {
         cached = await sourceAttributionCacheService.getCachedSourceAttribution(
           brandId,
           customerId,
@@ -176,11 +206,9 @@ export class SourceAttributionService {
 
       const brandDomain = brandData?.website_url ? new URL(brandData.website_url).hostname.replace(/^www\./, '') : null
 
-
-
       // Step 4: Fetch citations - this is the main source of data
       const citationsStartTime = Date.now();
-      const { data: citationsData, error: citationsError } = await supabaseAdmin
+      let citationsQuery = supabaseAdmin
         .from('citations')
         .select(`
           domain,
@@ -196,6 +224,12 @@ export class SourceAttributionService {
         .eq('customer_id', customerId)
         .gte('created_at', startIso)
         .lte('created_at', endIso)
+
+      if (allowedQueryIds) {
+        citationsQuery = citationsQuery.in('query_id', allowedQueryIds);
+      }
+
+      const { data: citationsData, error: citationsError } = await citationsQuery;
       stepTimings['citations_query'] = Date.now() - citationsStartTime;
 
       if (citationsError) {

@@ -20,7 +20,7 @@ export function AEOScoreBadge({ content, brandName, contentType }: AEOScoreBadge
   const badgeRef = useRef<HTMLDivElement>(null);
   
   // Calculate immediate hygiene score
-  const analysis = React.useMemo(() => analyzeContent(content, brandName), [content, brandName]);
+  const analysis = React.useMemo(() => analyzeContent(content, brandName, contentType), [content, brandName, contentType]);
   // Use projected score as placeholder ONLY if we haven't started fetching? 
   // Actually, user wants "real" score. 
   // Let's use hygiene score (not projected) + backend score.

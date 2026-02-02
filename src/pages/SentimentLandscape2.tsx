@@ -12,6 +12,8 @@ import { useAuthStore } from '../store/authStore';
 import { useManualBrandDashboard } from '../manual-dashboard/useManualBrandDashboard';
 import { apiClient } from '../lib/apiClient';
 import { IconX } from '@tabler/icons-react';
+import { useDashboardStore } from '../store/dashboardStore';
+import { QueryTagFilter } from '../components/common/QueryTagFilter';
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
@@ -85,14 +87,14 @@ const DetailPanel = ({ keyword, onClose }: { keyword: GraphKeywordData; onClose:
             keyword.sentimentLabel === 'POSITIVE'
               ? '#dcfce7'
               : keyword.sentimentLabel === 'NEGATIVE'
-              ? '#fee2e2'
-              : '#fef9c3',
+                ? '#fee2e2'
+                : '#fef9c3',
           color:
             keyword.sentimentLabel === 'POSITIVE'
               ? '#16a34a'
               : keyword.sentimentLabel === 'NEGATIVE'
-              ? '#dc2626'
-              : '#ca8a04',
+                ? '#dc2626'
+                : '#ca8a04',
         }}
       >
         {keyword.sentimentLabel}
@@ -136,7 +138,7 @@ const DetailPanel = ({ keyword, onClose }: { keyword: GraphKeywordData; onClose:
     )}
 
     <p style={{ fontSize: '13px', color: '#64748b', backgroundColor: '#f0f9ff', padding: '12px', borderRadius: '8px' }}>
-      <strong>How PageRank works:</strong> Keywords are ranked by their importance in the graph based on 
+      <strong>How PageRank works:</strong> Keywords are ranked by their importance in the graph based on
       how many connections they have and how important those connected nodes are. Higher strength = more central/important keyword.
     </p>
   </div>
@@ -145,6 +147,7 @@ const DetailPanel = ({ keyword, onClose }: { keyword: GraphKeywordData; onClose:
 export const SentimentLandscape2 = () => {
   const authLoading = useAuthStore((state: AuthState) => state.isLoading);
   const { selectedBrandId, brands, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+  const { queryTags } = useDashboardStore();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<GraphKeywordData[]>([]);
   const [selectedSource, setSelectedSource] = useState('');
@@ -163,7 +166,11 @@ export const SentimentLandscape2 = () => {
           limit: '30',
           source: selectedSource
         });
-        
+
+        if (queryTags && queryTags.length > 0) {
+          queryParams.set('queryTags', queryTags.join(','));
+        }
+
         const result = await apiClient.get<any>(
           `/recommendations-v3/analyze/keyword-mapping-graph?${queryParams.toString()}`
         );
@@ -184,7 +191,7 @@ export const SentimentLandscape2 = () => {
       }
     };
     fetchData();
-  }, [selectedBrandId, selectedSource, authLoading, brandsLoading]);
+  }, [selectedBrandId, selectedSource, authLoading, brandsLoading, queryTags]);
 
   // Chart data - X: Sentiment, Y: Strength (PageRank centrality)
   const chartData = {
@@ -334,18 +341,28 @@ export const SentimentLandscape2 = () => {
               ))}
             </select>
           </div>
+
+
+          <div>
+            <label style={{ fontSize: '14px', fontWeight: '600', color: COLORS.textHeadings, display: 'block', marginBottom: '8px' }}>
+              Filter Tags
+            </label>
+            <div style={{ width: '200px' }}>
+              <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm w-full" />
+            </div>
+          </div>
         </div>
 
         {/* Methodology Explanation */}
-        <div style={{ 
-          marginBottom: '32px', 
-          backgroundColor: '#f8fafc', 
-          borderRadius: '12px', 
+        <div style={{
+          marginBottom: '32px',
+          backgroundColor: '#f8fafc',
+          borderRadius: '12px',
           padding: '20px',
           border: '1px solid #e2e8f0'
         }}>
           <h3 style={{ fontSize: '16px', fontWeight: '700', color: COLORS.textHeadings, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ backgroundColor: '#e0e7ff', padding: '4px', borderRadius: '4px', color: '#4f46e5' }}>ℹ️</span> 
+            <span style={{ backgroundColor: '#e0e7ff', padding: '4px', borderRadius: '4px', color: '#4f46e5' }}>ℹ️</span>
             How to read this chart
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
@@ -393,7 +410,7 @@ export const SentimentLandscape2 = () => {
               <Bubble data={chartData} options={options} ref={chartRef} />
             )}
           </div>
-          
+
           {/* Legend */}
           <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '16px', fontSize: '13px', color: COLORS.textBody }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -470,7 +487,7 @@ export const SentimentLandscape2 = () => {
         {/* Detail Panel */}
         {selectedKeyword && <DetailPanel keyword={selectedKeyword} onClose={() => setSelectedKeyword(null)} />}
       </div>
-    </Layout>
+    </Layout >
   );
 };
 

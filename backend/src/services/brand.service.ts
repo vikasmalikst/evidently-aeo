@@ -13,6 +13,7 @@ import { dataCollectionService, QueryExecutionRequest } from './data-collection/
 import { competitorVersioningService } from './competitor-management';
 import { OptimizedMetricsHelper } from './query-helpers/optimized-metrics.helper';
 import { customerEntitlementsService } from './customer-entitlements.service';
+import { queryTaggingService } from './query-tagging.service';
 
 type NormalizedCompetitor = {
   name: string;
@@ -292,6 +293,7 @@ export class BrandService {
           headquarters: brandData.metadata?.headquarters,
           founded_year: brandData.metadata?.founded_year,
           brand_logo: (brandData as any).logo || brandData.metadata?.logo || undefined,
+          onboarding_active: true // Mark as active during update/onboarding
         };
 
         const { data: updatedBrand, error: updateError } = await supabaseAdmin
@@ -422,7 +424,8 @@ export class BrandService {
           headquarters: brandData.metadata?.headquarters,
           founded_year: brandData.metadata?.founded_year,
           brand_logo: (brandData as any).logo || brandData.metadata?.logo || undefined,
-          competitors_detail: verifiedCompetitors
+          competitors_detail: verifiedCompetitors,
+          onboarding_active: true // Mark as active during creation
         };
 
         const brandSlug = brandData.brand_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
@@ -1784,7 +1787,8 @@ export class BrandService {
     endDate?: string,
     collectorType?: string,
     country?: string,
-    competitorNames?: string[] // Optional: filter by specific competitor names (lowercase)
+    competitorNames?: string[], // Optional: filter by specific competitor names (lowercase)
+    queryTags?: string[] // Optional: filter by query tags (bias, blind)
   ): Promise<{ topics: any[]; availableModels: string[] }> {
     const overallStart = performance.now();
     try {
@@ -1870,6 +1874,7 @@ export class BrandService {
         startDate: startIso,
         endDate: endIso,
         collectorTypes: mappedCollectorTypes.length > 0 ? mappedCollectorTypes : undefined,
+        queryTags: queryTags
       });
 
       const step2Time = performance.now() - step2Start;
@@ -3637,6 +3642,9 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
       throw new Error(`Failed to create query generation record: ${genError.message}`);
     }
 
+    // Fetch brand terms for tagging
+    const brandTerms = await queryTaggingService.getBrandTerms(brandId);
+
     // Map prompts to topics
     const queryInserts = prompts.map((promptData, index) => {
       let promptText: string;
@@ -3655,11 +3663,14 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
         ) || topics[0] || 'General'; // Fallback to first topic or 'General'
       }
 
+      const queryTag = queryTaggingService.determineTag(promptText, brandTerms);
+
       return {
         generation_id: generationId,
         brand_id: brandId,
         customer_id: customerId,
         query_text: promptText,
+        query_tag: queryTag,
         topic: matchedTopic, // Store topic in dedicated column
         intent: 'data_collection', // Default intent
         brand: brandName,

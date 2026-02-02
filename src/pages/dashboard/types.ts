@@ -217,6 +217,7 @@ export interface MetricCardProps {
   headerAction?: React.ReactNode;
   actionPosition?: 'inside' | 'outside-top';
   hideComparisonHeader?: boolean;
+  queryTags?: string[];
 }
 
 export interface ActionCardProps {

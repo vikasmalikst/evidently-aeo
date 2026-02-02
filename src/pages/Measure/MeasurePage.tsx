@@ -55,6 +55,7 @@ import '../../styles/visibility.css';
 import { formatDateLabel } from '../../utils/dateFormatting';
 import { AnalyzePrefetcher } from './AnalyzePrefetcher';
 import { EducationalContentDrawer, KpiType as DrawerKpiType } from '../../components/EducationalDrawer/EducationalContentDrawer';
+import { QueryTagFilter } from '../../components/common/QueryTagFilter';
 
 
 
@@ -202,7 +203,7 @@ export const MeasurePage = () => {
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
   // Replaced local state with global store
-  const { llmFilters, setLlmFilters } = useDashboardStore();
+  const { llmFilters, setLlmFilters, queryTags } = useDashboardStore();
   const [allLlmOptions, setAllLlmOptions] = useState<Array<{ value: string; label: string; color?: string }>>([]);
   const [hoveredLlmIndex, setHoveredLlmIndex] = useState<number | null>(null);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
@@ -279,7 +280,7 @@ export const MeasurePage = () => {
   const authLoading = useAuthStore((state) => state.isLoading);
 
   // Orchestrate automated onboarding steps
-  useOnboardingOrchestrator(selectedBrandId);
+  useOnboardingOrchestrator(selectedBrand);
 
   // Process dashboard data into chart models
   const processedData = useMemo(() => {
@@ -921,6 +922,10 @@ export const MeasurePage = () => {
 
             {/* Right Side: Date Selector + Filters Stack */}
             <div className="flex flex-col items-end gap-3">
+              <QueryTagFilter
+                variant="outline"
+                className="border-gray-300/60 shadow-sm"
+              />
               <DateRangeSelector
                 startDate={startDate}
                 endDate={endDate}
@@ -1040,7 +1045,7 @@ export const MeasurePage = () => {
                   handleKpiSelect(key as MetricType);
                 }}
               >
-                <MetricCard {...cardProps} />
+                <MetricCard {...cardProps} queryTags={queryTags} />
               </div>
             ))
           )}

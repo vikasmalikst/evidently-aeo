@@ -51,6 +51,9 @@ export interface RecommendationV3 {
     kpiBeforeValue?: number;
     kpiAfterValue?: number;
 
+    // Target competitors for this recommendation
+    competitors_target?: string[];
+
     // Source tracking
     source?: 'domain_audit' | 'ai_generated';
     howToFix?: string[];  // Step-by-step fix instructions (for domain audit recs)

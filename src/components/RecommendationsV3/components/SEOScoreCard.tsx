@@ -64,17 +64,23 @@ export interface CombinedAnalysis {
 // HYGIENE ANALYSIS (Frontend - 30pts)
 // =============================================================================
 
-export function analyzeHygiene(content: string): HygieneAnalysis {
+export function analyzeHygiene(content: string, contentType: string = 'article'): HygieneAnalysis {
   const metrics: SEOMetric[] = [];
   let score = 0;
+  
+  const isVideo = contentType === 'short_video' || contentType === 'video' || contentType.includes('video');
 
   // 1. Word Count (Max 10)
   const wordCount = content.split(/\s+/).filter(Boolean).length;
-  if (wordCount >= 300) {
+  // Video target: 130-180 words is optimal. Article: 300+
+  const minWords = isVideo ? 120 : 300;
+  const goodWords = isVideo ? 130 : 300;
+
+  if (wordCount >= goodWords) {
     metrics.push({ name: 'Word Count', status: 'good', value: `${wordCount}`, score: 10, maxScore: 10 });
     score += 10;
-  } else if (wordCount >= 150) {
-    metrics.push({ name: 'Word Count', status: 'warning', value: `${wordCount}`, suggestion: 'Aim for 300+', score: 5, maxScore: 10 });
+  } else if (wordCount >= minWords) {
+    metrics.push({ name: 'Word Count', status: 'warning', value: `${wordCount}`, suggestion: `Aim for ${goodWords}+`, score: 5, maxScore: 10 });
     score += 5;
   } else {
     metrics.push({ name: 'Word Count', status: 'error', value: `${wordCount}`, suggestion: 'Too short', score: 0, maxScore: 10 });
@@ -96,14 +102,21 @@ export function analyzeHygiene(content: string): HygieneAnalysis {
   }
 
   // 3. Structure (Max 10)
-  const hasHeaders = /#{1,3}\s/.test(content) || /<h[1-3]>/i.test(content);
+  const hasHeaders = /#{1,3}\s/.test(content) || /<h[1-3]>/i.test(content) || /\*\*.+:\*\*/.test(content); // Bold labels valid for video
   const hasBullets = /^[-*•]/m.test(content) || /^\d+\./m.test(content);
-  if (hasHeaders && hasBullets) {
-    metrics.push({ name: 'Structure', status: 'good', value: 'Headers + Lists', score: 10, maxScore: 10 });
-    score += 10;
-  } else if (hasHeaders || hasBullets) {
-    metrics.push({ name: 'Structure', status: 'warning', value: 'Partial', suggestion: 'Add headers/lists', score: 5, maxScore: 10 });
-    score += 5;
+  
+  // For video, labels (Bold) + Bullets (Visuals) is the key structure
+  if (hasHeaders || (isVideo && /\*\*.+\*\*/.test(content))) {
+     if (hasBullets || (isVideo && content.split('\n\n').length >= 3)) {
+        metrics.push({ name: 'Structure', status: 'good', value: 'Structured', score: 10, maxScore: 10 });
+        score += 10;
+     } else {
+        metrics.push({ name: 'Structure', status: 'warning', value: 'Partial', suggestion: 'Add lists/breaks', score: 5, maxScore: 10 });
+        score += 5;
+     }
+  } else if (hasBullets) {
+     metrics.push({ name: 'Structure', status: 'warning', value: 'Partial', suggestion: 'Add headers', score: 5, maxScore: 10 });
+     score += 5;
   } else {
     metrics.push({ name: 'Structure', status: 'error', value: 'Flat text', suggestion: 'Formatting needed', score: 2, maxScore: 10 });
     score += 2;
@@ -118,8 +131,8 @@ export function analyzeHygiene(content: string): HygieneAnalysis {
  * Since users are used to a 100-pt scale, we'll project: 30pts hygiene -> 100pts.
  * This is just a placeholder until they open the full card.
  */
-export function analyzeContent(content: string, brandName?: string): { score: number; metrics: SEOMetric[] } {
-  const hygiene = analyzeHygiene(content);
+export function analyzeContent(content: string, brandName?: string, contentType?: string): { score: number; metrics: SEOMetric[] } {
+  const hygiene = analyzeHygiene(content, contentType);
   // Scale score: (score / 30) * 100.
   const projectedScore = Math.min(100, Math.round((hygiene.score / 30) * 100));
   
@@ -142,7 +155,7 @@ interface SEOScoreCardProps {
 
 export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEOScoreCardProps) {
   // Client-side state
-  const [hygiene, setHygiene] = useState<HygieneAnalysis>(analyzeHygiene(content));
+  const [hygiene, setHygiene] = useState<HygieneAnalysis>(analyzeHygiene(content, contentType));
   
   // Server-side state
   const [scrapability, setScrapability] = useState<ScrapabilityAnalysis>({
@@ -154,7 +167,7 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
   // Debounce logic for API calls
   useEffect(() => {
     // Immediate update for hygiene
-    setHygiene(analyzeHygiene(content));
+    setHygiene(analyzeHygiene(content, contentType));
 
     // Debounced update for scrapability
     const timer = setTimeout(async () => {

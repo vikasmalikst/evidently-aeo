@@ -55,16 +55,16 @@ const JourneyTracker = ({
 
   if (rec.isCompleted) {
     currentStage = 4;
-    stageLabel = 'Tracking';
+    stageLabel = 'Approved';
     targetStep = 4;
   } else if (rec.isContentGenerated) {
     currentStage = 3;
-    stageLabel = 'Refine';
+    stageLabel = 'Approved';
     targetStep = 3;
   } else {
     // Just approved
     currentStage = 2;
-    stageLabel = 'Drafting';
+    stageLabel = 'Approved';
     targetStep = 2;
   }
 
@@ -227,11 +227,20 @@ export const RecommendationsTableV3 = ({
                   />
                 </th>
               )}
+              <th className="px-4 py-4 text-center text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-12">
+                #
+              </th>
               <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider min-w-[400px]">
                 Recommendation
               </th>
               <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[200px]">
                 Source/Domain
+              </th>
+              <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[80px]">
+                Priority
+              </th>
+              <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[80px]">
+                Effort
               </th>
               {showStatusDropdown && (
                 <th className="px-4 py-4 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[160px]">
@@ -248,7 +257,7 @@ export const RecommendationsTableV3 = ({
           <tbody className="bg-white divide-y divide-[#f1f5f9]">
             {recommendations.length === 0 ? (
               <tr>
-                <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
+                <td colSpan={12} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
                   No recommendations found
                 </td>
               </tr>
@@ -273,10 +282,10 @@ export const RecommendationsTableV3 = ({
                           rotate: 5, // Tilted drop
                           transition: { duration: 0.4, ease: "backIn" }
                         }}
-                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#fafbfc]'} hover:bg-[#f0f9ff] transition-all duration-200 cursor-pointer`}
+                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#00bcdc]/5'} hover:bg-[#f0f9ff] transition-all duration-200 cursor-pointer`}
                       >
                         {showCheckboxes && (
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-4">
                             <input
                               type="checkbox"
                               checked={rec.id ? selectedIds.has(rec.id) : false}
@@ -291,7 +300,12 @@ export const RecommendationsTableV3 = ({
                             />
                           </td>
                         )}
-                        <td className="px-4 py-5">
+                        <td className="px-4 py-6">
+                          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[10px] font-bold shadow-sm">
+                            {index + 1}
+                          </div>
+                        </td>
+                        <td className="px-4 py-6">
                           <div className="flex items-start gap-3">
                             {hasDetails && (
                               <button
@@ -308,16 +322,16 @@ export const RecommendationsTableV3 = ({
                             )}
                             <div className="flex flex-col gap-1.5">
                               {/* Recommendation Action as main display */}
-                              <p className="text-[14px] text-[#0f172a] font-semibold leading-relaxed">
+                              <p className="text-[14px] text-[#0f172a] font-normal leading-relaxed">
                                 {rec.action?.replace(/^\[.*?\]\s*/, '') || rec.contentFocus || 'No action specified'}
                               </p>
                             </div>
                           </div>
                         </td>
 
-                        <td className="px-4 py-5">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-shrink-0 w-5 h-5 rounded overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
+                        <td className="px-4 py-6">
+                          <div className="flex flex-col items-start gap-1">
+                            <div className="flex-shrink-0 w-6 h-6 rounded overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
                               <SafeLogo
                                 domain={rec.citationSource}
                                 className="w-4 h-4 object-contain"
@@ -325,11 +339,36 @@ export const RecommendationsTableV3 = ({
                                 alt={rec.citationSource}
                               />
                             </div>
-                            <p className="text-[12px] text-[var(--text-body)] truncate max-w-[150px]" title={rec.citationSource}>
+                            <p className="text-[11px] text-[var(--text-body)] truncate max-w-[150px] leading-tight" title={rec.citationSource}>
                               {rec.citationSource}
                             </p>
                           </div>
                         </td>
+
+                        {/* Priority Column */}
+                        <td className="px-4 py-6">
+                          {rec.priority && (
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-bold ${rec.priority === 'High' ? 'bg-[#fee2e2] text-[#991b1b]' :
+                              rec.priority === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
+                                'bg-[#f3f4f6] text-[#4b5563]'
+                              }`} title={`Priority: ${rec.priority}`}>
+                              {rec.priority.charAt(0)}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Effort Column */}
+                        <td className="px-4 py-6">
+                          {rec.effort && (
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-bold ${rec.effort === 'Low' ? 'bg-[#d1fae5] text-[#065f46]' :
+                              rec.effort === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
+                                'bg-[#fee2e2] text-[#991b1b]'
+                              }`} title={`Effort: ${rec.effort}`}>
+                              {rec.effort.charAt(0)}
+                            </span>
+                          )}
+                        </td>
+
                         {showStatusDropdown && (
                           <td className="px-4 py-3">
                             <div className="relative group min-w-[140px]">
@@ -390,37 +429,81 @@ export const RecommendationsTableV3 = ({
 
                                 if (isGenerating) {
                                   return (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border bg-[#fef3c7] text-[#92400e] border-[#fde68a]">
-                                      <div className="w-3 h-3 border-2 border-[#92400e] border-t-transparent rounded-full animate-spin mr-1.5" />
+                                    <motion.span 
+                                      initial={{ opacity: 0, scale: 0.9 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold border bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200 shadow-sm"
+                                    >
+                                      <motion.div 
+                                        className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full mr-2"
+                                        animate={{ rotate: 360 }}
+                                        transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                                      />
                                       Generating...
-                                    </span>
+                                    </motion.span>
                                   );
                                 }
 
                                 if (isGenerated) {
                                   return (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border bg-[#d1fae5] text-[#065f46] border-[#a7f3d0]">
-                                      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <motion.span 
+                                      initial={{ opacity: 0, scale: 0.8 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                                      className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold border bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-700 border-emerald-200 shadow-sm"
+                                    >
+                                      <motion.svg 
+                                        className="w-3.5 h-3.5 mr-1.5" 
+                                        fill="currentColor" 
+                                        viewBox="0 0 20 20"
+                                        initial={{ scale: 0 }}
+                                        animate={{ scale: 1 }}
+                                        transition={{ type: "spring", stiffness: 500, damping: 15, delay: 0.1 }}
+                                      >
                                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                      </svg>
+                                      </motion.svg>
                                       {generatedLabel}
-                                    </span>
+                                    </motion.span>
                                   );
                                 }
 
                                 return (
-                                  <button
+                                  <motion.button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       onAction(rec, actionType);
                                     }}
-                                    className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border bg-[#06c686] text-white border-[#05a870] hover:bg-[#05a870] transition-colors cursor-pointer"
+                                    whileHover={{ scale: 1.05, y: -1 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                                    className="group relative inline-flex items-center px-4 py-2 rounded-lg text-[12px] font-bold border-0 bg-gradient-to-r from-emerald-500 via-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-200/50 hover:shadow-xl hover:shadow-emerald-300/50 cursor-pointer overflow-hidden"
                                   >
-                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    </svg>
-                                    {actionLabel}
-                                  </button>
+                                    {/* Animated shimmer effect */}
+                                    <motion.div
+                                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12"
+                                      initial={{ x: "-100%" }}
+                                      animate={{ x: "200%" }}
+                                      transition={{
+                                        duration: 2,
+                                        repeat: Infinity,
+                                        repeatDelay: 3,
+                                        ease: "easeInOut"
+                                      }}
+                                    />
+                                    {/* Lightning icon with pulse */}
+                                    <motion.svg 
+                                      className="w-4 h-4 mr-1.5 relative" 
+                                      fill="none" 
+                                      stroke="currentColor" 
+                                      viewBox="0 0 24 24"
+                                      initial={{ opacity: 0.8 }}
+                                      animate={{ opacity: [0.8, 1, 0.8] }}
+                                      transition={{ duration: 2, repeat: Infinity }}
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </motion.svg>
+                                    <span className="relative">{actionLabel}</span>
+                                  </motion.button>
                                 );
                               })()}
                               {onStopTracking && (
@@ -442,7 +525,7 @@ export const RecommendationsTableV3 = ({
                       </motion.tr>
                       {isExpanded && (
                         <tr key={`${recId}-details`} className="bg-white">
-                          <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-0 py-0">
+                          <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 8 : 7) : (showActions ? 7 : 6)) : (showStatusDropdown ? (showActions ? 7 : 6) : (showActions ? 6 : 5))} className="px-0 py-0">
                             {/* Content Area - Unified with table row */}
                             {renderExpandedContent ? (
                               <div className="border-t border-[#e2e8f0]">
@@ -475,19 +558,6 @@ export const RecommendationsTableV3 = ({
                                       <div>
                                         <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wide mb-1">Timeline</p>
                                         <p className="text-[13px] font-semibold text-[#0f172a]">{rec.timeline}</p>
-                                      </div>
-                                    )}
-
-                                    {/* Effort */}
-                                    {rec.effort && (
-                                      <div>
-                                        <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wide mb-1">Effort</p>
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${rec.effort === 'Low' ? 'bg-[#d1fae5] text-[#065f46]' :
-                                          rec.effort === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
-                                            'bg-[#fee2e2] text-[#991b1b]'
-                                          }`}>
-                                          {rec.effort}
-                                        </span>
                                       </div>
                                     )}
 

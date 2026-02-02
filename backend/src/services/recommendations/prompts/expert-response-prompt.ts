@@ -11,36 +11,36 @@ export function buildExpertResponsePrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Default structure for Expert Responses (AEO-Optimized)
+    // Default structure for Expert Responses (AEO-Optimized) - Matches Frontend Template
     const defaultSections = [
         {
             id: "direct_stance",
             title: "The Verdict",
-            content: "<Clear, decisive answer based on experience (e.g., 'Yes, but only if...')>",
+            content: "Start with a definitive 'Yes/No/It depends' verdict. Avoid 'fence-sitting'. State your position clearly as an experienced practitioner.",
             sectionType: "answer"
         },
         {
             id: "experience_context",
             title: "Real-World Experience",
-            content: "<'In my experience...' / 'We ran this in production...'>",
+            content: "Validate your stance with first-hand experience indicators (e.g., 'In our production environment...', 'After testing 5 tools...').",
             sectionType: "context"
         },
         {
             id: "reasoning",
             title: "The 'Why'",
-            content: "<Technical or strategic reasoning behind the verdict>",
+            content: "Explain the technical 'why' behind your verdict. Focus on long-term implications and hidden factors beginners might miss.",
             sectionType: "explanation"
         },
         {
             id: "tradeoffs",
             title: "Trade-offs & Alternatives",
-            content: "<Honest comparison (upsides/downsides)>",
+            content: "Steel-man the opposing view. Acknowledge valid reasons to choose the alternative. This demonstrates balance and high authority.",
             sectionType: "comparison"
         },
         {
             id: "conclusion",
             title: "Final Recommendation",
-            content: "<Summing it up>",
+            content: "A final, actionable recommendation summarizing who should take this advice and who should avoid it.",
             sectionType: "summary"
         }
     ];

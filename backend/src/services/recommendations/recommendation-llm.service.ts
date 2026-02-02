@@ -17,12 +17,34 @@ export class RecommendationLLMService {
      * Execute LLM Prompt with Fallback Strategy (Ollama -> OpenRouter -> Cerebras)
      * and Parse JSON Response
      */
+    /**
+     * Execute LLM Prompt with Fallback Strategy and Parse JSON Response
+     */
     async executePrompt<T>(
         brandId: string,
         prompt: string,
         systemMessage: string = 'You are a Senior Brand/AEO Expert. Respond only with valid JSON arrays.',
         maxTokens: number = 12000
     ): Promise<T[]> {
+        const content = await this.generateContent(brandId, prompt, systemMessage, maxTokens);
+
+        if (!content) {
+            console.error('❌ [RecommendationLLMService] Failed to get response from all LLM providers');
+            return [];
+        }
+
+        return this.parseJSON<T>(content);
+    }
+
+    /**
+     * Generate raw text content from LLM with fallbacks
+     */
+    async generateContent(
+        brandId: string,
+        prompt: string,
+        systemMessage: string,
+        maxTokens: number
+    ): Promise<string | null> {
         let content: string | null = null;
         let providerUsed = 'none';
 
@@ -116,13 +138,11 @@ export class RecommendationLLMService {
             }
         }
 
-        if (!content) {
-            console.error('❌ [RecommendationLLMService] Failed to get response from all LLM providers');
-            return [];
+        if (content) {
+            console.log(`📊 [RecommendationLLMService] Provider used: ${providerUsed}`);
         }
 
-        console.log(`📊 [RecommendationLLMService] Provider used: ${providerUsed}`);
-        return this.parseJSON<T>(content);
+        return content;
     }
 
     /**

@@ -11,32 +11,19 @@ export function buildShortVideoPrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Default structure for Short Videos (AEO-Optimized)
-    // Focused on "One Idea Only"
+    // Default structure for Short Videos (AEO-Optimized) - Matches Frontend Template
     const defaultSections = [
         {
-            id: "hook",
-            title: "The Hook (0-3s)",
-            content: "<Visual/Text hook that states the specific problem immediately>",
-            sectionType: "hook"
+            id: "transcript",
+            title: "Full Audio Transcript",
+            content: "Verbatim spoken-word script (approx 150 words). USE LINE BREAKS between sections:\n\n**[0-5s] Hook:** <Hook text>\n**[5-20s] Answer:** <Direct answer>\n**[20-50s] Explanation:** <Details>\n**[50-60s] Takeaway:** <Final thought>",
+            sectionType: "transcript"
         },
         {
-            id: "direct_answer",
-            title: "The Answer (Core Concept)",
-            content: "<The single, explicit answer/solution. No fluff.>",
-            sectionType: "answer"
-        },
-        {
-            id: "explanation",
-            title: "The Why (Explanation)",
-            content: "<Brief explanation of mechanism or proof (1-2 sentences)>",
-            sectionType: "explanation"
-        },
-        {
-            id: "takeaway",
-            title: "The Takeaway (Quotable)",
-            content: "<One memorable, quotable statement summarizing the value>",
-            sectionType: "summary"
+            id: "production_tips",
+            title: "Production Guidelines",
+            content: "Strategic visual direction. Use a Bulleted List:\n* **Visuals:** <Camera angles/B-roll>\n* **Text Overlay:** <Keywords to show>\n* **Tone:** <Speaker emotion>",
+            sectionType: "tips"
         }
     ];
 
@@ -55,22 +42,19 @@ export function buildShortVideoPrompt(
 ${recContext}
 
 AEO SHORT VIDEO REQUIREMENTS:
-- SINGLE IDEA ONLY: Do not cover multiple topics. Focus on one specific answer.
-- TEXTUAL CLARITY: AI reads captions. Spoken words must be grammatically complete sentences.
-- EXPLICIT STATEMENTS: Avoid implied meaning. Say exactly what you mean.
-- SELF-CONTAINED: Must make sense without watching previous videos.
-- NO "LINK IN BIO": Do not hide the answer. The video *is* the answer.
-- TONE: Calm, factual, authoritative. No "You won't believe this!" hype.
+- SINGLE IDEA ONLY: Focus on one specific answer.
+- TRANSCRIPT-FIRST: Generate a fluid, spoken-word script designed to be read aloud.
+- STRUCTURE: The transcript must naturally flow through: Hook -> Direct Answer -> Explanation -> Takeaway.
+- TONE: Calm, factual, authoritative.
 
 ${buildShortVideoConstraints(rec)}
 
 === INSTRUCTIONS ===
-Generate a script for a Short Video (TikTok/Reels/Shorts) optimized for AI audio/transcript analysis.
+Generate a Short Video script optimized for AI audio/transcript analysis.
 
 OUTPUT STRUCTURE (JSON v4.0):
-You must return a VALID JSON object.
-"sections" should represent the temporal flow of the video script.
-"content" in the sections should include both [VISUAL] cues and (AUDIO) spoken words.
+1. **Full Audio Transcript**: The exact words to be spoken. No visual cues.
+2. **Production Guidelines**: A strategic timeline explaining how to film the script (e.g., "0-5s: Close up, speak with urgency...").
 
 {
   "version": "4.0",
@@ -81,9 +65,8 @@ You must return a VALID JSON object.
 }
 
 WRITING RULES:
-- Spoken word count: ~130-150 words total (for 60s).
-- Use short, punchy sentences.
-- Ensure at least one sentence is a perfect "definition" or "answer" that AI can quote.
+- Transcript must be ~130-150 words (60s).
+- Production Tips must explicitly map the Transcript to the AEO Structure (Hook, Answer, Explanation).
 - CRITICAL: DO NOT RENAME SECTIONS. Use the exact "title" provided in the structure for each section.
 `;
 }

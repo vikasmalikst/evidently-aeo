@@ -10,6 +10,33 @@ export function buildComparisonTablePrompt(
     structureConfig?: StructureConfig
 ): string {
 
+    const defaultSections = [
+        {
+            id: "overview",
+            title: "Overview",
+            content: "A neutral, high-level summary of the comparison landscape (300-400 words). Define the criteria used for evaluation.",
+            sectionType: "context"
+        },
+        {
+            id: "table",
+            title: "Comparison Table",
+            content: `| Feature | ${brandName} | [Competitor] |\n|---|---|---|\n| [Feature 1] | [Value] | [Value] |`,
+            sectionType: "comparison_table"
+        },
+        {
+            id: "detailed_analysis",
+            title: "Deep Dive Analysis",
+            content: "Prose analysis explaining the 'why' behind the table ratings. Focus on nuances that don't fit in the grid. 400-600 words.",
+            sectionType: "strategies"
+        },
+        {
+            id: "verdict",
+            title: "Final Verdict",
+            content: "A 'Who is this for?' conclusion. Define the ideal user profile for each option rather than declaring a universal winner.",
+            sectionType: "cta"
+        }
+    ];
+
     const sectionsToUse = structureConfig?.sections && structureConfig.sections.length > 0
         ? structureConfig.sections.map(s => ({
             id: s.id,
@@ -17,7 +44,7 @@ export function buildComparisonTablePrompt(
             content: `<${s.content || 'Generate comparison content for this section'}>`,
             sectionType: s.sectionType || "custom"
         }))
-        : [];
+        : defaultSections;
 
     const sectionsJson = JSON.stringify(sectionsToUse, null, 2);
 

@@ -8,25 +8,25 @@ export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> 
         {
             id: "direct_answer",
             title: "Direct Answer",
-            content: "Concise answer to the primary question (80–120 words)",
+            content: "Provide a direct, standalone answer to the main user question immediately (80-120 words). Optimize for 'featured snippet' extraction. Bold key concepts.",
             sectionType: "answer"
         },
         {
             id: "how_it_works",
             title: "How It Works",
-            content: "Explain mechanism step-by-step",
+            content: "Break down the mechanism or process into clear, numbered steps. Focus on 'why' it works, not just 'what' it is to build semantic depth.",
             sectionType: "explanation"
         },
         {
             id: "comparison",
             title: "Comparison With Alternatives",
-            content: "Objective comparison with competitors",
+            content: "Objectively compare with 2-3 main alternatives. Highlight unique differentiators without marketing fluff. Use contrastive language (e.g., 'Unlike X, Y does...').",
             sectionType: "comparison"
         },
         {
             id: "limitations",
             title: "Limitations and Trade-Offs",
-            content: "What this does NOT solve",
+            content: "Explicitly state 1-2 limitations or trade-offs. This increases trust and prevents 'too good to be true' penalties in AI scoring.",
             sectionType: "constraints"
         }
     ],
@@ -34,31 +34,31 @@ export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> 
         {
             id: "exec_summary",
             title: "Executive Summary",
-            content: "High-level overview of the problem and solution",
+            content: "A complete, self-contained summary of the entire paper (200-300 words). Must address the Problem, Solution, and Key Outcome. Optimized for executive skimming.",
             sectionType: "executive_summary"
         },
         {
             id: "problem",
             title: "Problem Statement",
-            content: "Detailed analysis of the current industry challenge",
+            content: "Define the industry problem with precision. Use specific terminology and avoid generalizations. Establish the 'cost of inaction'.",
             sectionType: "problem_statement"
         },
         {
             id: "methodology",
             title: "Methodology / Approach",
-            content: "Technical explanation of the solution architecture",
+            content: "Explain the technical or research approach used to derive insights. Build authority by showing the 'work' behind the claims.",
             sectionType: "methodology"
         },
         {
             id: "analysis",
             title: "Detailed Analysis",
-            content: "Data-driven findings and case evidence",
+            content: "Deep-dive analysis with causal reasoning. Connect data points to conclusions using 'if-then' logic to demonstrate expertise.",
             sectionType: "detailed_analysis"
         },
         {
             id: "limitations",
             title: "Strategic Limitations",
-            content: "Honest assessment of where this solution applies",
+            content: "Rigorous, honest assessment of scope and constraints. Define exactly where this solution applies and where it doesn't.",
             sectionType: "limitations"
         }
     ],
@@ -80,31 +80,31 @@ export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> 
         {
             id: "direct_stance",
             title: "The Verdict",
-            content: "Clear, decisive answer based on experience (e.g., 'Yes, but only if...')",
+            content: "Start with a definitive 'Yes/No/It depends' verdict. Avoid 'fence-sitting'. State your position clearly as an experienced practitioner.",
             sectionType: "answer"
         },
         {
             id: "experience_context",
             title: "Real-World Experience",
-            content: "'In my experience...' / 'We ran this in production...'",
+            content: "Validate your stance with first-hand experience indicators (e.g., 'In our production environment...', 'After testing 5 tools...').",
             sectionType: "context"
         },
         {
             id: "reasoning",
             title: "The 'Why'",
-            content: "Technical or strategic reasoning behind the verdict",
+            content: "Explain the technical 'why' behind your verdict. Focus on long-term implications and hidden factors beginners might miss.",
             sectionType: "explanation"
         },
         {
             id: "tradeoffs",
             title: "Trade-offs & Alternatives",
-            content: "Honest comparison (upsides/downsides)",
+            content: "Steel-man the opposing view. Acknowledge valid reasons to choose the alternative. This demonstrates balance and high authority.",
             sectionType: "comparison"
         },
         {
             id: "conclusion",
             title: "Final Recommendation",
-            content: "Summing it up",
+            content: "A final, actionable recommendation summarizing who should take this advice and who should avoid it.",
             sectionType: "summary"
         }
     ],
@@ -112,31 +112,31 @@ export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> 
         {
             id: "intro",
             title: "Introduction & Topic Setup",
-            content: "Host introduces the core question/problem clearly",
+            content: "Host establishes the specific problem/topic immediately. No long preambles. Hook the listener with a counter-intuitive insight.",
             sectionType: "intro"
         },
         {
             id: "core_concept",
             title: "The Core Insight",
-            content: "Expert defines the solution/concept explicitly",
+            content: "Guest explicitly defines the core concept. Use analogies or metaphors to make complex ideas sticky and transcript-friendly.",
             sectionType: "explanation"
         },
         {
             id: "deep_dive",
             title: "Deep Dive Analysis",
-            content: "Discussion on the 'how' and 'why' mechanisms",
+            content: "In-depth discussion of mechanics. Host asks probing 'how-to' questions. Guest provides tactical details, not just high-level theory.",
             sectionType: "discussion"
         },
         {
             id: "nuance",
             title: "Limitations & Real-World Nuance",
-            content: "'It depends on...' discussion",
+            content: "Explore edge cases and 'gotchas'. Host challenges assumptions. Guest nuances their advice for different contexts.",
             sectionType: "context"
         },
         {
             id: "key_takeaways",
             title: "Key Takeaways",
-            content: "Host summarizes the 3 main points",
+            content: "Host summarizes 3 specific, actionable takeaways, phrasing them as 'rules of thumb' for easy memorization and extraction.",
             sectionType: "summary"
         }
     ],
@@ -144,7 +144,7 @@ export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> 
         {
             id: "overview",
             title: "Overview",
-            content: "<300-400 words introducing the comparison.>",
+            content: "A neutral, high-level summary of the comparison landscape (300-400 words). Define the criteria used for evaluation.",
             sectionType: "context"
         },
         {
@@ -156,13 +156,13 @@ export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> 
         {
             id: "detailed_analysis",
             title: "Deep Dive Analysis",
-            content: "<Comprehensive prose analysis of the differences (400-600 words).>",
+            content: "Prose analysis explaining the 'why' behind the table ratings. Focus on nuances that don't fit in the grid. 400-600 words.",
             sectionType: "strategies"
         },
         {
             id: "verdict",
             title: "Final Verdict",
-            content: "<Balanced conclusion: who should choose which option>",
+            content: "A 'Who is this for?' conclusion. Define the ideal user profile for each option rather than declaring a universal winner.",
             sectionType: "cta"
         }
     ]

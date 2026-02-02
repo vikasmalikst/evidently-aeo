@@ -11,8 +11,22 @@ export function buildShortVideoPrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Simplified: Just use the provided StructureConfig
-    // The frontend must enforce the default structure or user customizations
+    // Default structure for Short Videos (AEO-Optimized) - Matches Frontend Template
+    const defaultSections = [
+        {
+            id: "transcript",
+            title: "Full Audio Transcript",
+            content: "Verbatim spoken-word script optimized for high-velocity reading. Must include a 'Hook' (0-3s), direct 'Answer' (3-20s), 'Explanation' (20-50s) and a quotable 'Takeaway' (50-60s).",
+            sectionType: "transcript"
+        },
+        {
+            id: "production_tips",
+            title: "Production Guidelines",
+            content: "Strategic visual & audio direction. Include camera angles, tone of voice, text overlays for key terms, and timing cues to maximize retention and AEO signals.",
+            sectionType: "tips"
+        }
+    ];
+
     const sectionsToUse = structureConfig?.sections && structureConfig.sections.length > 0
         ? structureConfig.sections.map(s => ({
             id: s.id,
@@ -20,15 +34,7 @@ export function buildShortVideoPrompt(
             content: `<${s.content || 'Generate script for this segment'}>`,
             sectionType: s.sectionType || "custom"
         }))
-        : [];
-
-    // Fallback error handling or empty structure if something goes wrong (though UI should prevent this)
-    if (sectionsToUse.length === 0) {
-        // We could throw or return a generic instruction, but for now we follow the "remove fallback" instruction strictly.
-        // We will output an empty sections array which might cause the LLM to hallucinate structure or fail gracefully.
-        // Better to provide a minimal safety net OR just trust the input as requested.
-        // "we use only main template not any fallback" implies trust.
-    }
+        : defaultSections;
 
     const sectionsJson = JSON.stringify(sectionsToUse, null, 2);
 

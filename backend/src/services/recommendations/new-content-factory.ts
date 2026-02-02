@@ -122,6 +122,34 @@ function buildBlogArticlePrompt(
     structureConfig?: StructureConfig
 ): string {
 
+    // Default structure if none provided (Matches Frontend "Article" Template)
+    const defaultSections = [
+        {
+            id: "direct_answer",
+            title: "Direct Answer",
+            content: "Provide a direct, standalone answer to the main user question immediately (80-120 words). Optimize for 'featured snippet' extraction. Bold key concepts.",
+            sectionType: "answer"
+        },
+        {
+            id: "how_it_works",
+            title: "How It Works",
+            content: "Break down the mechanism or process into clear, numbered steps. Focus on 'why' it works, not just 'what' it is to build semantic depth.",
+            sectionType: "explanation"
+        },
+        {
+            id: "comparison",
+            title: "Comparison With Alternatives",
+            content: "Objectively compare with 2-3 main alternatives. Highlight unique differentiators without marketing fluff. Use contrastive language (e.g., 'Unlike X, Y does...').",
+            sectionType: "comparison"
+        },
+        {
+            id: "limitations",
+            title: "Limitations and Trade-Offs",
+            content: "Explicitly state 1-2 limitations or trade-offs. This increases trust and prevents 'too good to be true' penalties in AI scoring.",
+            sectionType: "constraints"
+        }
+    ];
+
     const sectionsToUse = structureConfig?.sections && structureConfig.sections.length > 0
         ? structureConfig.sections.map(s => ({
             id: s.id,
@@ -133,7 +161,7 @@ function buildBlogArticlePrompt(
             content: `<${s.content || 'Generate relevant content for this section'}>`,
             sectionType: s.sectionType || "custom"
         }))
-        : [];
+        : defaultSections;
 
     // Convert sections to JSON string for the prompt example, but we need to ensure formatting is clean
     const sectionsJson = JSON.stringify(sectionsToUse, null, 2);

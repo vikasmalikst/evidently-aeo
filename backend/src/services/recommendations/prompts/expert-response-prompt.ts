@@ -11,6 +11,40 @@ export function buildExpertResponsePrompt(
     structureConfig?: StructureConfig
 ): string {
 
+    // Default structure for Expert Responses (AEO-Optimized) - Matches Frontend Template
+    const defaultSections = [
+        {
+            id: "direct_stance",
+            title: "The Verdict",
+            content: "Start with a definitive 'Yes/No/It depends' verdict. Avoid 'fence-sitting'. State your position clearly as an experienced practitioner.",
+            sectionType: "answer"
+        },
+        {
+            id: "experience_context",
+            title: "Real-World Experience",
+            content: "Validate your stance with first-hand experience indicators (e.g., 'In our production environment...', 'After testing 5 tools...').",
+            sectionType: "context"
+        },
+        {
+            id: "reasoning",
+            title: "The 'Why'",
+            content: "Explain the technical 'why' behind your verdict. Focus on long-term implications and hidden factors beginners might miss.",
+            sectionType: "explanation"
+        },
+        {
+            id: "tradeoffs",
+            title: "Trade-offs & Alternatives",
+            content: "Steel-man the opposing view. Acknowledge valid reasons to choose the alternative. This demonstrates balance and high authority.",
+            sectionType: "comparison"
+        },
+        {
+            id: "conclusion",
+            title: "Final Recommendation",
+            content: "A final, actionable recommendation summarizing who should take this advice and who should avoid it.",
+            sectionType: "summary"
+        }
+    ];
+
     const sectionsToUse = structureConfig?.sections && structureConfig.sections.length > 0
         ? structureConfig.sections.map(s => ({
             id: s.id,
@@ -18,7 +52,7 @@ export function buildExpertResponsePrompt(
             content: `<${s.content || 'Generate expert insight for this section'}>`,
             sectionType: s.sectionType || "custom"
         }))
-        : [];
+        : defaultSections;
 
     const sectionsJson = JSON.stringify(sectionsToUse, null, 2);
 

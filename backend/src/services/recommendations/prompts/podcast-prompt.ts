@@ -11,6 +11,40 @@ export function buildPodcastPrompt(
     structureConfig?: StructureConfig
 ): string {
 
+    // Default structure for Podcast (AEO-Optimized) - Matches Frontend Template
+    const defaultSections = [
+        {
+            id: "intro",
+            title: "Introduction & Topic Setup",
+            content: "Host establishes the specific problem/topic immediately. No long preambles. Hook the listener with a counter-intuitive insight.",
+            sectionType: "intro"
+        },
+        {
+            id: "core_concept",
+            title: "The Core Insight",
+            content: "Guest explicitly defines the core concept. Use analogies or metaphors to make complex ideas sticky and transcript-friendly.",
+            sectionType: "explanation"
+        },
+        {
+            id: "deep_dive",
+            title: "Deep Dive Analysis",
+            content: "In-depth discussion of mechanics. Host asks probing 'how-to' questions. Guest provides tactical details, not just high-level theory.",
+            sectionType: "discussion"
+        },
+        {
+            id: "nuance",
+            title: "Limitations & Real-World Nuance",
+            content: "Explore edge cases and 'gotchas'. Host challenges assumptions. Guest nuances their advice for different contexts.",
+            sectionType: "context"
+        },
+        {
+            id: "key_takeaways",
+            title: "Key Takeaways",
+            content: "Host summarizes 3 specific, actionable takeaways, phrasing them as 'rules of thumb' for easy memorization and extraction.",
+            sectionType: "summary"
+        }
+    ];
+
     const sectionsToUse = structureConfig?.sections && structureConfig.sections.length > 0
         ? structureConfig.sections.map(s => ({
             id: s.id,
@@ -18,7 +52,7 @@ export function buildPodcastPrompt(
             content: `<${s.content || 'Generate podcast dialogue for this segment'}>`,
             sectionType: s.sectionType || "custom"
         }))
-        : [];
+        : defaultSections;
 
     const sectionsJson = JSON.stringify(sectionsToUse, null, 2);
 

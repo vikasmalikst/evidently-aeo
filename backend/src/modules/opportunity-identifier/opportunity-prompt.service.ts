@@ -80,7 +80,7 @@ RULES:
 5. VARY YOUR CONTENT TYPES: Do not use the same content type for every recommendation. Mix Short-forms videos, Comparison tables, and Articles based on the specific query nuance.
 
 CONTENT TYPE OPTIONS:
-- Short-form Video Script (Best for rapid answers, visual explanations, and increasing dwell time)
+- (atleast3)Short-form Video Script (Best for rapid answers, visual explanations, and increasing dwell time)
 - Social Media Thread (X/Threads)
 - Technical Comparison Table (Specialized for AEO comparison queries)
 

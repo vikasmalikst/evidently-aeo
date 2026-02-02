@@ -9,22 +9,51 @@ import { IAEOScoringService, AEOScoreResult } from './base-aeo-scoring.interface
 export class ComparisonTableAEOScoringService implements IAEOScoringService {
 
     public calculateScrapabilityScore(content: string): AEOScoreResult {
-        const text = content || '';
+        // Handle V4/JSON content structure
+        let text = content || '';
+        let tableContent = text;
+
+        try {
+            if (text.trim().startsWith('{')) {
+                const parsed = JSON.parse(text);
+                // If V4 sections, find the table section
+                if (parsed.sections && Array.isArray(parsed.sections)) {
+                    const tableSection = parsed.sections.find((s: any) =>
+                        s.sectionType === 'comparison_table' ||
+                        s.id === 'table' ||
+                        s.title?.toLowerCase().includes('table')
+                    );
+
+                    if (tableSection) {
+                        tableContent = tableSection.content || '';
+                    }
+
+                    // Reconstruct full text for context scoring
+                    text = parsed.sections.map((s: any) => `${s.title}\n${s.content}`).join('\n\n');
+                } else if (parsed.content) {
+                    text = parsed.content;
+                    tableContent = text;
+                }
+            }
+        } catch (e) {
+            // Not JSON, treat as raw text
+        }
 
         // 1. Comparison Intent Clarity (10)
         const intentScore = this.scoreComparisonIntent(text);
 
         // 2. Table Structure & Parsability (20)
-        const structureScore = this.scoreTableStructure(text);
+        // Pass specifically the table content for structure check
+        const structureScore = this.scoreTableStructure(tableContent);
 
         // 3. Attribute Selection Quality (20)
-        const attributeScore = this.scoreAttributeQuality(text);
+        const attributeScore = this.scoreAttributeQuality(tableContent);
 
         // 4. Neutral Language & Factuality (15)
         const neutralityScore = this.scoreNeutrality(text);
 
         // 5. Semantic Consistency (10)
-        const consistencyScore = this.scoreSemanticConsistency(text);
+        const consistencyScore = this.scoreSemanticConsistency(tableContent);
 
         // 6. Contextual Interpretation Layer (10)
         const contextScore = this.scoreContextualInterpretation(text);
@@ -36,15 +65,22 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
         const timelinessScore = this.scoreTimeliness(text);
 
         // 9. LLM Extraction Readiness (Bonus +5)
-        const llmScore = this.scoreLLMReadiness(text, structureScore.score);
+        const llmScore = this.scoreLLMReadiness(structureScore.score);
 
-        // Total Calculation (Total 100 + 5 bonus)
-        let total = intentScore.score + structureScore.score + attributeScore.score +
+        // Total Calculation (Total 100 + 5 bonus, capped at 70 for backend portion)
+        // We need to rescale this to max 70.
+        // Current Max: 10 + 20 + 20 + 15 + 10 + 10 + 10 + 5 = 100
+        // Target Max: 70
+        // Scale factor: 0.7
+
+        const rawTotal = intentScore.score + structureScore.score + attributeScore.score +
             neutralityScore.score + consistencyScore.score + contextScore.score +
-            edgeCaseScore.score + timelinessScore.score + llmScore.score;
+            edgeCaseScore.score + timelinessScore.score; // Exclude bonus from scaling base
+
+        const total = Math.round(rawTotal * 0.7) + llmScore.score; // Add bonus after or scale it too? Let's just cap at 70 total.
 
         return {
-            totalScore: Math.min(105, total),
+            totalScore: Math.min(70, total),
             breakdown: {
                 comparisonIntent: intentScore,
                 tableStructure: structureScore,
@@ -66,7 +102,7 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
         // "Comparison of A vs B", "Comparing X and Y"
         // Look for Title or first sentence.
         const header = text.split('\n')[0] || '';
-        const hasVs = / vs /i.test(header) || /versus/i.test(header) || /comparison/i.test(header) || /comparing/i.test(header);
+        const hasVs = / vs\.? /i.test(header) || /versus/i.test(header) || /comparison/i.test(header) || /comparing/i.test(header) || /showdown/i.test(header);
 
         if (hasVs) {
             return { score: 10, max: 10, status: 'good', feedback: "Clear comparison intent in header." };
@@ -76,24 +112,23 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
 
     // 2. Table Structure & Parsability (20)
     private scoreTableStructure(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
-        // | Header |
-        // | --- |
-        const tableHeaderPattern = /\|.*\|.*\|/;
-        const tableSeparatorPattern = /\|[\s-]*\|[\s-]*\|/;
+        // Simple Markdown Table Check
+        // | Header | Header |
+        // | --- | --- |
 
-        const hasHeader = tableHeaderPattern.test(text);
-        const hasSeparator = tableSeparatorPattern.test(text);
-        const rowCount = (text.match(/^\|.*\|$/gm) || []).length;
+        // Count lines that look like table rows
+        const tableLines = text.match(/^\s*\|.*\|\s*$/gm) || [];
+        const hasSeparator = /^\s*\|[-:\s|]+\|\s*$/m.test(text);
 
         let score = 0;
         let status: 'good' | 'warning' | 'error' = 'error';
         let feedback = "No markdown table structure detected.";
 
-        if (hasHeader && hasSeparator && rowCount >= 5) {
+        if (tableLines.length >= 3 && hasSeparator) {
             score = 20;
             status = 'good';
             feedback = "Strong table structure.";
-        } else if (hasHeader && hasSeparator) {
+        } else if (tableLines.length > 0) {
             score = 10;
             status = 'warning';
             feedback = "Structure exists but is thin (add more rows).";
@@ -106,12 +141,12 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
     private scoreAttributeQuality(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
         // Look for row headers (first column) or column headers keywords
         // Features, Price, Support, Users, Pros, Cons
-        const keywords = [/price/i, /cost/i, /feature/i, /support/i, /platform/i, /user/i, /rating/i, /limit/i];
+        const keywords = [/price/i, /cost/i, /feature/i, /support/i, /platform/i, /user/i, /rating/i, /limit/i, /security/i, /compliance/i, /granular/i];
         const matches = keywords.filter(p => p.test(text)).length;
 
-        if (matches >= 4) {
+        if (matches >= 3) {
             return { score: 20, max: 20, status: 'good', feedback: "High quality, functional attributes." };
-        } else if (matches >= 2) {
+        } else if (matches >= 1) {
             return { score: 10, max: 20, status: 'warning', feedback: "Basic attributes. Add deeper functional comparison." };
         }
         return { score: 5, max: 20, status: 'error', feedback: "Attributes seem weak or missing functional details." };
@@ -119,8 +154,9 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
 
     // 4. Neutral Language & Factuality (15)
     private scoreNeutrality(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
-        // Avoid "Winner", "Best", "Destroyed"
-        const hype = /winner/i.test(text) || /destroyed/i.test(text) || /crushes/i.test(text);
+        // Avoid "Winner", "Best", "Destroyed" - strict check
+        // "Best suited" is okay, so we look for "The Winner is" patterns or extreme language
+        const hype = /absolute winner/i.test(text) || /destroyed/i.test(text) || /crushes the competition/i.test(text);
 
         if (hype) {
             return { score: 5, max: 15, status: 'warning', feedback: "Avoid 'winner' language in AEO comparisons." };
@@ -131,23 +167,26 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
     // 5. Semantic Consistency (10)
     private scoreSemanticConsistency(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
         // Check if rows have equal columns (simple regex check on pipe count)
-        const lines = text.match(/^\|.*\|$/gm) || [];
+        const lines = text.match(/^\s*\|.*\|\s*$/gm) || [];
         if (lines.length === 0) return { score: 0, max: 10, status: 'error', feedback: "No table rows." };
 
         const pipeCounts = lines.map(l => (l.match(/\|/g) || []).length);
-        const allSame = pipeCounts.every(val => val === pipeCounts[0]);
+        const refCount = pipeCounts[0];
+        // Allow variance of 0 (perfect) for consistency
+        const allSame = pipeCounts.every(val => val === refCount);
 
         if (allSame && lines.length > 2) {
             return { score: 10, max: 10, status: 'good', feedback: "Consistent table formatting." };
         }
+        // If mostly same (one outlier allowed?) - strict for now
         return { score: 5, max: 10, status: 'warning', feedback: "Inconsistent column counts detected." };
     }
 
     // 6. Contextual Interpretation Layer (10)
     private scoreContextualInterpretation(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
-        // Text *outside* of the table?
+        // Text *outside* of the table
         // Remove table lines and check for remaining length
-        const nonTableText = text.replace(/^\|.*\|$/gm, '').trim();
+        const nonTableText = text.replace(/^\s*\|.*\|\s*$/gm, '').trim();
 
         if (nonTableText.length > 150) {
             return { score: 10, max: 10, status: 'good', feedback: "Good contextual analysis surrounding the table." };
@@ -158,7 +197,7 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
     // 7. Edge-Case & Limitation Coverage (10)
     private scoreEdgeCases(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
         // "Except", "However", "Trade-off", "Limitation", "Only if"
-        const edgeWords = [/except/i, /however/i, /trade-off/i, /limitation/i, /only if/i, /unless/i];
+        const edgeWords = [/except/i, /however/i, /trade-off/i, /limitation/i, /only if/i, /unless/i, /gap/i, /lack/i];
         const matches = edgeWords.filter(p => p.test(text)).length;
 
         if (matches >= 2) {
@@ -171,7 +210,7 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
     private scoreTimeliness(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
         const year = new Date().getFullYear();
         const nextYear = year + 1;
-        const timeRegex = new RegExp(`${year}|${nextYear}|current|updated|latest`, 'i');
+        const timeRegex = new RegExp(`${year}|${nextYear}|current|updated|latest|${year - 1}`, 'i'); // Allow last year too for data
 
         if (timeRegex.test(text)) {
             return { score: 5, max: 5, status: 'good', feedback: "Includes timeliness signals." };
@@ -180,9 +219,9 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
     }
 
     // 9. LLM Extraction Readiness (Bonus +5)
-    private scoreLLMReadiness(text: string, structureScore: number): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
-        // If structure is perfect (20/20), implies high readability
-        if (structureScore === 20) {
+    private scoreLLMReadiness(structureScore: number): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
+        // If structure is high, implies high readability
+        if (structureScore >= 15) {
             return { score: 5, max: 5, status: 'good', feedback: "Perfectly parsable structure." };
         }
         return { score: 0, max: 5, status: 'warning', feedback: "Structure errors may hinder LLM extraction." };

@@ -16,13 +16,13 @@ export function buildShortVideoPrompt(
         {
             id: "transcript",
             title: "Full Audio Transcript",
-            content: "Verbatim spoken-word script optimized for high-velocity reading. Must include a 'Hook' (0-3s), direct 'Answer' (3-20s), 'Explanation' (20-50s) and a quotable 'Takeaway' (50-60s).",
+            content: "Verbatim spoken-word script (approx 150 words). USE LINE BREAKS between sections:\n\n**[0-5s] Hook:** <Hook text>\n**[5-20s] Answer:** <Direct answer>\n**[20-50s] Explanation:** <Details>\n**[50-60s] Takeaway:** <Final thought>",
             sectionType: "transcript"
         },
         {
             id: "production_tips",
             title: "Production Guidelines",
-            content: "Strategic visual & audio direction. Include camera angles, tone of voice, text overlays for key terms, and timing cues to maximize retention and AEO signals.",
+            content: "Strategic visual direction. Use a Bulleted List:\n* **Visuals:** <Camera angles/B-roll>\n* **Text Overlay:** <Keywords to show>\n* **Tone:** <Speaker emotion>",
             sectionType: "tips"
         }
     ];

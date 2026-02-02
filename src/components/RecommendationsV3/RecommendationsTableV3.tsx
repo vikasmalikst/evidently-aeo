@@ -285,7 +285,7 @@ export const RecommendationsTableV3 = ({
                         className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#00bcdc]/5'} hover:bg-[#f0f9ff] transition-all duration-200 cursor-pointer`}
                       >
                         {showCheckboxes && (
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-4">
                             <input
                               type="checkbox"
                               checked={rec.id ? selectedIds.has(rec.id) : false}
@@ -300,12 +300,12 @@ export const RecommendationsTableV3 = ({
                             />
                           </td>
                         )}
-                        <td className="px-4 py-5">
+                        <td className="px-4 py-6">
                           <div className="flex items-center justify-center w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[10px] font-bold shadow-sm">
                             {index + 1}
                           </div>
                         </td>
-                        <td className="px-4 py-5">
+                        <td className="px-4 py-6">
                           <div className="flex items-start gap-3">
                             {hasDetails && (
                               <button
@@ -322,14 +322,14 @@ export const RecommendationsTableV3 = ({
                             )}
                             <div className="flex flex-col gap-1.5">
                               {/* Recommendation Action as main display */}
-                              <p className="text-[14px] text-[#0f172a] font-semibold leading-relaxed">
+                              <p className="text-[14px] text-[#0f172a] font-normal leading-relaxed">
                                 {rec.action?.replace(/^\[.*?\]\s*/, '') || rec.contentFocus || 'No action specified'}
                               </p>
                             </div>
                           </div>
                         </td>
 
-                        <td className="px-4 py-5">
+                        <td className="px-4 py-6">
                           <div className="flex flex-col items-start gap-1">
                             <div className="flex-shrink-0 w-6 h-6 rounded overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
                               <SafeLogo
@@ -346,11 +346,11 @@ export const RecommendationsTableV3 = ({
                         </td>
 
                         {/* Priority Column */}
-                        <td className="px-4 py-5">
+                        <td className="px-4 py-6">
                           {rec.priority && (
                             <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-bold ${rec.priority === 'High' ? 'bg-[#fee2e2] text-[#991b1b]' :
-                                rec.priority === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
-                                  'bg-[#f3f4f6] text-[#4b5563]'
+                              rec.priority === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
+                                'bg-[#f3f4f6] text-[#4b5563]'
                               }`} title={`Priority: ${rec.priority}`}>
                               {rec.priority.charAt(0)}
                             </span>
@@ -358,11 +358,11 @@ export const RecommendationsTableV3 = ({
                         </td>
 
                         {/* Effort Column */}
-                        <td className="px-4 py-5">
+                        <td className="px-4 py-6">
                           {rec.effort && (
                             <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-bold ${rec.effort === 'Low' ? 'bg-[#d1fae5] text-[#065f46]' :
-                                rec.effort === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
-                                  'bg-[#fee2e2] text-[#991b1b]'
+                              rec.effort === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
+                                'bg-[#fee2e2] text-[#991b1b]'
                               }`} title={`Effort: ${rec.effort}`}>
                               {rec.effort.charAt(0)}
                             </span>

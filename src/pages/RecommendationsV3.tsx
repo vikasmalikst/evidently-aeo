@@ -30,6 +30,8 @@ import {
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
 import { PremiumTabNavigator } from '../components/RecommendationsV3/PremiumTabNavigator';
+import { CompactStepIndicator } from '../components/RecommendationsV3/CompactStepIndicator';
+import { CollapsibleFilters } from '../components/RecommendationsV3/CollapsibleFilters';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { OpportunityStrategyCard } from '../components/RecommendationsV3/components/OpportunityStrategyCard';
 import { StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
@@ -153,14 +155,14 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
         const response = await getGenerationV3(generationId);
         if (response.success && response.data?.recommendations) {
           const recs = response.data.recommendations;
-          
+
           const counts = {
             1: recs.filter(r => r.reviewStatus === 'pending_review' || !r.reviewStatus).length,
             2: recs.filter(r => r.isApproved && !r.isContentGenerated).length,
             3: recs.filter(r => r.isContentGenerated && !r.isCompleted).length,
             4: recs.filter(r => r.isCompleted).length
           };
-          
+
           setStepCounts(counts);
         }
       } catch (err) {
@@ -1561,11 +1563,26 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                     <h2 className="text-[20px] font-bold text-[#0f172a] mb-1">Discover Opportunities</h2>
                     <p className="text-[14px] text-[#64748b]">Review findings and prioritize recommendations</p>
                   </div>
-                  <div className="flex items-end gap-3 flex-wrap">
-                    <StatusFilter value={statusFilter} onChange={setStatusFilter} />
-                    <PriorityFilter value={priorityFilter} onChange={setPriorityFilter} />
-                    <EffortFilter value={effortFilter} onChange={setEffortFilter} />
-                    <ContentTypeFilter value={contentTypeFilter} onChange={setContentTypeFilter} options={availableContentTypes} />
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <CollapsibleFilters
+                      activeFilterCount={
+                        (statusFilter !== 'all' ? 1 : 0) +
+                        (priorityFilter !== 'all' ? 1 : 0) +
+                        (effortFilter !== 'all' ? 1 : 0) +
+                        (contentTypeFilter !== 'all' ? 1 : 0)
+                      }
+                      onClearAll={() => {
+                        setStatusFilter('all');
+                        setPriorityFilter('all');
+                        setEffortFilter('all');
+                        setContentTypeFilter('all');
+                      }}
+                    >
+                      <StatusFilter value={statusFilter} onChange={setStatusFilter} />
+                      <PriorityFilter value={priorityFilter} onChange={setPriorityFilter} />
+                      <EffortFilter value={effortFilter} onChange={setEffortFilter} />
+                      <ContentTypeFilter value={contentTypeFilter} onChange={setContentTypeFilter} options={availableContentTypes} />
+                    </CollapsibleFilters>
                   </div>
                 </div>
                 <RecommendationsTableV3
@@ -1704,7 +1721,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     {expandedRecId === rec.id ? <IconMinus size={20} /> : <IconPlus size={20} />}
                                   </span>
                                   <div className="flex-1">
-                                    <h3 className="text-[16px] font-semibold text-[#1a1d29] leading-tight">{rec.action}</h3>
+                                    <h3 className="text-[16px] font-medium text-[#1a1d29] leading-tight">{rec.action}</h3>
                                     <p className="text-[12px] text-[#64748b] mt-1">
                                       KPI: {rec.kpi} · Source: {rec.citationSource} · Effort: {rec.effort} · Timeline: {rec.timeline}
                                     </p>
@@ -1936,7 +1953,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     {expandedRecId === rec.id ? <IconMinus size={20} /> : <IconPlus size={20} />}
                                   </span>
                                   <div className="flex-1">
-                                    <h3 className="text-[16px] font-semibold text-[#1a1d29] mb-2 leading-tight">{rec.action}</h3>
+                                    <h3 className="text-[14px] font-normal text-[#1a1d29] mb-2 leading-relaxed">{rec.action}</h3>
                                     <div className="flex items-center gap-2">
                                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
                                         <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -2246,7 +2263,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                   <span className="w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[11px] font-bold flex items-center justify-center">
                                                     {idx + 1}
                                                   </span>
-                                                  <h4 className="text-[14px] font-semibold text-[#1a1d29]">{section.title}</h4>
+                                                  <h4 className="text-[14px] font-medium text-[#1a1d29]">{section.title}</h4>
                                                   <SectionTypeBadge sectionType={section.sectionType} />
                                                 </div>
                                                 <div className="flex items-center gap-2">

@@ -61,3 +61,5 @@ backend/scripts/test-failures-2025-11-14T05-31-55-519Z.json
 # Ignore skills folders in any other location (e.g. .github/skills)
 **/skills/
 !src/**/skills/
+/resume
+

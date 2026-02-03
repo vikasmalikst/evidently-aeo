@@ -144,7 +144,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [globalReferences, setGlobalReferences] = useState<Map<string, string>>(new Map()); // recId -> references
   const [refiningIds, setRefiningIds] = useState<Set<string>>(new Set()); // Track which recommendations are being refined
   const [refinedContent, setRefinedContent] = useState<Map<string, any>>(new Map()); // recId -> refined v4.0 content
-  
+
   // Custom Structure State (Lifted from Inline Editor)
   const [customizedStructures, setCustomizedStructures] = useState<Map<string, StructureSection[]>>(new Map());
 
@@ -493,6 +493,25 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     if (contentTypeFilter !== 'all') {
       filtered = filtered.filter(rec => rec.assetType === contentTypeFilter);
     }
+
+    // Apply Sorting:
+    // 1. Priority (High -> Medium -> Low)
+    // 2. Effort (Low -> Medium -> High)
+    filtered.sort((a, b) => {
+      const priorityOrder: Record<string, number> = { 'High': 3, 'Medium': 2, 'Low': 1 };
+      const effortOrder: Record<string, number> = { 'Low': 3, 'Medium': 2, 'High': 1 }; // Higher val = earlier in list
+
+      const pA = priorityOrder[a.priority] || 0;
+      const pB = priorityOrder[b.priority] || 0;
+
+      if (pA !== pB) {
+        return pB - pA; // Descending Priority
+      }
+
+      const eA = effortOrder[a.effort] || 0;
+      const eB = effortOrder[b.effort] || 0;
+      return eB - eA; // Descending Effort Value (Low=3 comes first)
+    });
 
     setRecommendations(filtered);
   }, [statusFilter, priorityFilter, effortFilter, contentTypeFilter, allRecommendations, currentStep]);

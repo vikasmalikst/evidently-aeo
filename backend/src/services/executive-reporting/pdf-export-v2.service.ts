@@ -97,7 +97,7 @@ export class PdfExportServiceV2 {
     const browser = await puppeteer.launch({
       executablePath: getExecutablePath(), // Dynamic path based on OS
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1280,1024']
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1280,1024', '--ignore-certificate-errors']
     });
 
     try {
@@ -137,7 +137,9 @@ export class PdfExportServiceV2 {
       });
 
       // 2. Navigate to the page
-      const url = `${this.baseUrl}/executive-reporting?brandId=${brandId}&reportId=${reportId}&printMode=true`;
+      // Use PDF_RENDER_URL if available (for internal loopback), otherwise default to baseUrl
+      const baseUrl = process.env.PDF_RENDER_URL || this.baseUrl;
+      const url = `${baseUrl}/executive-reporting?brandId=${brandId}&reportId=${reportId}&printMode=true`;
       console.log(`🔗 [PDF-EXPORT-V2] Navigating to ${url}`);
 
       await page.goto(url, {
@@ -208,7 +210,7 @@ export class PdfExportServiceV2 {
     const browser = await puppeteer.launch({
       executablePath: getExecutablePath(),
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1200,1600']
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1200,1600', '--ignore-certificate-errors']
     });
 
     try {
@@ -240,7 +242,8 @@ export class PdfExportServiceV2 {
         window.localStorage.setItem('onboarding_complete', 'true');
       }, authUser, brandId, authToken, futureTime);
 
-      const url = `${this.baseUrl}/executive-reporting?brandId=${brandId}&reportId=${reportId}&printMode=true`;
+      const baseUrl = process.env.PDF_RENDER_URL || this.baseUrl;
+      const url = `${baseUrl}/executive-reporting?brandId=${brandId}&reportId=${reportId}&printMode=true`;
       await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
 
       await page.waitForSelector('.executive-metrics-grid', { timeout: 30000 });

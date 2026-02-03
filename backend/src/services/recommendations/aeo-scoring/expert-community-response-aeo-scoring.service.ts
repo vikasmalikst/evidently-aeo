@@ -98,7 +98,7 @@ export class ExpertCommunityResponseAEOScoringService implements IAEOScoringServ
         const sentences = text.match(/[^.!?]+[.!?]/g) || [text];
         const firstBlock = sentences.slice(0, 6).join(' ');
 
-        const directness = /yes|no|it depends|do this|don't|start by|the best way|my recommendation/i.test(firstBlock);
+        const directness = /yes|no|it depends|do this|don't|start by|the best way|my recommendation|i recommend|our recommendation|go with/i.test(firstBlock);
 
         let score = 0;
         let status: 'good' | 'warning' | 'error' = 'error';
@@ -129,9 +129,9 @@ export class ExpertCommunityResponseAEOScoringService implements IAEOScoringServ
     private scoreExpertise(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
         // "I have", "We found", "In my experience", "years of"
         const patterns = [
-            /I (have|used|tested|managed|built|run)/i,
+            /I (have|used|tested|managed|built|run|recommend)/i,
             /in my (experience|view|opinion)/i,
-            /we (found|discovered|saw)/i,
+            /we (found|discovered|saw|built|implemented|deployed|rolled out)/i,
             /years of/i,
             /personally/i,
             /my team/i
@@ -142,7 +142,7 @@ export class ExpertCommunityResponseAEOScoringService implements IAEOScoringServ
         let status: 'good' | 'warning' | 'error' = 'error';
         let feedback = "Lacks 'I-statements' or proof of lived experience.";
 
-        if (matches >= 3) {
+        if (matches >= 2) { // Relaxed count slightly since specific signals are stronger
             score = 15;
             status = 'good';
             feedback = "Excellent first-hand expertise signals.";

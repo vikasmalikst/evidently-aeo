@@ -70,6 +70,8 @@ QUALITY REQUIREMENTS:
 - **CRITICAL:** Use DESCRIPTIVE TEXT in table cells (e.g., "Native Integration", "Full Support", "Limited via API"). Do NOT use bare numbers (1-5) or ratings unless explicitly requested.
 - If comparing capabilities, explain the DIFFERENCE (e.g., "Automated" vs "Manual").
 - The prose analysis should be SUBSTANTIAL (400+ words).
+- **FORMATTING:** Use **Subheaders** and **Bullet Points** in the prose analysis to improve readability. Do NOT write long, unbroken paragraphs.
+- **READABILITY:** Keep sentences concise and clear. Avoid overly complex sentence structures.
 - CRITICAL: DO NOT RENAME SECTIONS. Use the exact "title" provided in the structure for each section.
 
 OUTPUT SCHEMA (GeneratedContentJsonV4):

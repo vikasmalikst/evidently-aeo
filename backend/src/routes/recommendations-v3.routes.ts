@@ -376,6 +376,19 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
       });
     }
 
+    // Fetch brand name
+    let brandName = 'Unknown Brand';
+    if (generation.brand_id) {
+      const { data: brand } = await supabaseAdmin
+        .from('brands')
+        .select('name')
+        .eq('id', generation.brand_id)
+        .single();
+      if (brand) {
+        brandName = brand.name;
+      }
+    }
+
     // Fetch active competitors for enrichment
     let competitorMap = new Map<string, any>();
     if (generation.brand_id) {
@@ -542,6 +555,7 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
       data: {
         step: stepNum,
         dataMaturity: (generation as any)?.metadata?.dataMaturity || null,
+        brandName,
         recommendations
       }
     });

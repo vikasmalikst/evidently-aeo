@@ -159,6 +159,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [customizedStructures, setCustomizedStructures] = useState<Map<string, StructureSection[]>>(new Map());
 
   const [stepCounts, setStepCounts] = useState<Record<number, number>>({});
+  const [brandName, setBrandName] = useState<string>(''); // For template customization
 
   // Fetch counts for all steps
   useEffect(() => {
@@ -317,6 +318,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
         if (response.success && response.data) {
           if (response.data.dataMaturity !== undefined) {
             setDataMaturity((response.data.dataMaturity as any) || null);
+          }
+          if (response.data.brandName) {
+            setBrandName(response.data.brandName);
           }
           // Recommendations from database should already have IDs
           // Log if any are missing IDs for debugging
@@ -1083,11 +1087,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   // Render inline structure editor for Step 2
   const renderStep2ExpandedContent = (recommendation: RecommendationV3) => {
+    console.log(`[RecommendationsV3Step2] Rendering Editor for ${recommendation.id}`, {
+        competitorsOriginal: recommendation.competitors_target, 
+        competitorsMapped: recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || [],
+        brandName
+    });
     return (
       <ContentStructureInlineEditor
         recommendationId={recommendation.id!}
         contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
         initialSections={customizedStructures.get(recommendation.id!)}
+        competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || []}
+        brandName={brandName}
         onChange={(sections) => {
           setCustomizedStructures(prev => {
             const next = new Map(prev);
@@ -1114,7 +1125,6 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           }
         }}
         isSaving={generatingContentIds.has(recommendation.id!)}
-        competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name) || []}
       />
     );
   };
@@ -2401,16 +2411,38 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                     return (
                                       <div className="space-y-4">
-                                        {/* Header with overall title - Clean Design */}
-                                        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-                                          <div className="flex items-center gap-3">
-                                            <div className="w-1 h-10 bg-gradient-to-b from-slate-300 to-slate-400 rounded-full" />
-                                            <div>
-                                              <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
-                                              <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections · v4.0</p>
+                                          {/* Header with overall title - Clean Design */}
+                                          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                              <div className="w-1 h-10 bg-gradient-to-b from-slate-300 to-slate-400 rounded-full" />
+                                              <div>
+                                                <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
+                                                <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections · v4.0</p>
+                                              </div>
                                             </div>
+
+                                            {/* Refine with Feedback Button - Moved to Header */}
+                                            <button
+                                              onClick={handleRefine}
+                                              disabled={isRefining || !hasFeedback}
+                                              className={`px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2 ${isRefining || !hasFeedback
+                                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                                                : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3] border border-transparent'
+                                                }`}
+                                            >
+                                              {isRefining ? (
+                                                <>
+                                                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                  Refining...
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <IconSparkles size={16} />
+                                                  Refine with Feedback
+                                                </>
+                                              )}
+                                            </button>
                                           </div>
-                                        </div>
 
                                         {/* Section Cards */}
                                         {sections.map((section: any, idx: number) => {
@@ -2561,37 +2593,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
 
 
-                                        {/* Refine Button */}
-                                        <div className="flex items-center gap-3">
-                                          <button
-                                            onClick={handleRefine}
-                                            disabled={isRefining || !hasFeedback}
-                                            className={`flex-1 py-3 rounded-lg text-[14px] font-semibold transition-colors flex items-center justify-center gap-2 ${isRefining || !hasFeedback
-                                              ? 'bg-[#e2e8f0] text-[#94a3b8] cursor-not-allowed'
-                                              : 'bg-gradient-to-r from-[#8b5cf6] to-[#a855f7] text-white hover:from-[#7c3aed] hover:to-[#9333ea]'
-                                              }`}
-                                          >
-                                            {isRefining ? (
-                                              <>
-                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                Refining...
-                                              </>
-                                            ) : (
-                                              <>
-                                                🔄 Refine with Feedback
-                                              </>
-                                            )}
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              const fullContent = sections.map((s: any) => `## ${s.title}\n\n${recEdits.get(s.id) || s.content}`).join('\n\n');
-                                              navigator.clipboard.writeText(fullContent);
-                                            }}
-                                            className="px-6 py-3 bg-[#00bcdc] text-white rounded-lg text-[14px] font-semibold hover:bg-[#0096b0] transition-colors flex items-center gap-2"
-                                          >
-                                            📋 Copy All
-                                          </button>
-                                        </div>
+
                                       </div>
                                     );
                                   }

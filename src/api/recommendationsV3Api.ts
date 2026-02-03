@@ -118,6 +118,7 @@ export interface GetByStepV3Response {
     step: number;
     dataMaturity?: 'cold_start' | 'low_data' | 'normal' | null;
     recommendations: RecommendationV3[];
+    brandName?: string;
   };
   error?: string;
 }

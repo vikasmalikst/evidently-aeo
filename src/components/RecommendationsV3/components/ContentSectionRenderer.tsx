@@ -7,7 +7,7 @@
 
 import React, { useState } from 'react';
 import { IconCopy, IconCheck, IconCode, IconCalculator, IconTable, IconFileText, IconVideo } from '@tabler/icons-react';
-import { MarkdownRenderer, AccordionFAQ, TimelineViewer, VideoScriptRenderer } from './EnhancedRenderers';
+import { MarkdownRenderer, AccordionFAQ, TimelineViewer, VideoScriptRenderer, EditableMarkdown } from './EnhancedRenderers';
 import { LiveCompetitorData } from './LiveCompetitorData';
 import { VisualTableEditor } from './VisualTableEditor';
 import { IconEdit } from '@tabler/icons-react';
@@ -447,6 +447,7 @@ export function ContentSectionRenderer({
   const content = editedContent ?? section.content;
 
   const [isVisualTableMode, setIsVisualTableMode] = useState(section.sectionType === 'comparison_table' || content.includes('|'));
+  const [isRawMarkdownMode, setIsRawMarkdownMode] = useState(false);
 
   // Editing mode
   if (isEditing) {
@@ -454,36 +455,36 @@ export function ContentSectionRenderer({
       <div className="space-y-3 animate-in fade-in duration-200">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${isVisualTableMode ? 'text-[#00bcdc]' : 'text-gray-400'}`}>
-              {isVisualTableMode ? 'Grid Editor' : 'Markdown Editor'}
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${isRawMarkdownMode ? 'text-gray-400' : 'text-[#10b981]'}`}>
+              {isRawMarkdownMode ? 'Markdown Editor' : 'Rich Text Editor'}
             </span>
           </div>
           <button
-            onClick={() => setIsVisualTableMode(!isVisualTableMode)}
+            onClick={() => setIsRawMarkdownMode(!isRawMarkdownMode)}
             className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#e2e8f0] rounded-full text-[11px] font-semibold text-[#64748b] hover:text-[#00bcdc] hover:border-[#00bcdc] transition-all"
           >
-            {isVisualTableMode ? <IconEdit size={12} /> : <IconTable size={12} />}
-            {isVisualTableMode ? 'Switch to Raw Markdown' : 'Switch to Visual Grid'}
+            {isRawMarkdownMode ? <IconEdit size={12} /> : <IconCode size={12} />}
+            {isRawMarkdownMode ? 'Switch to Rich Editor' : 'Switch to Raw Markdown'}
           </button>
         </div>
 
-        {isVisualTableMode ? (
-          <VisualTableEditor
-            content={content}
-            onContentChange={(newContent) => onContentChange?.(newContent)}
-          />
-        ) : (
+        {isRawMarkdownMode ? (
           <textarea
             className="w-full min-h-[300px] p-4 bg-[#0b1220] border border-[#1e293b] rounded-xl text-[13px] text-[#e2e8f0] font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#00bcdc] shadow-inner"
             value={content}
             onChange={(e) => onContentChange?.(e.target.value)}
             spellCheck={false}
           />
+        ) : (
+          <EditableMarkdown
+            content={content}
+            onChange={(newContent) => onContentChange?.(newContent)}
+          />
         )}
 
         <div className="flex items-center justify-between px-1">
           <p className="text-[10px] text-[#94a3b8]">
-            {isVisualTableMode ? 'Changes are automatically saved to the draft.' : 'Use standard Markdown syntax for tables and formatting.'}
+            {isRawMarkdownMode ? 'Use standard Markdown syntax for formatting.' : 'Edit directly in the formatted view. Changes are saved automatically.'}
           </p>
         </div>
       </div>

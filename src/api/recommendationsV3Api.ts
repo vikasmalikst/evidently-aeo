@@ -118,6 +118,7 @@ export interface GetByStepV3Response {
     step: number;
     dataMaturity?: 'cold_start' | 'low_data' | 'normal' | null;
     recommendations: RecommendationV3[];
+    brandName?: string;
   };
   error?: string;
 }
@@ -648,3 +649,32 @@ export async function saveContentDraftV3(
     };
   }
 }
+
+/**
+ * Save section edits (title and content) for a recommendation's generated content
+ * Updates the existing content record in-place (does not create a new row)
+ */
+export async function saveSectionEditsV3(
+  recommendationId: string,
+  sections: Array<{ id: string; title: string; content: string; sectionType: string }>
+): Promise<{ success: boolean; data?: { content: any }; error?: string }> {
+  try {
+    const response = await apiClient.post<{ success: boolean; data?: { content: any }; error?: string }>(
+      `/recommendations-v3/${recommendationId}/content/save-sections`,
+      { sections }
+    );
+    if (response && typeof response === 'object' && 'success' in response) {
+      return response as { success: boolean; data?: { content: any }; error?: string };
+    } else if (response && typeof response === 'object' && 'data' in response) {
+      return (response as any).data;
+    }
+    return response as { success: boolean; data?: { content: any }; error?: string };
+  } catch (error: any) {
+    console.error('Error saving section edits:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to save section edits'
+    };
+  }
+}
+

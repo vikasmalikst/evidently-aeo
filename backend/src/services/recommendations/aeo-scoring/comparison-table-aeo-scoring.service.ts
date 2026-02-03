@@ -12,10 +12,24 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
         // Handle V4/JSON content structure
         let text = content || '';
         let tableContent = text;
+        let contentTitle = ''; // Track title for intent scoring
 
         try {
-            if (text.trim().startsWith('{')) {
-                const parsed = JSON.parse(text);
+            // Strip markdown code blocks if present
+            let jsonText = text.trim();
+            if (jsonText.startsWith('```json')) {
+                jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            } else if (jsonText.startsWith('```')) {
+                jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+            }
+
+            if (jsonText.startsWith('{')) {
+                const parsed = JSON.parse(jsonText);
+
+                if (parsed.contentTitle) {
+                    contentTitle = parsed.contentTitle;
+                }
+
                 // If V4 sections, find the table section
                 if (parsed.sections && Array.isArray(parsed.sections)) {
                     const tableSection = parsed.sections.find((s: any) =>
@@ -40,7 +54,8 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
         }
 
         // 1. Comparison Intent Clarity (10)
-        const intentScore = this.scoreComparisonIntent(text);
+        // Pass contentTitle explicitly if found
+        const intentScore = this.scoreComparisonIntent(contentTitle || text);
 
         // 2. Table Structure & Parsability (20)
         // Pass specifically the table content for structure check
@@ -68,16 +83,11 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
         const llmScore = this.scoreLLMReadiness(structureScore.score);
 
         // Total Calculation (Total 100 + 5 bonus, capped at 70 for backend portion)
-        // We need to rescale this to max 70.
-        // Current Max: 10 + 20 + 20 + 15 + 10 + 10 + 10 + 5 = 100
-        // Target Max: 70
-        // Scale factor: 0.7
-
         const rawTotal = intentScore.score + structureScore.score + attributeScore.score +
             neutralityScore.score + consistencyScore.score + contextScore.score +
-            edgeCaseScore.score + timelinessScore.score; // Exclude bonus from scaling base
+            edgeCaseScore.score + timelinessScore.score;
 
-        const total = Math.round(rawTotal * 0.7) + llmScore.score; // Add bonus after or scale it too? Let's just cap at 70 total.
+        const total = Math.round(rawTotal * 0.7) + llmScore.score;
 
         return {
             totalScore: Math.min(70, total),
@@ -101,8 +111,16 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
     private scoreComparisonIntent(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
         // "Comparison of A vs B", "Comparing X and Y"
         // Look for Title or first sentence.
-        const header = text.split('\n')[0] || '';
-        const hasVs = / vs\.? /i.test(header) || /versus/i.test(header) || /comparison/i.test(header) || /comparing/i.test(header) || /showdown/i.test(header);
+        const header = text.split('\n')[0]?.trim() || ''; // Handle leading newlines/spaces
+
+        // Relaxed regex to include "Side-by-Side" and "Table"
+        const hasVs = / vs\.? /i.test(header) ||
+            /versus/i.test(header) ||
+            /comparison/i.test(header) ||
+            /comparing/i.test(header) ||
+            /showdown/i.test(header) ||
+            /side-by-side/i.test(header) ||
+            /table/i.test(header);
 
         if (hasVs) {
             return { score: 10, max: 10, status: 'good', feedback: "Clear comparison intent in header." };

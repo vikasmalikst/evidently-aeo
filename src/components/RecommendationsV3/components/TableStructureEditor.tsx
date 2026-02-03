@@ -9,7 +9,13 @@ interface TableStructureEditorProps {
 export const TableStructureEditor: React.FC<TableStructureEditorProps> = ({ content, onChange }) => {
     const [rows, setRows] = useState<string[][]>([]);
 
+    // Use a ref to track the last parsed content to prevent loops if onChange bubbles up
+    const lastParsedContent = React.useRef(content);
+
     useEffect(() => {
+        // Prevent re-parsing if content hasn't changed meaningfully or if it matches what we just sent out
+        if (content === lastParsedContent.current && rows.length > 0) return;
+        
         // Parse markdown table
         const lines = content.split('\n').filter(line => line.trim() !== '');
         
@@ -37,7 +43,8 @@ export const TableStructureEditor: React.FC<TableStructureEditorProps> = ({ cont
         }
         
         setRows(parsedRows);
-    }, []); // Run only on mount to avoid cursor jumping issues if we re-parse on every type
+        lastParsedContent.current = content;
+    }, [content]); // Run when content prop changes
 
     const updateContent = (newRows: string[][]) => {
         setRows(newRows);

@@ -25,10 +25,12 @@ import {
   regenerateContentV3,
   type RecommendationV3,
   type IdentifiedKPI,
-  saveContentDraftV3
+  saveContentDraftV3,
+  saveSectionEditsV3
 } from '../api/recommendationsV3Api';
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
+import { invalidateCache } from '../lib/apiCache';
 import { PremiumTabNavigator } from '../components/RecommendationsV3/PremiumTabNavigator';
 import { CompactStepIndicator } from '../components/RecommendationsV3/CompactStepIndicator';
 import { CollapsibleFilters } from '../components/RecommendationsV3/CollapsibleFilters';
@@ -133,6 +135,12 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   const [activeFeedbackSection, setActiveFeedbackSection] = useState<string | null>(null); // recId_sectionId
 
+  // Side Panel State for AEO Score
+  const [scorePanel, setScorePanel] = useState<{ isOpen: boolean; content: string; brandName?: string; contentType?: string } | null>(null);
+
+  // State for targeting specific recommendation expansion on navigation
+  const [targetExpandedId, setTargetExpandedId] = useState<string | null>(null);
+
   // Structure Editor State
   const [isStructureEditorOpen, setIsStructureEditorOpen] = useState(false);
   const [structureEditorRecId, setStructureEditorRecId] = useState<string | null>(null);
@@ -141,14 +149,17 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   // v4.0 Interactive Refinement state
   const [sectionFeedback, setSectionFeedback] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> feedback)
   const [sectionEdits, setSectionEdits] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> editedContent)
+  const [sectionTitleEdits, setSectionTitleEdits] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> editedTitle)
   const [globalReferences, setGlobalReferences] = useState<Map<string, string>>(new Map()); // recId -> references
   const [refiningIds, setRefiningIds] = useState<Set<string>>(new Set()); // Track which recommendations are being refined
   const [refinedContent, setRefinedContent] = useState<Map<string, any>>(new Map()); // recId -> refined v4.0 content
-  
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set()); // Track which sections are being saved
+
   // Custom Structure State (Lifted from Inline Editor)
   const [customizedStructures, setCustomizedStructures] = useState<Map<string, StructureSection[]>>(new Map());
 
   const [stepCounts, setStepCounts] = useState<Record<number, number>>({});
+  const [brandName, setBrandName] = useState<string>(''); // For template customization
 
   // Fetch counts for all steps
   useEffect(() => {
@@ -307,6 +318,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
         if (response.success && response.data) {
           if (response.data.dataMaturity !== undefined) {
             setDataMaturity((response.data.dataMaturity as any) || null);
+          }
+          if (response.data.brandName) {
+            setBrandName(response.data.brandName);
           }
           // Recommendations from database should already have IDs
           // Log if any are missing IDs for debugging
@@ -494,6 +508,25 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       filtered = filtered.filter(rec => rec.assetType === contentTypeFilter);
     }
 
+    // Apply Sorting:
+    // 1. Priority (High -> Medium -> Low)
+    // 2. Effort (Low -> Medium -> High)
+    filtered.sort((a, b) => {
+      const priorityOrder: Record<string, number> = { 'High': 3, 'Medium': 2, 'Low': 1 };
+      const effortOrder: Record<string, number> = { 'Low': 3, 'Medium': 2, 'High': 1 }; // Higher val = earlier in list
+
+      const pA = priorityOrder[a.priority] || 0;
+      const pB = priorityOrder[b.priority] || 0;
+
+      if (pA !== pB) {
+        return pB - pA; // Descending Priority
+      }
+
+      const eA = effortOrder[a.effort] || 0;
+      const eB = effortOrder[b.effort] || 0;
+      return eB - eA; // Descending Effort Value (Low=3 comes first)
+    });
+
     setRecommendations(filtered);
   }, [statusFilter, priorityFilter, effortFilter, contentTypeFilter, allRecommendations, currentStep]);
 
@@ -511,6 +544,24 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       persistStep(currentStep, selectedBrandId);
     }
   }, [currentStep, selectedBrandId]);
+
+  // Handle navigation with exclusive expansion
+  const handleNavigate = (step: number, recId?: string) => {
+    setCurrentStep(step);
+    if (recId) {
+      if (step === 3) {
+        setExpandedRecId(recId);
+      } else {
+        setTargetExpandedId(recId);
+      }
+    } else {
+      // Reset expansion targets if general navigation
+      setTargetExpandedId(null);
+      if (step === 3) {
+        setExpandedRecId(null);
+      }
+    }
+  };
 
   // Handle brand switching with proper state cleanup
   const handleBrandSwitch = useCallback((newBrandId: string) => {
@@ -1036,11 +1087,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   // Render inline structure editor for Step 2
   const renderStep2ExpandedContent = (recommendation: RecommendationV3) => {
+    console.log(`[RecommendationsV3Step2] Rendering Editor for ${recommendation.id}`, {
+        competitorsOriginal: recommendation.competitors_target, 
+        competitorsMapped: recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || [],
+        brandName
+    });
     return (
       <ContentStructureInlineEditor
         recommendationId={recommendation.id!}
         contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
         initialSections={customizedStructures.get(recommendation.id!)}
+        competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || []}
+        brandName={brandName}
         onChange={(sections) => {
           setCustomizedStructures(prev => {
             const next = new Map(prev);
@@ -1056,6 +1114,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             if (!res.success) {
               throw new Error(res.error || 'Failed to save content structure');
             }
+            // Invalidate cache to ensure fresh content is fetched on reload
+            invalidateCache(new RegExp(`recommendations-v3/${recommendation.id!}/content`));
           } finally {
             setGeneratingContentIds(prev => {
               const next = new Set(prev);
@@ -1065,7 +1125,6 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           }
         }}
         isSaving={generatingContentIds.has(recommendation.id!)}
-        competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name) || []}
       />
     );
   };
@@ -1123,14 +1182,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 .filter(rec => rec.id && rec.id.length > 10)
                 .map(rec => ({ ...rec, id: rec.id! }));
 
-              // Initialize expanded sections for Step 3 recommendations
-              const newExpandedSections = new Map(expandedSections);
-              recommendationsWithIds.forEach(rec => {
-                if (rec.id && !newExpandedSections.has(rec.id)) {
-                  newExpandedSections.set(rec.id, { content: true });
-                }
-              });
-              setExpandedSections(newExpandedSections);
+              // Set exclusive expansion for the newly generated recommendation in Step 3
+              setExpandedRecId(recommendationId);
+
+              // Clear legacy/other expansion states to ensure exclusivity
+              setExpandedSections(new Map());
 
               setRecommendations(recommendationsWithIds);
               setCurrentStep(3);
@@ -1605,7 +1661,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                   showStatusDropdown={true}
                   onStatusChange={handleStatusChange}
                   renderExpandedContent={(rec) => <OpportunityStrategyCard recommendation={rec} />}
-                  onNavigate={setCurrentStep}
+                  onNavigate={handleNavigate}
                 />
               </motion.div>
             )}
@@ -1663,6 +1719,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                       }
                     }}
                     renderExpandedContent={renderStep2ExpandedContent}
+                    initialExpandedId={targetExpandedId}
                   />
                 )}
               </motion.div>
@@ -1969,10 +2026,13 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                   <div className="flex-1">
                                     <h3 className="text-[14px] font-normal text-[#1a1d29] mb-2 leading-relaxed">{rec.action}</h3>
                                     <div className="flex items-center gap-2">
-                                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
-                                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                          <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                                        </svg>
+                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1] gap-1.5">
+                                        <SafeLogo
+                                          domain={rec.citationSource}
+                                          alt={rec.citationSource || 'Source'}
+                                          className="w-4 h-4 rounded-full bg-white object-contain"
+                                          size={16}
+                                        />
                                         {rec.citationSource}
                                       </span>
                                     </div>
@@ -2184,6 +2244,20 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       });
                                     };
 
+                                    // Handle section title edit update
+                                    const updateSectionTitleEdit = (sectionId: string, title: string) => {
+                                      setSectionTitleEdits(prev => {
+                                        const next = new Map(prev);
+                                        const recMap = new Map(next.get(recId) || new Map());
+                                        recMap.set(sectionId, title);
+                                        next.set(recId, recMap);
+                                        return next;
+                                      });
+                                    };
+
+                                    // Get title edits for this recommendation
+                                    const recTitleEdits = sectionTitleEdits.get(recId) || new Map<string, string>();
+
                                     // Handle references update
                                     const updateReferences = (refs: string) => {
                                       setGlobalReferences(prev => {
@@ -2232,8 +2306,21 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                             next.set(recId, result.data.refinedContent);
                                             return next;
                                           });
+                                          // Invalidate the cache for this recommendation's content so page refresh loads fresh data from DB
+                                          invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
                                           // Clear feedback after successful refinement
                                           setSectionFeedback(prev => {
+                                            const next = new Map(prev);
+                                            next.delete(recId);
+                                            return next;
+                                          });
+                                          // Clear any pending edits since we have fresh content
+                                          setSectionEdits(prev => {
+                                            const next = new Map(prev);
+                                            next.delete(recId);
+                                            return next;
+                                          });
+                                          setSectionTitleEdits(prev => {
                                             const next = new Map(prev);
                                             next.delete(recId);
                                             return next;
@@ -2252,21 +2339,111 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       }
                                     };
 
+                                    // Handle saving section edits when Done is clicked
+                                    const handleSaveSection = async (sectionId: string) => {
+                                      const editedTitle = recTitleEdits.get(sectionId);
+                                      const editedContent = recEdits.get(sectionId);
+
+                                      // Only save if there are actual edits
+                                      if (!editedTitle && !editedContent) {
+                                        setEditingId(null);
+                                        return;
+                                      }
+
+                                      const sectionKey = `${recId}_${sectionId}`;
+                                      setSavingIds(prev => new Set(prev).add(sectionKey));
+
+                                      try {
+                                        // Build sections array with all current sections, applying edits
+                                        const sectionsToSave = sections.map((s: any) => ({
+                                          id: s.id,
+                                          title: recTitleEdits.get(s.id) ?? s.title,
+                                          content: recEdits.get(s.id) ?? s.content,
+                                          sectionType: s.sectionType
+                                        }));
+
+                                        const result = await saveSectionEditsV3(recId, sectionsToSave);
+
+                                        if (result.success && result.data?.content) {
+                                          console.log('[Save Section] Successfully saved section edits');
+                                          // Update contentMap with the saved content
+                                          setContentMap(prev => {
+                                            const next = new Map(prev);
+                                            next.set(recId, result.data!.content);
+                                            return next;
+                                          });
+
+                                          // Invalidate cache to ensure fresh content is fetched on reload
+                                          invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
+
+                                          // Clear title edits for this recommendation since they're now saved
+                                          setSectionTitleEdits(prev => {
+                                            const next = new Map(prev);
+                                            next.delete(recId);
+                                            return next;
+                                          });
+                                          // Clear content edits since they're now saved
+                                          setSectionEdits(prev => {
+                                            const next = new Map(prev);
+                                            next.delete(recId);
+                                            return next;
+                                          });
+                                        } else {
+                                          console.error('[Save Section] Failed to save:', result.error);
+                                        }
+                                      } catch (error) {
+                                        console.error('[Save Section] Error:', error);
+                                      } finally {
+                                        setSavingIds(prev => {
+                                          const next = new Set(prev);
+                                          next.delete(sectionKey);
+                                          return next;
+                                        });
+                                        setEditingId(null);
+                                      }
+                                    };
+
+                                    // Check if a section is being saved
+                                    const isSavingSection = (sectionId: string) => savingIds.has(`${recId}_${sectionId}`);
+
                                     // Check if any feedback exists
                                     const hasFeedback = Array.from(recFeedback.values()).some(f => f.trim().length > 0) || refs.trim().length > 0;
 
                                     return (
                                       <div className="space-y-4">
-                                        {/* Header with overall title - Clean Design */}
-                                        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-                                          <div className="flex items-center gap-3">
-                                            <div className="w-1 h-10 bg-gradient-to-b from-slate-300 to-slate-400 rounded-full" />
-                                            <div>
-                                              <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
-                                              <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections · v4.0</p>
+                                          {/* Header with overall title - Premium Library Card Design */}
+                                          <div className="bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between relative overflow-hidden">
+                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-slate-400 to-slate-300" />
+                                            <div className="relative flex items-center gap-4 pl-2">
+
+                                              <div>
+                                                <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
+                                                <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections </p>
+                                              </div>
                                             </div>
+
+                                            {/* Refine with Feedback Button - Moved to Header */}
+                                            <button
+                                              onClick={handleRefine}
+                                              disabled={isRefining || !hasFeedback}
+                                              className={`px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2 ${isRefining || !hasFeedback
+                                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                                                : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3] border border-transparent'
+                                                }`}
+                                            >
+                                              {isRefining ? (
+                                                <>
+                                                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                  Refining...
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <IconSparkles size={16} />
+                                                  Refine with Feedback
+                                                </>
+                                              )}
+                                            </button>
                                           </div>
-                                        </div>
 
                                         {/* Section Cards */}
                                         {sections.map((section: any, idx: number) => {
@@ -2282,9 +2459,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                                                     {String(idx + 1).padStart(2, '0')}
                                                   </span>
-                                                  <h4 className="text-[14px] font-medium text-slate-800">{section.title}</h4>
-                                                  <SectionTypeBadge sectionType={section.sectionType} />
-                                                </div>
+                                                  {isEditingSection ? (
+                                                    <input
+                                                      type="text"
+                                                      value={recTitleEdits.get(section.id) ?? section.title}
+                                                      onChange={(e) => updateSectionTitleEdit(section.id, e.target.value)}
+                                                      className="text-[14px] font-medium text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent min-w-[200px]"
+                                                      placeholder="Section title"
+                                                    />
+                                                  ) : (
+                                                    <h4 className="text-[15px] font-bold text-slate-900 tracking-tight">{recTitleEdits.get(section.id) ?? section.title}</h4>
+                                                  )}
+                                                  </div>
                                                 <div className="flex items-center gap-2">
                                                   <button
                                                     onClick={() => {
@@ -2302,14 +2488,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                   <button
                                                     onClick={() => {
                                                       if (isEditingSection) {
-                                                        setEditingId(null);
+                                                        handleSaveSection(section.id);
                                                       } else {
                                                         setEditingId(`${recId}_${section.id}`);
                                                       }
                                                     }}
-                                                    className="px-2.5 py-1 text-[11px] text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                                                    disabled={isSavingSection(section.id)}
+                                                    className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${isSavingSection(section.id)
+                                                      ? 'text-slate-300 cursor-not-allowed'
+                                                      : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                                      }`}
                                                   >
-                                                    {isEditingSection ? '✓ Done' : '✎ Edit'}
+                                                    {isSavingSection(section.id) ? '⏳ Saving...' : isEditingSection ? '✓ Done' : '✎ Edit'}
                                                   </button>
                                                 </div>
                                               </div>
@@ -2403,37 +2593,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
 
 
-                                        {/* Refine Button */}
-                                        <div className="flex items-center gap-3">
-                                          <button
-                                            onClick={handleRefine}
-                                            disabled={isRefining || !hasFeedback}
-                                            className={`flex-1 py-3 rounded-lg text-[14px] font-semibold transition-colors flex items-center justify-center gap-2 ${isRefining || !hasFeedback
-                                              ? 'bg-[#e2e8f0] text-[#94a3b8] cursor-not-allowed'
-                                              : 'bg-gradient-to-r from-[#8b5cf6] to-[#a855f7] text-white hover:from-[#7c3aed] hover:to-[#9333ea]'
-                                              }`}
-                                          >
-                                            {isRefining ? (
-                                              <>
-                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                Refining...
-                                              </>
-                                            ) : (
-                                              <>
-                                                🔄 Refine with Feedback
-                                              </>
-                                            )}
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              const fullContent = sections.map((s: any) => `## ${s.title}\n\n${recEdits.get(s.id) || s.content}`).join('\n\n');
-                                              navigator.clipboard.writeText(fullContent);
-                                            }}
-                                            className="px-6 py-3 bg-[#00bcdc] text-white rounded-lg text-[14px] font-semibold hover:bg-[#0096b0] transition-colors flex items-center gap-2"
-                                          >
-                                            📋 Copy All
-                                          </button>
-                                        </div>
+
                                       </div>
                                     );
                                   }

@@ -101,26 +101,7 @@ export function analyzeHygiene(content: string, contentType: string = 'article')
     score += 2;
   }
 
-  // 3. Structure (Max 10)
-  const hasHeaders = /#{1,3}\s/.test(content) || /<h[1-3]>/i.test(content) || /\*\*.+:\*\*/.test(content); // Bold labels valid for video
-  const hasBullets = /^[-*•]/m.test(content) || /^\d+\./m.test(content);
-  
-  // For video, labels (Bold) + Bullets (Visuals) is the key structure
-  if (hasHeaders || (isVideo && /\*\*.+\*\*/.test(content))) {
-     if (hasBullets || (isVideo && content.split('\n\n').length >= 3)) {
-        metrics.push({ name: 'Structure', status: 'good', value: 'Structured', score: 10, maxScore: 10 });
-        score += 10;
-     } else {
-        metrics.push({ name: 'Structure', status: 'warning', value: 'Partial', suggestion: 'Add lists/breaks', score: 5, maxScore: 10 });
-        score += 5;
-     }
-  } else if (hasBullets) {
-     metrics.push({ name: 'Structure', status: 'warning', value: 'Partial', suggestion: 'Add headers', score: 5, maxScore: 10 });
-     score += 5;
-  } else {
-    metrics.push({ name: 'Structure', status: 'error', value: 'Flat text', suggestion: 'Formatting needed', score: 2, maxScore: 10 });
-    score += 2;
-  }
+  // Structure removed - not relevant for v4.0 JSON content
 
   return { score, metrics };
 }
@@ -133,8 +114,8 @@ export function analyzeHygiene(content: string, contentType: string = 'article')
  */
 export function analyzeContent(content: string, brandName?: string, contentType?: string): { score: number; metrics: SEOMetric[] } {
   const hygiene = analyzeHygiene(content, contentType);
-  // Scale score: (score / 30) * 100.
-  const projectedScore = Math.min(100, Math.round((hygiene.score / 30) * 100));
+  // Scale score: (score / 20) * 100.
+  const projectedScore = Math.min(100, Math.round((hygiene.score / 20) * 100));
   
   return { 
     score: projectedScore, 
@@ -191,7 +172,7 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
 
            // --- 1. Generic / Article Metrics ---
            if (b.primaryAnswer) newMetrics.push({ name: 'Primary Answer', ...b.primaryAnswer, value: b.primaryAnswer.status === 'good' ? 'Found' : 'Missing', suggestion: b.primaryAnswer.feedback });
-           if (b.chunkability) newMetrics.push({ name: 'Chunkability', ...b.chunkability, value: b.chunkability.status === 'good' ? 'Good' : 'Poor', suggestion: b.chunkability.feedback });
+           // chunkability removed - no longer relevant for v4.0 JSON content
            
            // --- 2. Expert Community Response Metrics ---
            if (b.questionRelevance) newMetrics.push({ name: 'Question Relevance', ...b.questionRelevance, value: b.questionRelevance.status === 'good' ? 'High' : 'Low', suggestion: b.questionRelevance.feedback });
@@ -306,7 +287,7 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
         <div className="flex-1 border-b md:border-b-0 md:border-r border-[#f1f5f9] p-4">
           <div className="flex items-center gap-2 mb-3">
              <IconLayout size={14} className="text-[#64748b]" />
-             <h4 className="text-[12px] font-semibold text-[#64748b] uppercase tracking-wide">Hygiene (30pts)</h4>
+             <h4 className="text-[12px] font-semibold text-[#64748b] uppercase tracking-wide">Hygiene (20pts)</h4>
           </div>
           <div className="space-y-3">
             {hygiene.metrics.map((metric, idx) => (
@@ -319,7 +300,7 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
         <div className="flex-1 p-4 bg-[#fafcff]">
           <div className="flex items-center gap-2 mb-3">
              <IconServer size={14} className="text-[#64748b]" />
-             <h4 className="text-[12px] font-semibold text-[#64748b] uppercase tracking-wide">AI Scrapability (70pts)</h4>
+             <h4 className="text-[12px] font-semibold text-[#64748b] uppercase tracking-wide">AI Scrapability (80pts)</h4>
           </div>
           <div className="space-y-3">
             {scrapability.loading && scrapability.metrics.length === 0 ? (

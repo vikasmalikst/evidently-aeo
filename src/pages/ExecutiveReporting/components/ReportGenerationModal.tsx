@@ -155,7 +155,7 @@ export const ReportGenerationModal: React.FC<ReportGenerationModalProps> = ({
                                     onClick={onClose}
                                     className="w-full px-4 py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-dark)] text-white font-medium rounded-xl transition-colors shadow-lg shadow-blue-500/20"
                                 >
-                                    View Report
+                                    Close
                                 </button>
                             </div>
                         </div>

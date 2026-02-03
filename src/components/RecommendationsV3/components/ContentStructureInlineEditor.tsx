@@ -3,7 +3,7 @@ import { IconPlus, IconTrash, IconSparkles, IconGripVertical, IconDeviceFloppy, 
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { StructureSection } from './ContentStructureEditor';
 import { TableStructureEditor } from './TableStructureEditor';
-import { CONTENT_TEMPLATES, ContentTemplateType } from '../data/structure-templates';
+import { CONTENT_TEMPLATES, getContentTemplates, ContentTemplateType } from '../data/structure-templates';
 
 interface ContentStructureInlineEditorProps {
     recommendationId: string;
@@ -12,7 +12,8 @@ interface ContentStructureInlineEditorProps {
     onSave: (sections: StructureSection[]) => void;
     onChange?: (sections: StructureSection[]) => void; // Live update parent
     isSaving: boolean;
-    competitors?: string[]; // New prop
+    competitors?: string[];
+    brandName?: string; // New prop
 }
 
 export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditorProps> = ({
@@ -22,7 +23,8 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
     onSave,
     onChange,
     isSaving,
-    competitors
+    competitors,
+    brandName = '[Brand Name]' // Default fallback
 }) => {
     // Initialize sections: Use provided initialSections OR fallback to the correct template based on contentType
     const [sections, setSections] = useState<StructureSection[]>(
@@ -37,30 +39,61 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
         }
     }, [saveFeedback]);
 
-    // Update sections if contentType changes and we are using defaults (no initialSections passed)
-    // Also re-applies if competitors change for fresh templates
+    // Update sections if contentType changes OR branding/competitors update
+    // This allows "smart replacement" of placeholders even if sections were initialized with defaults
+    // Initialize structure from template if no initial sections provided
+    // Update: Now uses dynamic templates that incorporate brand/competitor data natively
     useEffect(() => {
-        if (!initialSections && contentType) {
-            let template = CONTENT_TEMPLATES[contentType] || CONTENT_TEMPLATES['article'];
+        console.log(`[ContentStructureInlineEditor] Effect Triggered. Brand: "${brandName}", Competitors: ${competitors?.length}`);
+        
+        // 1. Get fresh templates with current context
+        const templates = getContentTemplates({ brandName, competitors });
+        
+        let template = initialSections 
+            ? [...initialSections] 
+            : (templates[contentType] || templates['article']);
 
-            // Dynamic override for comparison table
-            if (contentType === 'comparison_table' && competitors && competitors.length > 0) {
-                 // Deep copy to avoid mutating constant
-                 template = JSON.parse(JSON.stringify(template));
-                 const tableSection = template.find((s: any) => s.id === 'table');
-                 if (tableSection) {
-                     const brandCol = '[Brand Name]';
-                     const compCols = competitors.map(c => `[${c}]`).join(' | ');
-                     const header = `| Feature | ${brandCol} | ${compCols} |`;
-                     const separator = `|---|---|${competitors.map(() => '---').join('|')}|`;
-                     const row = `| [Feature 1] | [Value] | ${competitors.map(() => '[Value]').join(' | ')} |`;
-                     tableSection.content = `${header}\n${separator}\n${row}`;
+        // 2. Check for stale comparison table (containing placeholders)
+        if (contentType === 'comparison_table') {
+             const tableIndex = template.findIndex(s => s.id === 'table');
+             if (tableIndex >= 0) {
+                 const currentContent = template[tableIndex].content;
+                 const hasPlaceholder = currentContent.includes('[Brand Name]') || currentContent.includes('[Competitor]');
+                 
+                 console.log(`[ContentStructureInlineEditor] Checking table content:`, {
+                     currentContent: currentContent.substring(0, 100) + '...',
+                     hasPlaceholder,
+                     initialSectionsExists: !!initialSections
+                 });
+
+                 // If it still has generic placeholders, override with fresh dynamic content
+                 if (hasPlaceholder) {
+                     const freshTemplate = templates['comparison_table'];
+                     const freshTable = freshTemplate.find(s => s.id === 'table');
+                     
+                     if (freshTable) {
+                         console.log(`[ContentStructureInlineEditor] UPGRADING table to dynamic version with brand: ${brandName}`);
+                         
+                         // Create new array to trigger re-render
+                         const newSections = [...template];
+                         newSections[tableIndex] = { ...freshTable };
+                         setSections(newSections);
+                         
+                         // CRITICAL: Propagate to parent so "Generate" uses the updated version
+                         if (initialSections && onChange) {
+                             console.log(`[ContentStructureInlineEditor] Propagating data to parent via onChange`);
+                             onChange(newSections);
+                         }
+                         return;
+                     }
+                 } else {
+                     console.log(`[ContentStructureInlineEditor] validation passed: Table content appears to be already populated.`);
                  }
             }
-            
-            setSections(template);
         }
-    }, [contentType, initialSections]); // Intentionally omitting competitors from dep to avoid overwrite on edit, unless intentional reset logic is needed
+
+        setSections(template);
+    }, [contentType, initialSections, brandName, competitors, onChange]);
 
 
     // Notify parent of changes whenever sections update

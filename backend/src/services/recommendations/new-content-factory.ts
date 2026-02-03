@@ -50,6 +50,7 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
             return buildPodcastPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         case 'comparison_table':
             const competitors = ctx.recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name) || [];
+            console.log(`[NewContentFactory] Comparison Table Competitors: ${JSON.stringify(competitors)}`);
             return buildComparisonTablePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig, competitors);
         case 'social_media_thread':
             return buildSocialMediaThreadPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);

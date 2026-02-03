@@ -312,7 +312,7 @@ export const ExecutiveReportingPage = () => {
                                         className="executive-btn-primary"
                                     >
                                         <IconFileText className="w-4 h-4" />
-                                        Generate Report
+                                        Update Report
                                     </button>
 
                                     {report && (

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { IconTarget } from '@tabler/icons-react';
 import { SEOScoreCard, analyzeContent, analyzeHygiene } from './SEOScoreCard';
 // Define API URL (same as SEOScoreCard)
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+import { apiClient } from '../../../lib/apiClient';
 
 export interface AEOScoreBadgeProps {
   content: string;
@@ -34,16 +34,14 @@ export function AEOScoreBadge({ content, brandName, contentType, onClick }: AEOS
 
     const fetchScore = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/aeo/score`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content, contentType }) // Pass content type
+        const response = await apiClient.post<{ success: boolean; data: any }>('/aeo/score', {
+          content,
+          contentType
         });
 
-        const data = await response.json();
-        if (data.success && data.data && isMounted) {
+        if (response.success && response.data && isMounted) {
           // Use exact same logic as SEOScoreCard: Raw Hygiene + Scrapability
-          const total = Math.min(100, hygieneAnalysis.score + data.data.totalScore);
+          const total = Math.min(100, hygieneAnalysis.score + response.data.totalScore);
           setBackendScore(total);
         }
       } catch (err) {

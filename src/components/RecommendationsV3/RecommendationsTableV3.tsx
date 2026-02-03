@@ -33,7 +33,8 @@ interface RecommendationsTableV3Props {
   onStopTracking?: (recommendationId: string) => void;
   generatingContentIds?: Set<string>; // Track which recommendations are currently generating content
   renderExpandedContent?: (recommendation: RecommendationV3) => React.ReactNode;
-  onNavigate?: (step: number) => void;
+  onNavigate?: (step: number, recommendationId?: string) => void;
+  initialExpandedId?: string | null;
 }
 
 const JourneyTracker = ({
@@ -41,7 +42,7 @@ const JourneyTracker = ({
   onNavigate
 }: {
   rec: RecommendationV3;
-  onNavigate?: (step: number) => void;
+  onNavigate?: (step: number, recommendationId?: string) => void;
 }) => {
   // Determine current stage for coloring dots
   // 1: Approved (Always true here)
@@ -68,61 +69,59 @@ const JourneyTracker = ({
     targetStep = 2;
   }
 
-  return (    <div
-      className="flex flex-col items-start justify-center cursor-pointer group py-1"
-      onClick={(e) => {
-        e.stopPropagation();
-        onNavigate?.(targetStep);
-      }}
-    >
-      <div className="flex items-center gap-1.5 mb-1.5">
-        {[1, 2, 3, 4].map((step) => {
-          // Determine step state
-          const isComplete = step <= currentStage;
-          const isCurrent = step === currentStage;
-          const isFuture = step > currentStage;
+  return (<div
+    className="flex flex-col items-start justify-center cursor-pointer group py-1"
+    onClick={(e) => {
+      e.stopPropagation();
+      onNavigate?.(targetStep, rec.id);
+    }}
+  >
+    <div className="flex items-center gap-1.5 mb-1.5">
+      {[1, 2, 3, 4].map((step) => {
+        // Determine step state
+        const isComplete = step <= currentStage;
+        const isCurrent = step === currentStage;
+        const isFuture = step > currentStage;
 
-          // Color grading: Subtle emerald tones
-          let dotClass = 'bg-slate-200';
-          if (isComplete) {
-            dotClass = 'bg-emerald-500';
-          }
+        // Color grading: Subtle emerald tones
+        let dotClass = 'bg-slate-200';
+        if (isComplete) {
+          dotClass = 'bg-emerald-500';
+        }
 
-          return (
-            <motion.div
-              key={step}
-              initial={false}
-              animate={{
-                scale: isCurrent ? 1.35 : 1,
-                opacity: isFuture ? 0.3 : 1
-              }}
-              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              className={`w-2 h-2 rounded-full transition-all duration-300 ${dotClass} ${
-                isCurrent ? 'ring-2 ring-emerald-400/30 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : ''
-              } ${
-                isComplete ? 'shadow-sm shadow-emerald-200' : ''
+        return (
+          <motion.div
+            key={step}
+            initial={false}
+            animate={{
+              scale: isCurrent ? 1.35 : 1,
+              opacity: isFuture ? 0.3 : 1
+            }}
+            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+            className={`w-2 h-2 rounded-full transition-all duration-300 ${dotClass} ${isCurrent ? 'ring-2 ring-emerald-400/30 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : ''
+              } ${isComplete ? 'shadow-sm shadow-emerald-200' : ''
               }`}
-              style={{
-                background: isComplete 
-                  ? 'radial-gradient(circle at 30% 30%, #34d399, #059669)' 
-                  : isFuture 
-                    ? '#cbd5e1' 
-                    : undefined
-              }}
-            />
-          );
-        })}
-      </div>
-      <motion.span 
-        initial={{ opacity: 0.9 }}
-        animate={{ opacity: [0.9, 1, 0.9] }}
-        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-        className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide group-hover:text-emerald-700 flex items-center gap-1"
-      >
-        {stageLabel}
-        <strong className="text-xs opacity-60">→</strong>
-      </motion.span>
+            style={{
+              background: isComplete
+                ? 'radial-gradient(circle at 30% 30%, #34d399, #059669)'
+                : isFuture
+                  ? '#cbd5e1'
+                  : undefined
+            }}
+          />
+        );
+      })}
     </div>
+    <motion.span
+      initial={{ opacity: 0.9 }}
+      animate={{ opacity: [0.9, 1, 0.9] }}
+      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+      className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide group-hover:text-emerald-700 flex items-center gap-1"
+    >
+      {stageLabel}
+      <strong className="text-xs opacity-60">→</strong>
+    </motion.span>
+  </div>
   );
 };
 
@@ -203,19 +202,28 @@ export const RecommendationsTableV3 = ({
   onStopTracking,
   generatingContentIds = new Set(),
   renderExpandedContent,
-  onNavigate
+  onNavigate,
+  initialExpandedId
 }: RecommendationsTableV3Props) => {
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(
+    initialExpandedId ? new Set([initialExpandedId]) : new Set()
+  );
   // Only calculate selection state if checkboxes are shown
   const allSelected = showCheckboxes && recommendations.length > 0 && recommendations.every(r => r.id && selectedIds.has(r.id));
   const someSelected = showCheckboxes && recommendations.some(r => r.id && selectedIds.has(r.id));
 
   // Auto-expand the first recommendation on mount if available
   useEffect(() => {
-    if (recommendations.length > 0 && recommendations[0].id) {
-        setExpandedRows(new Set([recommendations[0].id]));
+    // If initialExpandedId is provided, respect it and don't auto-expand first item
+    if (initialExpandedId) {
+      setExpandedRows(new Set([initialExpandedId]));
+      return;
     }
-  }, [recommendations.length]); // Only run when recommendations list loads/changes significantly
+
+    if (recommendations.length > 0 && recommendations[0].id) {
+      setExpandedRows(new Set([recommendations[0].id]));
+    }
+  }, [recommendations.length, initialExpandedId]); // Only run when recommendations list loads/changes significantly
 
   const toggleExpand = (id: string) => {
     setExpandedRows(prev => {
@@ -331,9 +339,8 @@ export const RecommendationsTableV3 = ({
                             {hasDetails && (
                               <button
                                 onClick={() => toggleExpand(recId)}
-                                className={`p-1.5 hover:bg-[#00bcdc]/10 rounded-lg transition-all duration-200 flex-shrink-0 mt-0.5 group relative ${
-                                  !isExpanded && index === 0 ? 'animate-pulse ring-2 ring-[#00bcdc]/30' : ''
-                                }`}
+                                className={`p-1.5 hover:bg-[#00bcdc]/10 rounded-lg transition-all duration-200 flex-shrink-0 mt-0.5 group relative ${!isExpanded && index === 0 ? 'animate-pulse ring-2 ring-[#00bcdc]/30' : ''
+                                  }`}
                                 aria-label={isExpanded ? 'Collapse' : 'Expand'}
                               >
                                 {isExpanded ? (
@@ -442,12 +449,12 @@ export const RecommendationsTableV3 = ({
 
                                 if (isGenerating) {
                                   return (
-                                    <motion.span 
+                                    <motion.span
                                       initial={{ opacity: 0, scale: 0.9 }}
                                       animate={{ opacity: 1, scale: 1 }}
                                       className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold border bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200 shadow-sm"
                                     >
-                                      <motion.div 
+                                      <motion.div
                                         className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full mr-2"
                                         animate={{ rotate: 360 }}
                                         transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
@@ -459,15 +466,15 @@ export const RecommendationsTableV3 = ({
 
                                 if (isGenerated) {
                                   return (
-                                    <motion.span 
+                                    <motion.span
                                       initial={{ opacity: 0, scale: 0.8 }}
                                       animate={{ opacity: 1, scale: 1 }}
                                       transition={{ type: "spring", stiffness: 400, damping: 20 }}
                                       className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold border bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-700 border-emerald-200 shadow-sm"
                                     >
-                                      <motion.svg 
-                                        className="w-3.5 h-3.5 mr-1.5" 
-                                        fill="currentColor" 
+                                      <motion.svg
+                                        className="w-3.5 h-3.5 mr-1.5"
+                                        fill="currentColor"
                                         viewBox="0 0 20 20"
                                         initial={{ scale: 0 }}
                                         animate={{ scale: 1 }}
@@ -504,10 +511,10 @@ export const RecommendationsTableV3 = ({
                                       }}
                                     />
                                     {/* Lightning icon with pulse */}
-                                    <motion.svg 
-                                      className="w-4 h-4 mr-1.5 relative" 
-                                      fill="none" 
-                                      stroke="currentColor" 
+                                    <motion.svg
+                                      className="w-4 h-4 mr-1.5 relative"
+                                      fill="none"
+                                      stroke="currentColor"
                                       viewBox="0 0 24 24"
                                       initial={{ opacity: 0.8 }}
                                       animate={{ opacity: [0.8, 1, 0.8] }}

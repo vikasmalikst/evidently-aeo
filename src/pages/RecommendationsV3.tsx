@@ -133,6 +133,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   const [activeFeedbackSection, setActiveFeedbackSection] = useState<string | null>(null); // recId_sectionId
 
+  // State for targeting specific recommendation expansion on navigation
+  const [targetExpandedId, setTargetExpandedId] = useState<string | null>(null);
+
   // Structure Editor State
   const [isStructureEditorOpen, setIsStructureEditorOpen] = useState(false);
   const [structureEditorRecId, setStructureEditorRecId] = useState<string | null>(null);
@@ -530,6 +533,24 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       persistStep(currentStep, selectedBrandId);
     }
   }, [currentStep, selectedBrandId]);
+
+  // Handle navigation with exclusive expansion
+  const handleNavigate = (step: number, recId?: string) => {
+    setCurrentStep(step);
+    if (recId) {
+      if (step === 3) {
+        setExpandedRecId(recId);
+      } else {
+        setTargetExpandedId(recId);
+      }
+    } else {
+      // Reset expansion targets if general navigation
+      setTargetExpandedId(null);
+      if (step === 3) {
+        setExpandedRecId(null);
+      }
+    }
+  };
 
   // Handle brand switching with proper state cleanup
   const handleBrandSwitch = useCallback((newBrandId: string) => {
@@ -1624,7 +1645,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                   showStatusDropdown={true}
                   onStatusChange={handleStatusChange}
                   renderExpandedContent={(rec) => <OpportunityStrategyCard recommendation={rec} />}
-                  onNavigate={setCurrentStep}
+                  onNavigate={handleNavigate}
                 />
               </motion.div>
             )}
@@ -1682,6 +1703,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                       }
                     }}
                     renderExpandedContent={renderStep2ExpandedContent}
+                    initialExpandedId={targetExpandedId}
                   />
                 )}
               </motion.div>

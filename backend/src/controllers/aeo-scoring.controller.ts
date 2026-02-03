@@ -20,6 +20,7 @@ export const scoreContent = async (req: Request, res: Response, next: NextFuncti
             data: result
         });
     } catch (error) {
+        console.error('❌ [AEOScoring] Controller Error:', error);
         next(error);
     }
 };

@@ -58,6 +58,8 @@ export const config = {
             'https://evidentlyaeo.com', // Domain (HTTPS)
             'http://www.evidentlyaeo.com', // Domain with www (HTTP)
             'https://www.evidentlyaeo.com', // Domain with www (HTTPS)
+            'https://app.evidentlyaeo.com', // App subdomain
+            'https://api.evidentlyaeo.com', // API subdomain
             'http://localhost:5178', // Current dev port
         ],
         credentials: true,

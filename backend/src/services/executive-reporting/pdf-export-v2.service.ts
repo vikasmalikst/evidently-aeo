@@ -21,17 +21,17 @@ export class PdfExportServiceV2 {
       .single();
 
     if (brandError || !brand || !brand.customer_id) {
-        console.warn('⚠️ Could not find customer for brand, falling back to finding ANY customer');
-        // Fallback: find any customer
-        const { data: customers } = await supabaseAdmin
-            .from('customers')
-            .select('*')
-            .limit(1);
-        
-        if (customers && customers.length > 0) {
-             return this.generateTokenForCustomer(customers[0]);
-        }
-        throw new Error('No customers found in DB');
+      console.warn('⚠️ Could not find customer for brand, falling back to finding ANY customer');
+      // Fallback: find any customer
+      const { data: customers } = await supabaseAdmin
+        .from('customers')
+        .select('*')
+        .limit(1);
+
+      if (customers && customers.length > 0) {
+        return this.generateTokenForCustomer(customers[0]);
+      }
+      throw new Error('No customers found in DB');
     }
 
     // 2. Get Customer
@@ -42,43 +42,43 @@ export class PdfExportServiceV2 {
       .single();
 
     if (customerError || !customer) {
-        throw new Error(`Customer ${brand.customer_id} not found`);
+      throw new Error(`Customer ${brand.customer_id} not found`);
     }
 
     return this.generateTokenForCustomer(customer);
   }
 
   private generateTokenForCustomer(customer: any) {
-     const secret = process.env.JWT_SECRET;
-     if (!secret) throw new Error('JWT_SECRET not found in env');
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT_SECRET not found in env');
 
-     const token = jwt.sign(
-        {
-          sub: customer.id,
-          email: customer.email,
-          customer_id: customer.id,
-          role: 'admin', // Claim admin just in case, though DB check matters
-          type: 'access'
-        },
-        secret,
-        { 
-            expiresIn: '1d',
-            issuer: 'answerintel-backend',
-            audience: 'answerintel-frontend'
-        }
-      );
-
-     // Construct user object as expected by frontend
-     const user = {
-        id: customer.id,
+    const token = jwt.sign(
+      {
+        sub: customer.id,
         email: customer.email,
-        full_name: customer.name,
-        role: 'admin',
         customer_id: customer.id,
-        access_level: customer.access_level || 'user'
-     };
+        role: 'admin', // Claim admin just in case, though DB check matters
+        type: 'access'
+      },
+      secret,
+      {
+        expiresIn: '1d',
+        issuer: 'answerintel-backend',
+        audience: 'answerintel-frontend'
+      }
+    );
 
-     return { user, token };
+    // Construct user object as expected by frontend
+    const user = {
+      id: customer.id,
+      email: customer.email,
+      full_name: customer.name,
+      role: 'admin',
+      customer_id: customer.id,
+      access_level: customer.access_level || 'user'
+    };
+
+    return { user, token };
   }
 
   async generatePDF(reportId: string, brandId: string): Promise<Buffer> {
@@ -87,8 +87,15 @@ export class PdfExportServiceV2 {
     // 1. Get Auth Context
     const { user: authUser, token: authToken } = await this.getAuthContext(brandId);
 
+    const getExecutablePath = () => {
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
+      return process.platform === 'linux'
+        ? '/usr/bin/google-chrome'
+        : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    };
+
     const browser = await puppeteer.launch({
-      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // Adjust if needed
+      executablePath: getExecutablePath(), // Dynamic path based on OS
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1280,1024']
     });
@@ -104,7 +111,7 @@ export class PdfExportServiceV2 {
         // Auth User
         // @ts-ignore
         window.localStorage.setItem('auth.user', JSON.stringify(user));
-        
+
         // API Client Tokens
         // @ts-ignore
         window.localStorage.setItem('access_token', token);
@@ -116,7 +123,7 @@ export class PdfExportServiceV2 {
         // Selected Brand
         // @ts-ignore
         window.localStorage.setItem('manual-dashboard:selected-brand', bId);
-        
+
         // Onboarding complete to skip redirects
         // @ts-ignore
         window.localStorage.setItem('onboarding_complete', 'true');
@@ -132,7 +139,7 @@ export class PdfExportServiceV2 {
       // 2. Navigate to the page
       const url = `${this.baseUrl}/executive-reporting?brandId=${brandId}&reportId=${reportId}&printMode=true`;
       console.log(`🔗 [PDF-EXPORT-V2] Navigating to ${url}`);
-      
+
       await page.goto(url, {
         waitUntil: 'networkidle0', // Wait for API calls to finish
         timeout: 60000, // 60s timeout
@@ -149,7 +156,7 @@ export class PdfExportServiceV2 {
         console.log('--- END DUMP ---');
         throw e;
       }
-      
+
       // Additional wait to ensure charts (if animated) are settled
       await new Promise(r => setTimeout(r, 2000));
 
@@ -186,13 +193,20 @@ export class PdfExportServiceV2 {
    * Capture a screenshot of the report for Email embedding
    */
   async captureScreenshot(reportId: string, brandId: string): Promise<Buffer> {
-     console.log(`📸 [PDF-EXPORT-V2] Capturing screenshot for report ${reportId}`);
+    console.log(`📸 [PDF-EXPORT-V2] Capturing screenshot for report ${reportId}`);
 
-     // 1. Get Auth Context
-     const { user: authUser, token: authToken } = await this.getAuthContext(brandId);
+    // 1. Get Auth Context
+    const { user: authUser, token: authToken } = await this.getAuthContext(brandId);
 
-     const browser = await puppeteer.launch({
-      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    const getExecutablePath = () => {
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
+      return process.platform === 'linux'
+        ? '/usr/bin/google-chrome'
+        : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    };
+
+    const browser = await puppeteer.launch({
+      executablePath: getExecutablePath(),
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1200,1600']
     });
@@ -208,7 +222,7 @@ export class PdfExportServiceV2 {
         // Auth User
         // @ts-ignore
         window.localStorage.setItem('auth.user', JSON.stringify(user));
-        
+
         // API Client Tokens
         // @ts-ignore
         window.localStorage.setItem('access_token', token);
@@ -220,7 +234,7 @@ export class PdfExportServiceV2 {
         // Selected Brand
         // @ts-ignore
         window.localStorage.setItem('manual-dashboard:selected-brand', bId);
-        
+
         // Onboarding complete to skip redirects
         // @ts-ignore
         window.localStorage.setItem('onboarding_complete', 'true');
@@ -228,7 +242,7 @@ export class PdfExportServiceV2 {
 
       const url = `${this.baseUrl}/executive-reporting?brandId=${brandId}&reportId=${reportId}&printMode=true`;
       await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
-      
+
       await page.waitForSelector('.executive-metrics-grid', { timeout: 30000 });
       await new Promise(r => setTimeout(r, 2000));
 

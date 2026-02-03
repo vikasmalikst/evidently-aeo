@@ -177,7 +177,7 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
             ctx.lineWidth = 1.5;
             ctx.strokeStyle = '#7c3aed'; // Purple color for improvement events
             ctx.setLineDash([6, 4]);
-            ctx.moveTo(xPos, top);
+            ctx.moveTo(xPos, top + 40);
             ctx.lineTo(xPos, bottom);
             ctx.stroke();
             ctx.restore();
@@ -191,7 +191,7 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
     setFocusedDataset(null);
   }, [selectedModels]);
 
-  const [recMarkers, setRecMarkers] = useState<Array<{ x: number, y: number, action: string, id: string }>>([]);
+  const [recMarkers, setRecMarkers] = useState<Array<{ x: number, y: number, action: string, id: string, isNearRight?: boolean }>>([]);
 
   // Use a second effect to calculate marker positions after chart renders or data changes
   useEffect(() => {
@@ -217,9 +217,10 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
         if (xPos >= left && xPos <= right) {
           return {
             x: xPos,
-            y: top,
+            y: top + 26,
             action: rec.action,
-            id: rec.id
+            id: rec.id,
+            isNearRight: xPos > (chart.width - 150) // Heuristic: if within 150px of right edge
           };
         }
       }
@@ -319,7 +320,7 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
 
     // Add 10% padding above the max value for better visualization
     // Round up to nearest 10 for cleaner scale
-    const paddedMax = maxValue * 1.1;
+    const paddedMax = maxValue * 1.35;
     const roundedMax = Math.ceil(paddedMax / 10) * 10;
 
     return roundedMax;
@@ -657,22 +658,38 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
                 }}
               >
                 <div
-                  className="w-6 h-6 bg-white border-2 border-[#7c3aed] rounded-full flex items-center justify-center shadow-sm cursor-help hover:bg-[#7c3aed] transition-colors duration-200"
+                  className="w-6 h-6 bg-[#7c3aed] border-2 border-[#7c3aed] rounded-full flex items-center justify-center shadow-sm cursor-help hover:bg-[#6d28d9] transition-colors duration-200"
                 >
-                  <Activity size={12} className="text-[#7c3aed] group-hover:text-white" />
+                  <Activity size={12} className="text-white" />
                 </div>
 
                 {/* Tooltip for Recommendation */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-30">
-                  <div className="bg-[#1a1d29] text-white text-[11px] py-1.5 px-2.5 rounded shadow-xl whitespace-nowrap border border-slate-700">
-                    <div className="font-bold text-[#a78bfa] mb-0.5">Recommendation Completed</div>
-                    <div className="max-w-[200px] whitespace-normal leading-tight">
-                      {marker.action}
+                {marker.y < 150 ? (
+                  // Top of chart: Show tooltip BELOW
+                  <div className={`absolute top-full mt-3 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-30 ${marker.isNearRight ? 'right-0' : 'left-1/2 -translate-x-1/2'}`}>
+                    {/* Arrow (Top) */}
+                    <div className={`w-2 h-2 bg-[#1a1d29] rotate-45 absolute -top-1 border-l border-t border-slate-700 ${marker.isNearRight ? 'right-2' : 'left-1/2 -translate-x-1/2'}`}></div>
+
+                    <div className="bg-[#1a1d29] text-white text-[11px] py-1.5 px-2.5 rounded shadow-xl whitespace-nowrap border border-slate-700 relative">
+                      <div className="font-bold text-[#a78bfa] mb-0.5">Recommendation Completed</div>
+                      <div className="max-w-[200px] whitespace-normal leading-tight">
+                        {marker.action}
+                      </div>
                     </div>
                   </div>
-                  {/* Arrow */}
-                  <div className="w-2 h-2 bg-[#1a1d29] rotate-45 absolute left-1/2 -translate-x-1/2 -bottom-1 border-r border-b border-slate-700"></div>
-                </div>
+                ) : (
+                  // Normal: Show tooltip ABOVE
+                  <div className={`absolute bottom-full mb-3 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-30 ${marker.isNearRight ? 'right-0' : 'left-1/2 -translate-x-1/2'}`}>
+                    <div className="bg-[#1a1d29] text-white text-[11px] py-1.5 px-2.5 rounded shadow-xl whitespace-nowrap border border-slate-700 relative">
+                      <div className="font-bold text-[#a78bfa] mb-0.5">Recommendation Completed</div>
+                      <div className="max-w-[200px] whitespace-normal leading-tight">
+                        {marker.action}
+                      </div>
+                    </div>
+                    {/* Arrow (Bottom) */}
+                    <div className={`w-2 h-2 bg-[#1a1d29] rotate-45 absolute -bottom-1 border-r border-b border-slate-700 ${marker.isNearRight ? 'right-2' : 'left-1/2 -translate-x-1/2'}`}></div>
+                  </div>
+                )}
               </div>
             ))}
           </>

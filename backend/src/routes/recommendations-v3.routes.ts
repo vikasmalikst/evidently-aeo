@@ -975,7 +975,8 @@ router.post('/refine-content', authenticateToken, async (req, res) => {
       recommendationId,
       sections,
       references || '',
-      brandName || ''
+      brandName || '',
+      customerId
     );
 
     if (!refinedContent) {
@@ -2197,4 +2198,62 @@ router.post('/:recommendationId/content/save', authenticateToken, requireFeature
   }
 });
 
+/**
+ * POST /api/recommendations-v3/:recommendationId/content/save-sections
+ * 
+ * Save section edits (title and content) for a recommendation's generated content.
+ * Updates the existing content record in-place (does not create a new row).
+ */
+router.post('/:recommendationId/content/save-sections', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    const { recommendationId } = req.params;
+    const { sections } = req.body;
+
+    if (!sections || !Array.isArray(sections)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Sections array is required'
+      });
+    }
+
+    console.log(`📝 [RecommendationsV3 Save Sections] Saving ${sections.length} sections for recommendation ${recommendationId}`);
+
+    const result = await recommendationContentService.saveSectionEdits(
+      recommendationId,
+      customerId,
+      sections
+    );
+
+    if (result) {
+      return res.json({
+        success: true,
+        data: {
+          content: result
+        }
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to save section edits'
+      });
+    }
+  } catch (error: any) {
+    console.error('❌ [RecommendationsV3 Save Sections] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to save section edits'
+    });
+  }
+});
+
 export default router;
+

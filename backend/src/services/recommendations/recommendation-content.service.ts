@@ -1704,7 +1704,8 @@ ${contentStyleGuide}
       feedback: string;
     }>,
     references: string,
-    brandName: string
+    brandName: string,
+    customerId?: string
   ): Promise<GeneratedContentJsonV4 | null> {
     try {
       // Build the refinement prompt
@@ -1784,7 +1785,52 @@ RULES:
         const isValid = this.isValidGeneratedContent(parsed);
         console.log('[REFINE] Is valid:', isValid);
         if (isValid && parsed.version === '4.0') {
-          return this.normalizeGeneratedContent(parsed) as GeneratedContentJsonV4;
+          const normalizedContent = this.normalizeGeneratedContent(parsed) as GeneratedContentJsonV4;
+
+          // Save the refined content to the database (update existing row)
+          console.log(`[REFINE] Attempting to save refined content. customerId: ${customerId}, recommendationId: ${recommendationId}`);
+          if (customerId) {
+            try {
+              const { data: existing, error: fetchError } = await supabaseAdmin
+                .from('recommendation_generated_contents')
+                .select('id')
+                .eq('recommendation_id', recommendationId)
+                .eq('customer_id', customerId)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              console.log(`[REFINE] Fetch existing result - existing: ${JSON.stringify(existing)}, fetchError: ${fetchError ? JSON.stringify(fetchError) : 'null'}`);
+
+              if (fetchError) {
+                console.error('[REFINE] Error fetching existing record:', fetchError);
+              } else if (!existing) {
+                console.error(`[REFINE] No existing content record found for recommendation ${recommendationId} - cannot update`);
+              } else {
+                console.log(`[REFINE] Found existing record id: ${existing.id}, updating with normalized content...`);
+                const { error: updateError } = await supabaseAdmin
+                  .from('recommendation_generated_contents')
+                  .update({
+                    content: JSON.stringify(normalizedContent),
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', existing.id)
+                  .eq('customer_id', customerId);
+
+                if (updateError) {
+                  console.error('[REFINE] Failed to save refined content to DB:', updateError);
+                } else {
+                  console.log(`✅ [REFINE] Successfully saved refined content to DB for recommendation ${recommendationId}, record id: ${existing.id}`);
+                }
+              }
+            } catch (saveError) {
+              console.error('[REFINE] Error saving refined content to DB:', saveError);
+            }
+          } else {
+            console.error('[REFINE] No customerId provided - cannot save to DB');
+          }
+
+          return normalizedContent;
         }
       }
 
@@ -1816,6 +1862,91 @@ RULES:
 
     return data as any;
   }
+
+  /**
+   * Save section edits (title and content) for a recommendation's generated content.
+   * Updates the existing content record in-place (does not create a new row).
+   */
+  async saveSectionEdits(
+    recommendationId: string,
+    customerId: string,
+    sections: Array<{ id: string; title: string; content: string; sectionType: string }>
+  ): Promise<RecommendationContentRecord | null> {
+    try {
+      // Fetch the latest content record
+      const { data: existing, error: fetchError } = await supabaseAdmin
+        .from('recommendation_generated_contents')
+        .select('*')
+        .eq('recommendation_id', recommendationId)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (fetchError || !existing) {
+        console.error('[SAVE_SECTIONS] No existing content found for recommendation:', recommendationId);
+        return null;
+      }
+
+      // Parse the existing content
+      let parsedContent: any;
+      try {
+        parsedContent = typeof existing.content === 'string'
+          ? JSON.parse(existing.content)
+          : existing.content;
+      } catch (parseErr) {
+        console.error('[SAVE_SECTIONS] Failed to parse existing content:', parseErr);
+        return null;
+      }
+
+      // Verify it's v4.0 format with sections
+      if (parsedContent.version !== '4.0' || !Array.isArray(parsedContent.sections)) {
+        console.error('[SAVE_SECTIONS] Content is not v4.0 format with sections');
+        return null;
+      }
+
+      // Create a map of edits by section ID
+      const editsMap = new Map(sections.map(s => [s.id, s]));
+
+      // Update sections with edits
+      parsedContent.sections = parsedContent.sections.map((existingSection: any) => {
+        const edit = editsMap.get(existingSection.id);
+        if (edit) {
+          return {
+            ...existingSection,
+            title: edit.title,
+            content: edit.content,
+            sectionType: edit.sectionType || existingSection.sectionType
+          };
+        }
+        return existingSection;
+      });
+
+      // Update the same row in the database
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('recommendation_generated_contents')
+        .update({
+          content: JSON.stringify(parsedContent),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id)
+        .eq('customer_id', customerId)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error('[SAVE_SECTIONS] Failed to update content:', updateError);
+        return null;
+      }
+
+      console.log(`✅ [SAVE_SECTIONS] Successfully saved ${sections.length} section edits for recommendation ${recommendationId}`);
+      return updated as any;
+    } catch (error) {
+      console.error('[SAVE_SECTIONS] Error saving section edits:', error);
+      return null;
+    }
+  }
 }
 
 export const recommendationContentService = new RecommendationContentService();
+

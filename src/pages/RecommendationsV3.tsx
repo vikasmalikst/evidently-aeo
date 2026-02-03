@@ -25,10 +25,12 @@ import {
   regenerateContentV3,
   type RecommendationV3,
   type IdentifiedKPI,
-  saveContentDraftV3
+  saveContentDraftV3,
+  saveSectionEditsV3
 } from '../api/recommendationsV3Api';
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
+import { invalidateCache } from '../lib/apiCache';
 import { PremiumTabNavigator } from '../components/RecommendationsV3/PremiumTabNavigator';
 import { CompactStepIndicator } from '../components/RecommendationsV3/CompactStepIndicator';
 import { CollapsibleFilters } from '../components/RecommendationsV3/CollapsibleFilters';
@@ -147,9 +149,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   // v4.0 Interactive Refinement state
   const [sectionFeedback, setSectionFeedback] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> feedback)
   const [sectionEdits, setSectionEdits] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> editedContent)
+  const [sectionTitleEdits, setSectionTitleEdits] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> editedTitle)
   const [globalReferences, setGlobalReferences] = useState<Map<string, string>>(new Map()); // recId -> references
   const [refiningIds, setRefiningIds] = useState<Set<string>>(new Set()); // Track which recommendations are being refined
   const [refinedContent, setRefinedContent] = useState<Map<string, any>>(new Map()); // recId -> refined v4.0 content
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set()); // Track which sections are being saved
 
   // Custom Structure State (Lifted from Inline Editor)
   const [customizedStructures, setCustomizedStructures] = useState<Map<string, StructureSection[]>>(new Map());
@@ -2228,6 +2232,20 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       });
                                     };
 
+                                    // Handle section title edit update
+                                    const updateSectionTitleEdit = (sectionId: string, title: string) => {
+                                      setSectionTitleEdits(prev => {
+                                        const next = new Map(prev);
+                                        const recMap = new Map(next.get(recId) || new Map());
+                                        recMap.set(sectionId, title);
+                                        next.set(recId, recMap);
+                                        return next;
+                                      });
+                                    };
+
+                                    // Get title edits for this recommendation
+                                    const recTitleEdits = sectionTitleEdits.get(recId) || new Map<string, string>();
+
                                     // Handle references update
                                     const updateReferences = (refs: string) => {
                                       setGlobalReferences(prev => {
@@ -2276,8 +2294,21 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                             next.set(recId, result.data.refinedContent);
                                             return next;
                                           });
+                                          // Invalidate the cache for this recommendation's content so page refresh loads fresh data from DB
+                                          invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
                                           // Clear feedback after successful refinement
                                           setSectionFeedback(prev => {
+                                            const next = new Map(prev);
+                                            next.delete(recId);
+                                            return next;
+                                          });
+                                          // Clear any pending edits since we have fresh content
+                                          setSectionEdits(prev => {
+                                            const next = new Map(prev);
+                                            next.delete(recId);
+                                            return next;
+                                          });
+                                          setSectionTitleEdits(prev => {
                                             const next = new Map(prev);
                                             next.delete(recId);
                                             return next;
@@ -2295,6 +2326,69 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                         });
                                       }
                                     };
+
+                                    // Handle saving section edits when Done is clicked
+                                    const handleSaveSection = async (sectionId: string) => {
+                                      const editedTitle = recTitleEdits.get(sectionId);
+                                      const editedContent = recEdits.get(sectionId);
+
+                                      // Only save if there are actual edits
+                                      if (!editedTitle && !editedContent) {
+                                        setEditingId(null);
+                                        return;
+                                      }
+
+                                      const sectionKey = `${recId}_${sectionId}`;
+                                      setSavingIds(prev => new Set(prev).add(sectionKey));
+
+                                      try {
+                                        // Build sections array with all current sections, applying edits
+                                        const sectionsToSave = sections.map((s: any) => ({
+                                          id: s.id,
+                                          title: recTitleEdits.get(s.id) ?? s.title,
+                                          content: recEdits.get(s.id) ?? s.content,
+                                          sectionType: s.sectionType
+                                        }));
+
+                                        const result = await saveSectionEditsV3(recId, sectionsToSave);
+
+                                        if (result.success && result.data?.content) {
+                                          console.log('[Save Section] Successfully saved section edits');
+                                          // Update contentMap with the saved content
+                                          setContentMap(prev => {
+                                            const next = new Map(prev);
+                                            next.set(recId, result.data!.content);
+                                            return next;
+                                          });
+                                          // Clear title edits for this recommendation since they're now saved
+                                          setSectionTitleEdits(prev => {
+                                            const next = new Map(prev);
+                                            next.delete(recId);
+                                            return next;
+                                          });
+                                          // Clear content edits since they're now saved
+                                          setSectionEdits(prev => {
+                                            const next = new Map(prev);
+                                            next.delete(recId);
+                                            return next;
+                                          });
+                                        } else {
+                                          console.error('[Save Section] Failed to save:', result.error);
+                                        }
+                                      } catch (error) {
+                                        console.error('[Save Section] Error:', error);
+                                      } finally {
+                                        setSavingIds(prev => {
+                                          const next = new Set(prev);
+                                          next.delete(sectionKey);
+                                          return next;
+                                        });
+                                        setEditingId(null);
+                                      }
+                                    };
+
+                                    // Check if a section is being saved
+                                    const isSavingSection = (sectionId: string) => savingIds.has(`${recId}_${sectionId}`);
 
                                     // Check if any feedback exists
                                     const hasFeedback = Array.from(recFeedback.values()).some(f => f.trim().length > 0) || refs.trim().length > 0;
@@ -2326,7 +2420,17 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                                                     {String(idx + 1).padStart(2, '0')}
                                                   </span>
-                                                  <h4 className="text-[14px] font-medium text-slate-800">{section.title}</h4>
+                                                  {isEditingSection ? (
+                                                    <input
+                                                      type="text"
+                                                      value={recTitleEdits.get(section.id) ?? section.title}
+                                                      onChange={(e) => updateSectionTitleEdit(section.id, e.target.value)}
+                                                      className="text-[14px] font-medium text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent min-w-[200px]"
+                                                      placeholder="Section title"
+                                                    />
+                                                  ) : (
+                                                    <h4 className="text-[14px] font-medium text-slate-800">{recTitleEdits.get(section.id) ?? section.title}</h4>
+                                                  )}
                                                   <SectionTypeBadge sectionType={section.sectionType} />
                                                 </div>
                                                 <div className="flex items-center gap-2">
@@ -2346,14 +2450,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                   <button
                                                     onClick={() => {
                                                       if (isEditingSection) {
-                                                        setEditingId(null);
+                                                        handleSaveSection(section.id);
                                                       } else {
                                                         setEditingId(`${recId}_${section.id}`);
                                                       }
                                                     }}
-                                                    className="px-2.5 py-1 text-[11px] text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                                                    disabled={isSavingSection(section.id)}
+                                                    className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${isSavingSection(section.id)
+                                                      ? 'text-slate-300 cursor-not-allowed'
+                                                      : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                                      }`}
                                                   >
-                                                    {isEditingSection ? '✓ Done' : '✎ Edit'}
+                                                    {isSavingSection(section.id) ? '⏳ Saving...' : isEditingSection ? '✓ Done' : '✎ Edit'}
                                                   </button>
                                                 </div>
                                               </div>

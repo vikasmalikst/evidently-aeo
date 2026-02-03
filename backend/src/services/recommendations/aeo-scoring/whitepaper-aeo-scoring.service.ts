@@ -71,7 +71,7 @@ export class WhitepaperAEOScoringService implements IAEOScoringService {
         total = Math.max(0, total + marketingPenalty.score);
 
         return {
-            totalScore: Math.min(70, total),
+            totalScore: Math.min(80, total),
             breakdown: {
                 primaryAnswer: answerScore,
                 // chunkability removed - structure depth now mapped to conceptClarity

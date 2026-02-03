@@ -54,15 +54,15 @@ export class ArticleAEOScoringService implements IAEOScoringService {
         // 6. Anti-Marketing (Negative scoring)
         const marketingPenalty = this.calculateMarketingPenalty(text);
 
-        // Total Calculation (Max 70)
-        // 20 + 10 + 10 + 10 + 20 = 70 (chunkability removed, points redistributed)
+        // Total Calculation (Max 80 - increased from 70)
+        // 25 + 10 + 10 + 10 + 25 = 80 (rebalanced for 80pt scrapability)
         let total = answerScore.score + conceptScore.score + explanationScore.score + comparisonScore.score + authorityScore.score;
 
         // Apply penalty
         total = Math.max(0, total + marketingPenalty.score);
 
         return {
-            totalScore: Math.min(70, total),
+            totalScore: Math.min(80, total),
             breakdown: {
                 primaryAnswer: answerScore,
                 // chunkability removed - no longer relevant for v4.0 JSON
@@ -92,16 +92,16 @@ export class ArticleAEOScoringService implements IAEOScoringService {
         let feedback = "No primary answer detected early in the content.";
 
         if (hasDirectAnswerKey) {
-            score = 20; // Increased from 15
+            score = 25; // Increased from 20 for 80pt total
             status = 'good';
             feedback = "Direct answer/summary found early. Excellent for AI/Snippets.";
         } else if (hasEarlyQuestion) {
-            score = 10; // Increased from 8
+            score = 12; // Increased from 10
             status = 'warning';
             feedback = "Question detected, but lacking an explicit 'Summary' or 'TL;DR' section.";
         }
 
-        return { score, max: 20, status, feedback }; // Max increased from 15
+        return { score, max: 25, status, feedback }; // Max increased from 20
     }
 
     // Chunkability removed - no longer relevant for v4.0 JSON content
@@ -186,16 +186,16 @@ export class ArticleAEOScoringService implements IAEOScoringService {
         let feedback = "Lacks specific data points or citations.";
 
         if (matches >= 3) {
-            score = 20; // Increased from 15
+            score = 25; // Increased from 20 for 80pt total
             status = 'good';
             feedback = "High density of authority signals (data/citations).";
         } else if (matches >= 1) {
-            score = 10; // Increased from 8
+            score = 12; // Increased from 10
             status = 'warning';
             feedback = "Some data present, but could be more specific.";
         }
 
-        return { score, max: 20, status, feedback }; // Max increased from 15
+        return { score, max: 25, status, feedback }; // Max increased from 20
     }
 
     private calculateMarketingPenalty(text: string) {

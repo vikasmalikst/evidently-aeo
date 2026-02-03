@@ -11,54 +11,36 @@ export function buildSocialMediaThreadPrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Default structure based on "12. Ideal Thread Blueprint" from social-media-ref.md
+    // Default structure aligned with frontend template
     const defaultSections = [
         {
-            id: "thread_opener",
-            title: "Question & Direct Answer",
-            content: "State the central question/problem explicitly and provide the core answer in 2-3 sentences. Context: Who this is for and when it applies. NO 'hooks' that delay the answer.",
-            sectionType: "answer"
+            id: "hook",
+            title: "Hook",
+            content: "Opening tweet/post that grabs attention with a counter-intuitive insight or bold claim. 1-2 sentences max.",
+            sectionType: "hook"
         },
         {
-            id: "definition_context",
-            title: "Definition / Context",
-            content: "Define what the topic is and why it matters. Use neutral, expert-led tone. One clear idea.",
+            id: "context",
+            title: "Context Setup",
+            content: "Brief context or problem statement. Explain why this matters. 2-3 tweets.",
             sectionType: "context"
         },
         {
-            id: "mechanism",
-            title: "How It Works",
-            content: "Explain the mechanism. Use numbered steps if applicable. Focus on 'why' it works, not just 'what' it is.",
-            sectionType: "explanation"
+            id: "main_points",
+            title: "Main Points",
+            content: "Core insights or tips, structured as numbered points or bullets. 3-5 tweets. Each should be standalone but build on the thread.",
+            sectionType: "points"
         },
         {
-            id: "example",
-            title: "Real World Example",
-            content: "A concrete example or data point validating the concept. Avoid anonymous claims.",
-            sectionType: "case_study"
+            id: "evidence",
+            title: "Evidence/Example",
+            content: "Supporting data, case study, or concrete example. Makes the thread credible. 1-2 tweets.",
+            sectionType: "evidence"
         },
         {
-            id: "trade_offs",
-            title: "Trade-offs",
-            content: "Explicitly explain trade-offs/limitations. Real-world constraints (time, cost, effort).",
-            sectionType: "constraints"
-        },
-        {
-            id: "mistakes",
-            title: "Common Mistakes",
-            content: "List common anti-patterns or misconceptions to avoid.",
-            sectionType: "mistakes"
-        },
-        {
-            id: "comparison",
-            title: "Comparison",
-            content: "Compare with alternatives (side-by-side reasoning). No absolute 'best' claims. Specify scenarios.",
-            sectionType: "comparison"
-        },
-        {
-            id: "summary_faq",
-            title: "Summary + FAQs",
-            content: "Summarize key takeaways in list form. Add 2-3 anticipated follow-up questions with short answers.",
+            id: "takeaway",
+            title: "Takeaway",
+            content: "Closing summary or call-to-action. Reinforce the key message. 1-2 tweets.",
             sectionType: "summary"
         }
     ];

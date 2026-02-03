@@ -1,7 +1,7 @@
 
 import { StructureSection } from '../components/ContentStructureEditor';
 
-export type ContentTemplateType = 'article' | 'whitepaper' | 'short_video' | 'expert_community_response' | 'podcast' | 'comparison_table';
+export type ContentTemplateType = 'article' | 'whitepaper' | 'short_video' | 'expert_community_response' | 'podcast' | 'comparison_table' | 'social_media_thread';
 
 // Helper to get templates with dynamic context
 export const getContentTemplates = (context?: { brandName?: string; competitors?: string[] }): Record<ContentTemplateType, StructureSection[]> => {
@@ -172,6 +172,38 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
                 content: "A 'Who is this for?' conclusion. Define the ideal user profile for each option rather than declaring a universal winner.",
                 sectionType: "cta"
             }
+        ],
+        social_media_thread: [
+            {
+                id: "hook",
+                title: "Hook",
+                content: "Opening tweet/post that grabs attention with a counter-intuitive insight or bold claim. 1-2 sentences max.",
+                sectionType: "hook"
+            },
+            {
+                id: "context",
+                title: "Context Setup",
+                content: "Brief context or problem statement. Explain why this matters. 2-3 tweets.",
+                sectionType: "context"
+            },
+            {
+                id: "main_points",
+                title: "Main Points",
+                content: "Core insights or tips, structured as numbered points or bullets. 3-5 tweets. Each should be standalone but build on the thread.",
+                sectionType: "points"
+            },
+            {
+                id: "evidence",
+                title: "Evidence/Example",
+                content: "Supporting data, case study, or concrete example. Makes the thread credible. 1-2 tweets.",
+                sectionType: "evidence"
+            },
+            {
+                id: "takeaway",
+                title: "Takeaway",
+                content: "Closing summary or call-to-action. Reinforce the key message. 1-2 tweets.",
+                sectionType: "summary"
+            }
         ]
     };
 };
@@ -185,6 +217,7 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
         if (assetType === 'expert_community_response') return 'expert_community_response';
         if (assetType === 'whitepaper') return 'whitepaper';
         if (assetType === 'comparison_table') return 'comparison_table';
+        if (assetType === 'social_media_thread') return 'social_media_thread';
         if (assetType.includes('video')) return 'short_video';
         if (assetType === 'podcast') return 'podcast';
     }
@@ -217,6 +250,11 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
     // 6. Check for Comparison Table
     if (act.includes('comparison table') || act.includes('comparison')) {
         return 'comparison_table';
+    }
+
+    // 7. Check for Social Media Thread
+    if (act.includes('social media') || act.includes('thread') || act.includes('linkedin') || act.includes('twitter') || act.includes('x.com')) {
+        return 'social_media_thread';
     }
 
     return 'article';

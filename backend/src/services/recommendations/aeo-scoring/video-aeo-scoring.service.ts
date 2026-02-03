@@ -6,21 +6,21 @@ export class VideoAEOScoringService implements IAEOScoringService {
         const maxScore = 100;
         const breakdown: AEOScoreResult['breakdown'] = {
             primaryAnswer: { score: 0, max: 20, status: 'warning', feedback: "Missing clear direct answer." },
-            chunkability: { score: 0, max: 20, status: 'warning', feedback: "Content is monolithic." },
+            // chunkability removed - not relevant for video structure
             conceptClarity: { score: 0, max: 20, status: 'warning', feedback: "Missing Hook or setup." },
             explanationDepth: { score: 0, max: 20, status: 'warning', feedback: "Missing Takeaway or detailed explanation." },
             comparison: { score: 0, max: 10, status: 'warning', feedback: "No clear sections detected." },
-            authority: { score: 0, max: 10, status: 'warning', feedback: "Missing authority signals." },
+            authority: { score: 0, max: 15, status: 'warning', feedback: "Missing authority signals." },
             antiMarketing: { score: 0, max: 0, status: 'good', feedback: "N/A" }
         };
 
         // Rescale to max 70pts (Backend Portion)
-        // 1. Concept Clarity (Hook) - 15pts
+        // 1. Concept Clarity (Hook) - 20pts (increased from 15)
         if (/hook/i.test(content) || /\[0-[0-9]+s\]/i.test(content)) {
-            breakdown.conceptClarity.score = 15;
+            breakdown.conceptClarity.score = 20;
             breakdown.conceptClarity.status = 'good';
             breakdown.conceptClarity.feedback = "Clear Hook/Intro detected.";
-            totalScore += 15;
+            totalScore += 20;
         }
 
         // 2. Primary Answer (Answer/Direct Response) - 15pts
@@ -31,24 +31,25 @@ export class VideoAEOScoringService implements IAEOScoringService {
             totalScore += 15;
         }
 
-        // 3. Explanation Depth (Explanation/Body) - 15pts
+        // 3. Explanation Depth (Explanation/Body) - 20pts (includes Takeaway/Outro scoring)
+        let explanationScore = 0;
         if (/explanation/i.test(content) || /body/i.test(content)) {
-            breakdown.explanationDepth.score = 15;
-            breakdown.explanationDepth.status = 'good';
-            breakdown.explanationDepth.feedback = "Detailed Explanation detected.";
-            totalScore += 15;
+            explanationScore += 15;
         }
-
-        // 4. Chunkability (Takeaway/Outro) - 10pts
+        // Include Takeaway/Outro as part of explanation depth
         if (/takeaway/i.test(content) || /outro/i.test(content) || /conclusion/i.test(content)) {
-            breakdown.chunkability.score = 10;
-            breakdown.chunkability.status = 'good';
-            breakdown.chunkability.feedback = "Clear Takeaway/Outro detected.";
-            totalScore += 10;
+            explanationScore += 5;
+        }
+        if (explanationScore > 0) {
+            breakdown.explanationDepth.score = explanationScore;
+            breakdown.explanationDepth.status = explanationScore >= 15 ? 'good' : 'warning';
+            breakdown.explanationDepth.feedback = explanationScore >= 15
+                ? "Detailed Explanation with Takeaway detected."
+                : "Partial explanation found.";
+            totalScore += explanationScore;
         }
 
-        // 5. Comparisons (Check for comparative language) - 5pts
-        // Look for explicit comparison keywords separate from structure
+        // 4. Comparisons (Check for comparative language) - 5pts
         if (/combin|compar|versus|unlike|differs|similar/i.test(content) || /competitor/i.test(content)) {
             breakdown.comparison.score = 5;
             breakdown.comparison.status = 'good';
@@ -61,12 +62,12 @@ export class VideoAEOScoringService implements IAEOScoringService {
             totalScore += 2;
         }
 
-        // 6. Authority (Production Tips) - 10pts
+        // 5. Authority (Production Tips) - 15pts (increased from 10)
         if (/production/i.test(content) || /visual/i.test(content) || /camera/i.test(content)) {
-            breakdown.authority.score = 10;
+            breakdown.authority.score = 15;
             breakdown.authority.status = 'good';
             breakdown.authority.feedback = "Production guidelines included.";
-            totalScore += 10;
+            totalScore += 15;
         }
 
         return {

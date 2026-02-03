@@ -2411,13 +2411,14 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                     return (
                                       <div className="space-y-4">
-                                          {/* Header with overall title - Clean Design */}
-                                          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                              <div className="w-1 h-10 bg-gradient-to-b from-slate-300 to-slate-400 rounded-full" />
+                                          {/* Header with overall title - Premium Library Card Design */}
+                                          <div className="bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between relative overflow-hidden">
+                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-slate-400 to-slate-300" />
+                                            <div className="relative flex items-center gap-4 pl-2">
+
                                               <div>
                                                 <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
-                                                <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections · v4.0</p>
+                                                <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections </p>
                                               </div>
                                             </div>
 
@@ -2467,10 +2468,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                       placeholder="Section title"
                                                     />
                                                   ) : (
-                                                    <h4 className="text-[14px] font-medium text-slate-800">{recTitleEdits.get(section.id) ?? section.title}</h4>
+                                                    <h4 className="text-[15px] font-bold text-slate-900 tracking-tight">{recTitleEdits.get(section.id) ?? section.title}</h4>
                                                   )}
-                                                  <SectionTypeBadge sectionType={section.sectionType} />
-                                                </div>
+                                                  </div>
                                                 <div className="flex items-center gap-2">
                                                   <button
                                                     onClick={() => {

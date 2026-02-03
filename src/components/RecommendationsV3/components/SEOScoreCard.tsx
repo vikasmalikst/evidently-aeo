@@ -26,7 +26,9 @@ import {
   IconLoader
 } from '@tabler/icons-react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+import { apiClient } from '../../../lib/apiClient';
+
+// Remove API_BASE_URL local def
 
 // =============================================================================
 // TYPES
@@ -145,6 +147,8 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
     loading: false
   });
 
+
+
   // Debounce logic for API calls
   useEffect(() => {
     // Immediate update for hygiene
@@ -158,21 +162,24 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
       setScrapability(prev => ({ ...prev, loading: true, error: undefined }));
       
       try {
-        const response = await fetch(`${API_BASE_URL}/aeo/score`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content, contentType }) // Pass content type
+        // Use apiClient for automatic Base URL and Auth injection
+        const response = await apiClient.post<{ success: boolean; data: any }>('/aeo/score', { 
+            content, 
+            contentType 
         });
         
-        const data = await response.json();
+        // apiClient.post returns the parsed JSON body directly if generic is used, 
+        // OR it might return the body. Let's assume standard structure based on usage.
+        // Actually looking at apiClient.ts implementation: 
+        // return this.request<T>(endpoint, { method: 'POST', body: ... });
+        // which returns `result = await response.json() as T;`
         
-        if (data.success && data.data) {
-           const b = data.data.breakdown;
+        if (response.success && response.data) {
+           const b = response.data.breakdown;
            const newMetrics: SEOMetric[] = [];
 
            // --- 1. Generic / Article Metrics ---
            if (b.primaryAnswer) newMetrics.push({ name: 'Primary Answer', ...b.primaryAnswer, value: b.primaryAnswer.status === 'good' ? 'Found' : 'Missing', suggestion: b.primaryAnswer.feedback });
-           // chunkability removed - no longer relevant for v4.0 JSON content
            
            // --- 2. Expert Community Response Metrics ---
            if (b.questionRelevance) newMetrics.push({ name: 'Question Relevance', ...b.questionRelevance, value: b.questionRelevance.status === 'good' ? 'High' : 'Low', suggestion: b.questionRelevance.feedback });
@@ -204,14 +211,19 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
            if (b.antiMarketing) newMetrics.push({ name: 'Tone Check', ...b.antiMarketing, value: b.antiMarketing.status === 'good' ? 'Neutral' : 'Promo', suggestion: b.antiMarketing.feedback });
 
            setScrapability({
-             score: data.data.totalScore,
+             score: response.data.totalScore,
              metrics: newMetrics,
              loading: false
            });
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("AEO Score API Error:", err);
-        setScrapability(prev => ({ ...prev, loading: false, error: 'Scoring failed' }));
+        setScrapability(prev => ({ 
+            ...prev, 
+            loading: false, 
+            // improved error display
+            error: err.message || 'Scoring failed' 
+        }));
       }
     }, 1000); // 1s debounce
 

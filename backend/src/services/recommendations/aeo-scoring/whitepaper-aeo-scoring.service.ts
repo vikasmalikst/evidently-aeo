@@ -73,11 +73,12 @@ export class WhitepaperAEOScoringService implements IAEOScoringService {
         return {
             totalScore: Math.min(70, total),
             breakdown: {
-                primaryAnswer: answerScore, // Map generic key
-                chunkability: structureScore, // Map generic key
-                authority: dataScore, // Map generic key
-                explanationDepth: authorityScore, // Map generic key (Using depth for methodology)
-                conceptClarity: definitionScore, // Map generic key
+                primaryAnswer: answerScore,
+                // chunkability removed - structure depth now mapped to conceptClarity
+                authority: dataScore,
+                explanationDepth: authorityScore,
+                conceptClarity: structureScore, // Changed from definitionScore - structure is key for whitepapers
+                comparison: definitionScore, // Problem definition moved to comparison slot
                 antiMarketing: marketingPenalty
             }
         };

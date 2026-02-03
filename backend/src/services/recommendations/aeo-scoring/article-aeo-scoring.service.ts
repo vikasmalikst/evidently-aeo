@@ -10,24 +10,24 @@ export class ArticleAEOScoringService implements IAEOScoringService {
 
     public calculateScrapabilityScore(content: string): AEOScoreResult {
         let text = content || '';
-        let headerCount = 0;
         let sections: any[] = [];
 
         // V4/JSON Parsing
         try {
-            if (text.trim().startsWith('{')) {
-                const parsed = JSON.parse(text);
+            // Strip markdown code blocks if present
+            let jsonText = text.trim();
+            if (jsonText.startsWith('```json')) {
+                jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            } else if (jsonText.startsWith('```')) {
+                jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+            }
+
+            if (jsonText.startsWith('{')) {
+                const parsed = JSON.parse(jsonText);
                 if (parsed.sections && Array.isArray(parsed.sections)) {
                     sections = parsed.sections;
                     // Reconstruct text for general analysis
                     text = parsed.sections.map((s: any) => `${s.title}\n${s.content}`).join('\n\n');
-
-                    // Count sections as Headers (Chunkability)
-                    headerCount = parsed.sections.length;
-
-                    // If content inside sections uses H3, add those
-                    const contentH3 = (text.match(/#{3}\s|class="h3"|<h3/gi) || []).length;
-                    headerCount += contentH3;
                 } else if (parsed.content) {
                     text = parsed.content;
                 }
@@ -36,35 +36,27 @@ export class ArticleAEOScoringService implements IAEOScoringService {
             // Raw text fallback
         }
 
-        // Fallback for raw text headers
-        if (headerCount === 0) {
-            headerCount = (text.match(/#{1,6}\s|class="h[1-6]"|<h[1-6]/gi) || []).length;
-        }
-
-        // 1. Primary Answer Presence (15 pts)
+        // 1. Primary Answer Presence (20 pts) - Increased from 15
         const answerScore = this.scorePrimaryAnswer(text, sections);
 
-        // 2. Chunkability (10 pts)
-        const chunkScore = this.scoreChunkability(headerCount);
-
-        // 3. Concept Definition (10 pts)
+        // 2. Concept Definition (10 pts)
         const conceptScore = this.scoreConceptDefinition(text);
 
-        // 4. Explanation Depth (10 pts)
+        // 3. Explanation Depth (10 pts)
         const explanationScore = this.scoreExplanationDepth(text);
 
-        // 5. Comparison Readiness (10 pts)
+        // 4. Comparison Readiness (10 pts)
         const comparisonScore = this.scoreComparisonReadiness(text);
 
-        // 6. Authority Signals (15 pts)
+        // 5. Authority Signals (20 pts) - Increased from 15
         const authorityScore = this.scoreAuthoritySignals(text);
 
-        // 7. Anti-Marketing (Negative scoring)
+        // 6. Anti-Marketing (Negative scoring)
         const marketingPenalty = this.calculateMarketingPenalty(text);
 
         // Total Calculation (Max 70)
-        // 15 + 10 + 10 + 10 + 10 + 15 = 70.
-        let total = answerScore.score + chunkScore.score + conceptScore.score + explanationScore.score + comparisonScore.score + authorityScore.score;
+        // 20 + 10 + 10 + 10 + 20 = 70 (chunkability removed, points redistributed)
+        let total = answerScore.score + conceptScore.score + explanationScore.score + comparisonScore.score + authorityScore.score;
 
         // Apply penalty
         total = Math.max(0, total + marketingPenalty.score);
@@ -73,7 +65,7 @@ export class ArticleAEOScoringService implements IAEOScoringService {
             totalScore: Math.min(70, total),
             breakdown: {
                 primaryAnswer: answerScore,
-                chunkability: chunkScore,
+                // chunkability removed - no longer relevant for v4.0 JSON
                 conceptClarity: conceptScore,
                 explanationDepth: explanationScore,
                 comparison: comparisonScore,
@@ -100,35 +92,19 @@ export class ArticleAEOScoringService implements IAEOScoringService {
         let feedback = "No primary answer detected early in the content.";
 
         if (hasDirectAnswerKey) {
-            score = 15;
+            score = 20; // Increased from 15
             status = 'good';
             feedback = "Direct answer/summary found early. Excellent for AI/Snippets.";
         } else if (hasEarlyQuestion) {
-            score = 8;
+            score = 10; // Increased from 8
             status = 'warning';
             feedback = "Question detected, but lacking an explicit 'Summary' or 'TL;DR' section.";
         }
 
-        return { score, max: 15, status, feedback };
+        return { score, max: 20, status, feedback }; // Max increased from 15
     }
 
-    private scoreChunkability(headerCount: number) {
-        let score = 0;
-        let status: 'good' | 'warning' | 'error' = 'error';
-        let feedback = "Content lacks structure (headings).";
-
-        if (headerCount >= 4) {
-            score = 10;
-            status = 'good';
-            feedback = "Good structural depth (4+ sections).";
-        } else if (headerCount >= 2) {
-            score = 5;
-            status = 'warning';
-            feedback = "Basic structure present, but could be more granular.";
-        }
-
-        return { score, max: 10, status, feedback };
-    }
+    // Chunkability removed - no longer relevant for v4.0 JSON content
 
     private scoreConceptDefinition(text: string) {
         const definitionPatterns = [
@@ -210,16 +186,16 @@ export class ArticleAEOScoringService implements IAEOScoringService {
         let feedback = "Lacks specific data points or citations.";
 
         if (matches >= 3) {
-            score = 15;
+            score = 20; // Increased from 15
             status = 'good';
             feedback = "High density of authority signals (data/citations).";
         } else if (matches >= 1) {
-            score = 8;
+            score = 10; // Increased from 8
             status = 'warning';
             feedback = "Some data present, but could be more specific.";
         }
 
-        return { score, max: 15, status, feedback };
+        return { score, max: 20, status, feedback }; // Max increased from 15
     }
 
     private calculateMarketingPenalty(text: string) {

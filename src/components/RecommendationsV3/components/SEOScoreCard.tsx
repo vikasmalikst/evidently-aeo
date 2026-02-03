@@ -191,7 +191,7 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
 
            // --- 1. Generic / Article Metrics ---
            if (b.primaryAnswer) newMetrics.push({ name: 'Primary Answer', ...b.primaryAnswer, value: b.primaryAnswer.status === 'good' ? 'Found' : 'Missing', suggestion: b.primaryAnswer.feedback });
-           if (b.chunkability) newMetrics.push({ name: 'Chunkability', ...b.chunkability, value: b.chunkability.status === 'good' ? 'Good' : 'Poor', suggestion: b.chunkability.feedback });
+           // chunkability removed - no longer relevant for v4.0 JSON content
            
            // --- 2. Expert Community Response Metrics ---
            if (b.questionRelevance) newMetrics.push({ name: 'Question Relevance', ...b.questionRelevance, value: b.questionRelevance.status === 'good' ? 'High' : 'Low', suggestion: b.questionRelevance.feedback });

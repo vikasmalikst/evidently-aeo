@@ -92,7 +92,7 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
         expert_community_response: [
             {
                 id: "direct_answer",
-                title: "Direct Answer",
+                title: "Question",
                 content: "Give the clear stance immediately in 2–3 sentences. Include the core recommendation and key condition without introductions.",
                 sectionType: "answer"
             },

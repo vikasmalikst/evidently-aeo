@@ -133,6 +133,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   const [activeFeedbackSection, setActiveFeedbackSection] = useState<string | null>(null); // recId_sectionId
 
+  // Side Panel State for AEO Score
+  const [scorePanel, setScorePanel] = useState<{ isOpen: boolean; content: string; brandName?: string; contentType?: string } | null>(null);
+
   // State for targeting specific recommendation expansion on navigation
   const [targetExpandedId, setTargetExpandedId] = useState<string | null>(null);
 
@@ -1163,14 +1166,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 .filter(rec => rec.id && rec.id.length > 10)
                 .map(rec => ({ ...rec, id: rec.id! }));
 
-              // Initialize expanded sections for Step 3 recommendations
-              const newExpandedSections = new Map(expandedSections);
-              recommendationsWithIds.forEach(rec => {
-                if (rec.id && !newExpandedSections.has(rec.id)) {
-                  newExpandedSections.set(rec.id, { content: true });
-                }
-              });
-              setExpandedSections(newExpandedSections);
+              // Set exclusive expansion for the newly generated recommendation in Step 3
+              setExpandedRecId(recommendationId);
+
+              // Clear legacy/other expansion states to ensure exclusivity
+              setExpandedSections(new Map());
 
               setRecommendations(recommendationsWithIds);
               setCurrentStep(3);
@@ -2010,10 +2010,13 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                   <div className="flex-1">
                                     <h3 className="text-[14px] font-normal text-[#1a1d29] mb-2 leading-relaxed">{rec.action}</h3>
                                     <div className="flex items-center gap-2">
-                                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
-                                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                          <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                                        </svg>
+                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1] gap-1.5">
+                                        <SafeLogo
+                                          domain={rec.citationSource}
+                                          alt={rec.citationSource || 'Source'}
+                                          className="w-4 h-4 rounded-full bg-white object-contain"
+                                          size={16}
+                                        />
                                         {rec.citationSource}
                                       </span>
                                     </div>

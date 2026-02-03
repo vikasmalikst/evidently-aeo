@@ -78,34 +78,28 @@ export const CONTENT_TEMPLATES: Record<ContentTemplateType, StructureSection[]> 
     ],
     expert_community_response: [
         {
-            id: "direct_stance",
-            title: "The Verdict",
-            content: "Start with a definitive 'Yes/No/It depends' verdict. Avoid 'fence-sitting'. State your position clearly as an experienced practitioner.",
+            id: "direct_answer",
+            title: "Direct Answer",
+            content: "Give the clear stance immediately in 2–3 sentences. Include the core recommendation and key condition without introductions.",
             sectionType: "answer"
         },
         {
             id: "experience_context",
-            title: "Real-World Experience",
-            content: "Validate your stance with first-hand experience indicators (e.g., 'In our production environment...', 'After testing 5 tools...').",
+            title: "Experience Context",
+            content: "Provide first-hand practitioner context using 'I' or 'We'. Mention real constraints such as time, cost, scale, integrations, or failures.",
             sectionType: "context"
         },
         {
-            id: "reasoning",
-            title: "The 'Why'",
-            content: "Explain the technical 'why' behind your verdict. Focus on long-term implications and hidden factors beginners might miss.",
+            id: "reasoning_evidence",
+            title: "Reasoning & Evidence",
+            content: "Explain the technical and practical reasoning behind the stance. Be specific about mechanisms, trade-offs, and measurable factors.",
             sectionType: "explanation"
         },
         {
-            id: "tradeoffs",
-            title: "Trade-offs & Alternatives",
-            content: "Steel-man the opposing view. Acknowledge valid reasons to choose the alternative. This demonstrates balance and high authority.",
+            id: "tradeoffs_limits",
+            title: "Trade-offs & When Not To Use",
+            content: "Explain scenarios where the opposite choice is better. Acknowledge downsides and edge cases candidly.",
             sectionType: "comparison"
-        },
-        {
-            id: "conclusion",
-            title: "Final Recommendation",
-            content: "A final, actionable recommendation summarizing who should take this advice and who should avoid it.",
-            sectionType: "summary"
         }
     ],
     podcast: [

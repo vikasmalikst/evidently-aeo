@@ -94,9 +94,9 @@ export class ExpertCommunityResponseAEOScoringService implements IAEOScoringServ
 
     // 2. Early Answer Signal (15)
     private scoreEarlyAnswer(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
-        // First 3 sentences
+        // First 6 sentences (increased from 3 to allow for "The Question" header section)
         const sentences = text.match(/[^.!?]+[.!?]/g) || [text];
-        const firstBlock = sentences.slice(0, 3).join(' ');
+        const firstBlock = sentences.slice(0, 6).join(' ');
 
         const directness = /yes|no|it depends|do this|don't|start by|the best way|my recommendation/i.test(firstBlock);
 

@@ -1103,6 +1103,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             if (!res.success) {
               throw new Error(res.error || 'Failed to save content structure');
             }
+            // Invalidate cache to ensure fresh content is fetched on reload
+            invalidateCache(new RegExp(`recommendations-v3/${recommendation.id!}/content`));
           } finally {
             setGeneratingContentIds(prev => {
               const next = new Set(prev);
@@ -2360,6 +2362,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                             next.set(recId, result.data!.content);
                                             return next;
                                           });
+
+                                          // Invalidate cache to ensure fresh content is fetched on reload
+                                          invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
+
                                           // Clear title edits for this recommendation since they're now saved
                                           setSectionTitleEdits(prev => {
                                             const next = new Map(prev);

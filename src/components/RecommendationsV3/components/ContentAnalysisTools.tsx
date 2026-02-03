@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IconTarget } from '@tabler/icons-react';
-import { SEOScoreCard, analyzeContent } from './SEOScoreCard';
+import { SEOScoreCard, analyzeContent, analyzeHygiene } from './SEOScoreCard';
 // Define API URL (same as SEOScoreCard)
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -20,16 +20,11 @@ export function AEOScoreBadge({ content, brandName, contentType, onClick }: AEOS
   const [loading, setLoading] = useState(false);
   const badgeRef = useRef<HTMLDivElement>(null);
 
-  // Calculate immediate hygiene score
+  // Calculate immediate hygiene score for fallback/projection
   const analysis = React.useMemo(() => analyzeContent(content, brandName, contentType), [content, brandName, contentType]);
-  // Use projected score as placeholder ONLY if we haven't started fetching? 
-  // Actually, user wants "real" score. 
-  // Let's use hygiene score (not projected) + backend score.
-
-  // Need to de-construct the projected score back to raw hygiene or just use analyzeHygiene if it was exported.
-  // analyzeContent returns { score: projected, metrics }.
-  // Using projected as temporary placeholder is dangerous if it differs wildly.
-  // We'll trust the user wants ACCURACY.
+  
+  // Calculate raw hygiene score for accurate total summation
+  const hygieneAnalysis = React.useMemo(() => analyzeHygiene(content, contentType), [content, contentType]);
 
   useEffect(() => {
     if (!content || content.length < 50) return;
@@ -47,26 +42,8 @@ export function AEOScoreBadge({ content, brandName, contentType, onClick }: AEOS
 
         const data = await response.json();
         if (data.success && data.data && isMounted) {
-          // Backend returns total score (0-70) + hygiene is handled on frontend.
-          // Wait, the backend logic returns a "total" which is just the scrapability part?
-          // In SEOScoreCard: totalScore = hygiene.score + scrapability.score.
-          // We need to replicate that addition here.
-          // However, analyzeContent returns a scaled hygiene score. 
-          // We need the RAW hygiene score (out of 30).
-
-          // We can recover it roughly: analysis.score is (hygiene/30)*100.
-          // So raw_hygiene = (analysis.score / 100) * 30.
-          // This is approximate due to rounding.
-
-          // Better approach: calculate raw hygiene here if possible, but we don't have access to analyzeHygiene helper directly unless exported?
-          // analyzeContent is exported. analyzeHygiene is NOT exported in the previous file view?
-          // Let's check imports.
-
-          // Assuming we can't easily import analyzeHygiene without changing SEOScoreCard more.
-          // Let's use the analysis.metrics to sum it up?
-          // Or just approximate.
-          const rawHygiene = Math.round((analysis.score / 100) * 30);
-          const total = Math.min(100, rawHygiene + data.data.totalScore);
+          // Use exact same logic as SEOScoreCard: Raw Hygiene + Scrapability
+          const total = Math.min(100, hygieneAnalysis.score + data.data.totalScore);
           setBackendScore(total);
         }
       } catch (err) {
@@ -83,7 +60,7 @@ export function AEOScoreBadge({ content, brandName, contentType, onClick }: AEOS
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [content, analysis.score]);
+  }, [content, hygieneAnalysis.score, contentType]);
 
   // Use backendScore if available, otherwise analysis.score (projected)
   // Visually indicate if it's the real one?

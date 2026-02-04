@@ -80,7 +80,7 @@ export const PromptsList = memo(({
       if (valid.length > 0) {
         return valid;
       }
-      return [topics[0].id];
+      return [];
     });
   }, [topics]);
 

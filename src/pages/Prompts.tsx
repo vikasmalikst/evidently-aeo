@@ -50,7 +50,7 @@ export const Prompts = () => {
   const { brands, selectedBrandId, selectedBrand, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
   const [isResponsePinned, setIsResponsePinned] = useState(false);
   const [isResponseVisible, setIsResponseVisible] = useState(false);
-  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(true);
 
   const handlePromptSelect = (prompt: PromptEntry) => {
     setSelectedPrompt(prompt);
@@ -120,15 +120,20 @@ export const Prompts = () => {
       getActiveCompetitors(selectedBrandId)
         .then(data => {
           setAllCompetitors(data.competitors || []);
+          // Default to all competitors selected
+          if (data.competitors && data.competitors.length > 0) {
+            setSelectedCompetitors(data.competitors.map(c => c.name.toLowerCase()));
+          } else {
+            setSelectedCompetitors([]);
+          }
         })
         .catch(err => {
           console.error('Failed to fetch competitors:', err);
         });
     } else {
       setAllCompetitors([]);
+      setSelectedCompetitors([]);
     }
-    // Clear selected competitors when brand changes
-    setSelectedCompetitors([]);
   }, [selectedBrandId]);
 
   const handleReorderCompetitors = (newOrder: string[]) => {

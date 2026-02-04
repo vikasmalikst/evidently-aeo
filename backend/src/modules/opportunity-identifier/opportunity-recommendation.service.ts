@@ -152,7 +152,8 @@ export class OpportunityRecommendationService {
                 kpi: opp?.metricName || 'Visibility Index',
                 display_order: index,
                 is_approved: false,
-                competitors_target: targetCompetitors
+                competitors_target: targetCompetitors,
+                query_id: opp?.queryId // Link back to the original query
             };
         });
 

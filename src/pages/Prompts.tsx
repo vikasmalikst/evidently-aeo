@@ -34,6 +34,7 @@ interface ApiResponse<T> {
 import { getDefaultDateRange } from './dashboard/utils';
 import { useDashboardStore } from '../store/dashboardStore';
 import { QueryTagFilter } from '../components/common/QueryTagFilter';
+import { apiClient } from '../lib/apiClient';
 
 export const Prompts = () => {
   const pageLoadStart = useRef(performance.now());
@@ -51,6 +52,27 @@ export const Prompts = () => {
   const [isResponsePinned, setIsResponsePinned] = useState(false);
   const [isResponseVisible, setIsResponseVisible] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(true);
+  const [recommendationMap, setRecommendationMap] = useState<Record<string, string>>({});
+
+  // Fetch recommendation map for Red Flag
+  useEffect(() => {
+    if (!selectedBrandId) return;
+
+    const fetchMap = async () => {
+      try {
+        const response = await apiClient.get<ApiResponse<{ map: Record<string, string> }>>(
+          `/brands/${selectedBrandId}/recommendations/map`
+        );
+        if (response.success && response.data) {
+          setRecommendationMap(response.data.map || {});
+        }
+      } catch (err) {
+        console.error('Failed to fetch recommendation map:', err);
+      }
+    };
+
+    fetchMap();
+  }, [selectedBrandId]);
 
   const handlePromptSelect = (prompt: PromptEntry) => {
     setSelectedPrompt(prompt);
@@ -421,6 +443,7 @@ export const Prompts = () => {
               brandLogo={selectedBrand?.metadata?.logo || selectedBrand?.metadata?.brand_logo}
               brandName={selectedBrand?.name}
               brandDomain={selectedBrand?.homepage_url || undefined}
+              recommendationMap={recommendationMap}
             />
           </div>
 

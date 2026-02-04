@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
@@ -54,6 +55,9 @@ interface RecommendationsV3Props {
 }
 
 export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) => {
+  const [searchParams] = useSearchParams();
+  const highlightRecId = searchParams.get('highlightRecId');
+
   const {
     brands,
     isLoading: brandsLoading,
@@ -335,7 +339,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             .map(rec => ({ ...rec, id: rec.id! })); // Ensure ID is defined
 
           // Sort selected recommendation to the top if navigating to it
-          const targetId = currentStep === 3 ? expandedRecId : targetExpandedId;
+          const targetId = currentStep === 3 ? expandedRecId : (targetExpandedId || highlightRecId);
           if (targetId) {
             const index = recommendationsWithIds.findIndex(rec => rec.id === targetId);
             if (index > 0) { // If found and not already at top
@@ -410,6 +414,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             const contentPromises = recommendationsWithIds
               .filter(r => r.id && r.isContentGenerated)
               .map(async (rec) => {
+                // Determine if we need to load content for this item
+                // Yes if it's content generated AND (it's the target OR we load all)
+                // For now, load all
                 try {
                   const contentResponse = await fetchRecommendationContentLatest(rec.id!);
                   if (contentResponse.success && contentResponse.data?.content) {

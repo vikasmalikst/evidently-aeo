@@ -1,5 +1,6 @@
 import React, { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Flag } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { ManagedCompetitor } from '../../api/competitorManagementApi';
 import { PromptEntry, PromptTopic } from '../../types/prompts';
 import { SafeLogo } from '../Onboarding/common/SafeLogo';
@@ -19,6 +20,7 @@ interface PromptsListProps {
   brandLogo?: string;
   brandName?: string;
   brandDomain?: string;
+  recommendationMap?: Record<string, string>; // QueryID -> RecID
 }
 
 class PromptsListErrorBoundary extends React.Component<
@@ -61,8 +63,10 @@ export const PromptsList = memo(({
   showHeatmap,
   brandLogo,
   brandName,
-  brandDomain
+  brandDomain,
+  recommendationMap = {}
 }: PromptsListProps) => {
+  const navigate = useNavigate();
   const [expandedTopics, setExpandedTopics] = useState<string[]>([]);
   const [visiblePromptCounts, setVisiblePromptCounts] = useState<Record<string, number>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -468,7 +472,19 @@ export const PromptsList = memo(({
                         >
                           <td className={`sticky left-0 z-20 px-4 py-3 w-[300px] ${isSelected ? 'bg-[#f0f9ff]' : 'bg-white group-hover:bg-[#f9fafb]'
                             }`}>
-                            <p className="text-sm text-[var(--text-body)] font-data leading-snug">
+                            <p className="text-sm text-[var(--text-body)] font-data leading-snug flex items-center gap-2">
+                              {recommendationMap[prompt.id] && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // Prevent row click
+                                    navigate(`/improve/discover?highlightRecId=${recommendationMap[prompt.id]}`);
+                                  }}
+                                  className="shrink-0 p-1 hover:bg-red-50 rounded-full transition-colors group/flag"
+                                  title="Recommendation available - Click to view"
+                                >
+                                  <Flag size={14} className="text-red-500 fill-red-500" />
+                                </button>
+                              )}
                               {prompt.question}
                             </p>
                           </td>

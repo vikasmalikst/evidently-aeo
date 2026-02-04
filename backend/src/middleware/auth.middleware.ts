@@ -97,6 +97,8 @@ export const authenticateToken = async (
       req.user.originalCustomerId = req.user.customer_id;
       req.user.customer_id = impersonateCustomerId;
       req.user.isImpersonating = true;
+    } else if (impersonateCustomerId) {
+      console.warn(`[Auth] Impersonation attempt failed. User ${req.user.email} (Role: ${req.user.role}, Access: ${req.user.access_level}) tried to impersonate ${impersonateCustomerId} but is not admin.`);
     }
 
     next();

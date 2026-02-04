@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { cachedRequest, prefetchRequest } from '../lib/apiCache';
+import { cachedRequest, prefetchRequest, generateCacheKey } from '../lib/apiCache';
 import { cacheManager } from '../lib/cacheManager';
 import { authService } from '../lib/auth';
 
@@ -28,55 +28,7 @@ function isAbortError(err: unknown): boolean {
 /**
  * Generate cache key matching apiCache's logic (includes customer_id for customer-specific endpoints)
  */
-function generateCacheKeyForHook(endpoint: string, params?: Record<string, string>): string {
-  const baseKey = endpoint.split('?')[0];
-  
-  // Customer-specific endpoints that need customer_id in cache key (same as apiCache)
-  const customerSpecificEndpoints = [
-    '/brands',
-    '/dashboard',
-    '/sources',
-    '/topics',
-    '/prompts',
-    '/keywords',
-    '/visibility'
-  ];
-  
-  const isCustomerSpecific = customerSpecificEndpoints.some(pattern => 
-    baseKey === pattern || baseKey.startsWith(pattern + '/')
-  );
-  
-  // Get customer_id from auth service for customer-specific endpoints
-  let customerId: string | null = null;
-  if (isCustomerSpecific) {
-    try {
-      const user = authService.getStoredUser();
-      customerId = user?.customerId || null;
-    } catch (error) {
-      // Ignore errors - will fall back to key without customer_id
-    }
-  }
-  
-  // Build cache key with customer_id if applicable
-  const keyParts: string[] = [baseKey];
-  
-  if (customerId) {
-    keyParts.push(`customer=${customerId}`);
-  }
-  
-  // Normalize params for consistent keys
-  if (params) {
-    const sortedKeys = Object.keys(params).sort();
-    if (sortedKeys.length > 0) {
-      const normalizedParams = sortedKeys
-        .map(key => `${key}=${String(params[key])}`)
-        .join('&');
-      keyParts.push(normalizedParams);
-    }
-  }
-  
-  return keyParts.length > 1 ? keyParts.join('?') : baseKey;
-}
+
 
 interface UseCachedDataOptions {
   enabled?: boolean; // Whether to fetch (default: true)
@@ -117,7 +69,7 @@ export function useCachedData<T>(
         params[key] = value;
       });
       // Use same cache key generation logic as apiCache (includes customer_id)
-      const cacheKey = generateCacheKeyForHook(endpoint, params);
+      const cacheKey = generateCacheKey(endpoint, params);
       const cached = cacheManager.get<T>(cacheKey);
       if (cached) {
         cacheDebugLog(`[useCachedData] ✅ Initial state from cache for: ${endpoint} (key: ${cacheKey})`);
@@ -128,7 +80,7 @@ export function useCachedData<T>(
     }
     return null;
   });
-  
+
   const [loading, setLoading] = useState<boolean>(() => {
     if (!endpoint || !enabled) return false;
     try {
@@ -138,7 +90,7 @@ export function useCachedData<T>(
         params[key] = value;
       });
       // Use same cache key generation logic as apiCache (includes customer_id)
-      const cacheKey = generateCacheKeyForHook(endpoint, params);
+      const cacheKey = generateCacheKey(endpoint, params);
       const cached = cacheManager.get<T>(cacheKey);
       // If we have cached data (even if stale), set loading to false so we can show it immediately
       // The background refresh will happen in useEffect
@@ -152,7 +104,7 @@ export function useCachedData<T>(
     }
     return true;
   });
-  
+
   const [error, setError] = useState<Error | null>(null);
   const [isStale, setIsStale] = useState<boolean>(() => {
     if (!endpoint || !enabled) return false;
@@ -163,21 +115,21 @@ export function useCachedData<T>(
         params[key] = value;
       });
       // Use same cache key generation logic as apiCache (includes customer_id)
-      const cacheKey = generateCacheKeyForHook(endpoint, params);
+      const cacheKey = generateCacheKey(endpoint, params);
       return cacheManager.isStale(cacheKey);
     } catch (e) {
       return false;
     }
   });
-  
+
   const abortControllerRef = useRef<AbortController | null>(null);
   const intervalRef = useRef<number | null>(null);
-  
+
 
   const fetchData = useCallback(async (showLoading = true) => {
     const fetchStart = performance.now();
     cacheDebugLog(`[useCachedData] fetchData called for: ${endpoint} at`, fetchStart, `- showLoading: ${showLoading}`);
-    
+
     if (!endpoint || !enabled) {
       cacheDebugLog(`[useCachedData] fetchData skipped - endpoint: ${endpoint}, enabled: ${enabled}`);
       setLoading(false);
@@ -207,7 +159,7 @@ export function useCachedData<T>(
 
       cacheDebugLog(`[useCachedData] Calling cachedRequest at`, performance.now(), `- Time since fetchData start: ${(performance.now() - fetchStart).toFixed(2)}ms`);
       const requestStart = performance.now();
-      
+
       // Use cached request which handles stale-while-revalidate
       const result = await cachedRequest<T>(
         endpoint,
@@ -244,10 +196,10 @@ export function useCachedData<T>(
         // Don't log as they clutter the console
         return;
       }
-      
+
       // Only log non-abort errors
       console.error(`[useCachedData] ❌ Error in fetchData at`, performance.now(), `- Duration: ${errorDuration.toFixed(2)}ms - Error:`, err);
-      
+
       // Check if this request was aborted (controller might have changed)
       if (currentController === abortControllerRef.current && !signal.aborted) {
         const error = err instanceof Error ? err : new Error(String(err));
@@ -262,20 +214,20 @@ export function useCachedData<T>(
   useEffect(() => {
     const hookStart = performance.now();
     cacheDebugLog(`[useCachedData] Hook effect triggered for: ${endpoint} at`, hookStart, `- enabled: ${enabled}`);
-    
+
     if (!endpoint) {
       cacheDebugLog(`[useCachedData] No endpoint - clearing state`);
       setLoading(false);
       setData(null);
       return;
     }
-    
+
     // If disabled, don't clear data - just don't fetch
     if (!enabled) {
       cacheDebugLog(`[useCachedData] Hook disabled - keeping existing data, not fetching`);
       return;
     }
-    
+
     // Check cache synchronously first
     const cacheCheckStart = performance.now();
     let hasCache = false;
@@ -286,12 +238,12 @@ export function useCachedData<T>(
         params[key] = value;
       });
       // Use same cache key generation logic as apiCache (includes customer_id)
-      const cacheKey = generateCacheKeyForHook(endpoint, params);
-      
+      const cacheKey = generateCacheKey(endpoint, params);
+
       console.log(`[useCachedData] Checking cache for key: ${cacheKey} at`, performance.now());
       const cached = cacheManager.get<T>(cacheKey);
       const cacheCheckTime = performance.now() - cacheCheckStart;
-      
+
       if (cached) {
         const isStaleValue = cacheManager.isStale(cacheKey);
         const isFreshValue = cacheManager.isFresh(cacheKey);
@@ -301,7 +253,7 @@ export function useCachedData<T>(
         setLoading(false);
         setIsStale(isStaleValue);
         hasCache = true;
-        
+
         // If expired, we still show it but fetch fresh in background
         if (isExpiredValue) {
           cacheDebugLog(`[useCachedData] Cache expired - will fetch fresh in background`);
@@ -312,7 +264,7 @@ export function useCachedData<T>(
     } catch (e) {
       console.error(`[useCachedData] Error checking cache:`, e);
     }
-    
+
     // Always fetch if enabled (cachedRequest will handle cache logic)
     // This ensures we fetch when enabled changes from false to true
     const fetchStart = performance.now();

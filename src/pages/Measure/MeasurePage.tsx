@@ -246,6 +246,7 @@ export const MeasurePage = () => {
     shouldShowLoading,
     handleRetryFetch,
     isDataCollectionInProgress,
+    dashboardLoading,
   } = useDashboardData();
 
   useEffect(() => {
@@ -842,6 +843,12 @@ export const MeasurePage = () => {
 
   // Loading states
   const combinedLoading = authLoading || shouldShowLoading;
+
+  // Show component loading spinner if we are loading data BUT we already have some data to show
+  // This happens during filter changes or background refreshes
+  // We exclude data collection because that has its own specific UI flow usually
+  const componentLoading = combinedLoading || (dashboardLoading && !isDataCollectionInProgress);
+
   const dataLoading = combinedLoading && !dashboardData;
   const selectionInitializing = !isSelectionInitialized && currentModels.length > 0;
 
@@ -1155,7 +1162,7 @@ export const MeasurePage = () => {
                     data={chartData}
                     chartType={chartType}
                     selectedModels={selectedModels}
-                    loading={!!combinedLoading}
+                    loading={!!componentLoading}
                     activeTab="competitive"
                     models={currentModels}
                     metricType={metricType}
@@ -1186,7 +1193,7 @@ export const MeasurePage = () => {
                 models={currentModels}
                 selectedModels={selectedModels}
                 onModelToggle={handleModelToggle}
-                loading={!!combinedLoading}
+                loading={!!componentLoading}
               />
             )}
           </div>

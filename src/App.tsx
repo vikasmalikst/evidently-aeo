@@ -11,6 +11,7 @@ import { SentimentLandscape2 } from './pages/SentimentLandscape2';
 import { RecommendationsV3 } from './pages/RecommendationsV3';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
+import { OnboardingJSONPage } from './pages/OnboardingJSONPage';
 import { PromptSelection } from './pages/PromptSelection';
 import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCollectionLoadingScreen';
 import { OnboardingDomainReadinessScreenRoute } from './components/Onboarding/OnboardingDomainReadinessScreen';
@@ -447,6 +448,15 @@ function App() {
         <Route
           path="/app"
           element={<DefaultRedirect />}
+        />
+        {/* New JSON Onboarding Route */}
+        <Route
+          path="/onboarding-json"
+          element={
+            <ProtectedRoute>
+              <OnboardingJSONPage />
+            </ProtectedRoute>
+          }
         />
       </Routes>
     </BrowserRouter>

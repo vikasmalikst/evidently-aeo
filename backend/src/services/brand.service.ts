@@ -430,6 +430,13 @@ export class BrandService {
 
         const brandSlug = brandData.brand_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
+        console.log('📝 INSERTING BRAND:', {
+          name: brandData.brand_name,
+          url: brandData.website_url,
+          industry: brandData.industry,
+          metadata_keys: Object.keys(metadata)
+        });
+
         const { data: createdBrand, error: brandError } = await supabaseAdmin
           .from('brands')
           .insert({
@@ -549,6 +556,11 @@ export class BrandService {
             .from('brand_competitors')
             .insert(competitorRecords);
 
+          console.log('📝 INSERTING COMPETITORS:', {
+            count: competitorRecords.length,
+            names: competitorRecords.map(c => c.competitor_name)
+          });
+
           if (competitorError) {
             console.error('⚠️ Failed to insert competitors:', competitorError);
             console.error('🔍 DEBUG: Competitor records that failed:', competitorRecords);
@@ -563,7 +575,9 @@ export class BrandService {
 
       // 🎯 PHASE 2.5: Automatic brand enrichment (synonyms and products)
       // Only run for newly created brands, not updates (to avoid overwriting user edits)
-      if (!existingBrand && verifiedCompetitors.length > 0) {
+      // Check manual trigger flag as well
+      const manualEnrichmentTriggerRequired = (brandData.metadata as any)?.manual_collection_trigger_required === true;
+      if (!existingBrand && !manualEnrichmentTriggerRequired && verifiedCompetitors.length > 0) {
         try {
           console.log(`🔄 Triggering automatic brand enrichment for new brand ${newBrand.id}...`);
           // Import and trigger enrichment asynchronously (non-blocking)
@@ -671,13 +685,13 @@ export class BrandService {
           let normalizedCategory = t.category?.toLowerCase().trim() || null;
           if (normalizedCategory) {
             // Map variations to standard names
-            if (normalizedCategory === 'support' || normalizedCategory === 'post-purchase' || normalizedCategory === 'postpurchase') {
+            if (normalizedCategory.includes('support')) {
               normalizedCategory = 'post-purchase support';
-            } else if (normalizedCategory === 'awareness' || normalizedCategory === 'aware') {
+            } else if (normalizedCategory.includes('awareness') || normalizedCategory.includes('informational') || normalizedCategory.includes('education') || normalizedCategory.includes('problem')) {
               normalizedCategory = 'awareness';
-            } else if (normalizedCategory === 'comparison' || normalizedCategory === 'compare') {
+            } else if (normalizedCategory.includes('comparison') || normalizedCategory.includes('evaluation') || normalizedCategory.includes('consideration') || normalizedCategory.includes('investigation') || normalizedCategory.includes('solution') || normalizedCategory.includes('commercial')) {
               normalizedCategory = 'comparison';
-            } else if (normalizedCategory === 'purchase' || normalizedCategory === 'buy') {
+            } else if (normalizedCategory.includes('purchase') || normalizedCategory.includes('transactional') || normalizedCategory.includes('decision') || normalizedCategory.includes('buy')) {
               normalizedCategory = 'purchase';
             }
             categoryMap.set(t.label, normalizedCategory);
@@ -706,15 +720,24 @@ export class BrandService {
             if (!cat) return null;
             const normalized = cat.toLowerCase().trim();
             // Map variations to standard database category names
-            if (normalized === 'support' || normalized === 'post-purchase' || normalized === 'postpurchase') {
+            if (normalized.includes('support')) {
               return 'post-purchase support';
+            } else if (normalized.includes('awareness') || normalized.includes('informational') || normalized.includes('education') || normalized.includes('problem')) {
+              return 'awareness';
+            } else if (normalized.includes('comparison') || normalized.includes('evaluation') || normalized.includes('consideration') || normalized.includes('investigation') || normalized.includes('solution') || normalized.includes('commercial')) {
+              return 'comparison';
+            } else if (normalized.includes('purchase') || normalized.includes('transactional') || normalized.includes('decision') || normalized.includes('buy')) {
+              return 'purchase';
             }
-            // Only allow valid categories
+
+            // Only allow valid categories explicitly
             const validCategories = ['awareness', 'comparison', 'purchase', 'post-purchase support'];
             if (validCategories.includes(normalized)) {
               return normalized;
             }
-            // If invalid category, return null (will be categorized later by AI)
+
+            // If invalid category, return null (will be categorized later by AI or defaults to Uncategorized)
+            // This prevents "violates check constraint" errors
             return null;
           };
 
@@ -746,6 +769,11 @@ export class BrandService {
           const { error: topicError } = await supabaseAdmin
             .from('brand_topics')
             .insert(topicRecords);
+
+          console.log('📝 INSERTING TOPICS:', {
+            count: topicRecords.length,
+            samples: topicRecords.slice(0, 5).map(t => ({ name: t.topic_name, category: t.category }))
+          });
 
           if (topicError) {
             console.error('⚠️ Failed to insert topics:', topicError);
@@ -796,6 +824,24 @@ export class BrandService {
             }
           } else {
             console.log(`✅ All topics already have categories, skipping AI categorization`);
+          }
+
+          // 🎯 PHASE 2.9: Store Enrichment Data (Synchronous)
+          // Store this before query generation/tagging so the tagger has access to synonyms/products
+          if (brandData.enrichment_data) {
+            console.log(`💾 Saving provided enrichment data for brand ${newBrand.id}...`);
+            try {
+              await brandProductEnrichmentService.saveEnrichmentToDatabase(
+                newBrand.id,
+                brandData.enrichment_data,
+                (msg) => console.log(`[EnrichmentStorage] ${msg}`)
+              );
+              console.log(`✅ Enrichment data saved successfully for brand ${newBrand.id}`);
+            } catch (enrichmentError) {
+              console.error(`❌ Failed to save enrichment data for brand ${newBrand.id}:`, enrichmentError);
+              // User Requirement: If enrichment data can't be stored, do not proceed.
+              throw new DatabaseError(`Failed to save enrichment data: ${enrichmentError instanceof Error ? enrichmentError.message : 'Unknown error'}`);
+            }
           }
 
           // 🎯 PHASE 3: Save user-selected queries OR generate new queries
@@ -886,8 +932,9 @@ export class BrandService {
           // Use selected AI models from onboarding, or default to common collectors
           const selectedModels = brandData.ai_models || [];
           const collectors = this.mapAIModelsToCollectors(selectedModels);
+          const manualTriggerRequired = (brandData.metadata as any)?.manual_collection_trigger_required === true;
 
-          if (collectors.length > 0 && queryGenResult.total_queries > 0) {
+          if (!manualTriggerRequired && collectors.length > 0 && queryGenResult.total_queries > 0) {
             try {
               console.log(`🚀 Triggering automatic data collection for ${queryGenResult.total_queries} queries using collectors: ${collectors.join(', ')}`);
 
@@ -1027,7 +1074,7 @@ export class BrandService {
               // Don't throw - data collection failure shouldn't block brand creation
             }
           } else {
-            console.log(`ℹ️ Skipping data collection: ${collectors.length === 0 ? 'No collectors selected' : 'No queries generated'}`);
+            console.log(`ℹ️ Skipping data collection: ${manualTriggerRequired ? 'Manual trigger required' : (collectors.length === 0 ? 'No collectors selected' : 'No queries generated')}`);
           }
         } // Close the else block from line 380 (topics inserted successfully)
       } else {
@@ -1040,28 +1087,13 @@ export class BrandService {
         });
       }
 
-      // 🎯 PHASE 4.5: Store Enrichment Data (Synchronous)
-      // If enrichment data is provided in the request, save it immediately.
-      // This ensures that subsequent scoring/collection steps have access to this critical data.
-      if (brandData.enrichment_data) {
-        console.log(`💾 Saving provided enrichment data for brand ${newBrand.id}...`);
-        try {
-          await brandProductEnrichmentService.saveEnrichmentToDatabase(
-            newBrand.id,
-            brandData.enrichment_data,
-            (msg) => console.log(`[EnrichmentStorage] ${msg}`)
-          );
-          console.log(`✅ Enrichment data saved successfully for brand ${newBrand.id}`);
-        } catch (enrichmentError) {
-          console.error(`❌ Failed to save enrichment data for brand ${newBrand.id}:`, enrichmentError);
-          // User Requirement: If enrichment data can't be stored, do not proceed.
-          throw new DatabaseError(`Failed to save enrichment data: ${enrichmentError instanceof Error ? enrichmentError.message : 'Unknown error'}`);
-        }
-      }
+
 
       // 🎯 PHASE 5: Trigger scoring for new brand (position extraction, sentiment scoring, citation extraction)
       // Only run for newly created brands, not updates
-      if (!existingBrand) {
+      // Check manual trigger flag as well
+      const manualTriggerRequired = (brandData.metadata as any)?.manual_collection_trigger_required === true;
+      if (!existingBrand && !manualTriggerRequired) {
         try {
           console.log(`🔄 Triggering automatic scoring for new brand ${newBrand.id}...`);
           // Import and trigger scoring asynchronously (non-blocking)
@@ -1080,7 +1112,7 @@ export class BrandService {
           // Don't throw - scoring failure shouldn't block brand creation
         }
       } else {
-        console.log(`ℹ️ Skipping scoring trigger for existing brand ${newBrand.id} (update, not new creation)`);
+        console.log(`ℹ️ Skipping scoring trigger for brand ${newBrand.id}: ${existingBrand ? 'Existing brand update' : 'Manual trigger required'}`);
       }
 
       return {
@@ -3694,6 +3726,11 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
     const { error: queriesError } = await supabaseAdmin
       .from('generated_queries')
       .insert(queryInserts);
+
+    console.log('📝 INSERTING QUERIES:', {
+      count: queryInserts.length,
+      samples: queryInserts.slice(0, 5).map(q => ({ text: q.query_text, topic: q.topic }))
+    });
 
     if (queriesError) {
       throw new Error(`Failed to save user-selected queries: ${queriesError.message}`);

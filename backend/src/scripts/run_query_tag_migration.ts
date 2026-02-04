@@ -1,43 +1,46 @@
-
 import { supabaseAdmin } from '../config/database';
-import fs from 'fs';
-import path from 'path';
+import { queryTaggingService } from '../services/query-tagging.service';
 
-async function runMigration() {
-    const sqlPath = path.join(__dirname, 'migrations', 'add_query_tag_index.sql');
-    console.log(`Reading migration file from: ${sqlPath}`);
+async function retagBrand(brandId: string) {
+    console.log(`🔄 Re-tagging queries for brand: ${brandId}...`);
 
-    try {
-        const sql = fs.readFileSync(sqlPath, 'utf8');
-        console.log('Executing SQL...');
+    // 1. Fetch brand terms (now they exist in DB!)
+    const terms = await queryTaggingService.getBrandTerms(brandId);
+    console.log(`🏷️ Using terms: ${terms.brandName}, Synonyms: [${terms.synonyms.join(', ')}]`);
 
-        // Using a known RPC function 'exec_sql' if available, or just split and execute if your setup allows.
-        // Based on `create-report-settings-table.ts`, it seems we might just use a direct query or rpc.
-        // Let's assume there is an `exec_sql` or we try to run it.
-        // If no direct SQL execution is available via supabase-js for DDL (usually isn't without RPC),
-        // we might need to rely on the user having an RPC function set up.
-        // However, looking at the user's files, `create-report-settings-table.ts` is a good reference.
+    // 2. Fetch queries
+    const { data: queries, error: fetchError } = await supabaseAdmin
+        .from('generated_queries')
+        .select('id, query_text')
+        .eq('brand_id', brandId);
 
-        // Actually, let's just use the `postgres` library if available or `supabaseAdmin`.
-        // If `create-report-settings-table.ts` fails to show a pattern, I'll default to a simple split logic
-        // and try `supabaseAdmin.rpc('exec_sql', { sql })` which is a common pattern.
-
-        const { error } = await supabaseAdmin.rpc('exec_sql', { sql_query: sql });
-
-        if (error) {
-            // Fallback: try raw query if RPC fails (it might not exist)
-            console.warn('RPC exec_sql failed, trying fallback strategy (if any)...', error);
-            // Note: Supabase JS client doesn't support raw SQL directly on the client instance for DDL
-            // unless you use the `pg` driver or have an RPC.
-            // Assuming the environment has `exec_sql` or similar. 
-            throw error;
-        }
-
-        console.log('✅ Migration executed successfully.');
-    } catch (err) {
-        console.error('❌ Error executing migration:', err);
-        process.exit(1);
+    if (fetchError || !queries) {
+        console.error('❌ Error fetching queries:', fetchError);
+        return;
     }
+
+    console.log(`📋 Found ${queries.length} queries. Re-calculating tags...`);
+
+    // 3. Update tags
+    let updateCount = 0;
+    for (const query of queries) {
+        const newTag = queryTaggingService.determineTag(query.query_text, terms);
+
+        const { error: updateError } = await supabaseAdmin
+            .from('generated_queries')
+            .update({ query_tag: newTag })
+            .eq('id', query.id);
+
+        if (updateError) {
+            console.error(`❌ Failed to update query ${query.id}:`, updateError);
+        } else {
+            updateCount++;
+        }
+    }
+
+    console.log(`✅ Successfully re-tagged ${updateCount} queries!`);
 }
 
-runMigration();
+// Get brand ID from command line or default to your specific one
+const brandId = process.argv[2] || 'a0fb0d8f-fbae-4c13-aae6-cd1dc169806d';
+retagBrand(brandId).catch(console.error);

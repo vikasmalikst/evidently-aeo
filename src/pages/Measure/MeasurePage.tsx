@@ -520,7 +520,7 @@ export const MeasurePage = () => {
     // LLM filter options
     const llmOptions = [
       { value: 'all', label: 'All' },
-      ...llmSlices.map(s => ({ value: normalizeId(s.provider), label: s.provider, color: s.color }))
+      ...llmSlices.map(s => ({ value: s.provider, label: s.provider, color: s.color }))
     ];
 
     return { brandModels: brandModelData, competitorModels: competitorModelData, llmOptions, chartDateLabels };

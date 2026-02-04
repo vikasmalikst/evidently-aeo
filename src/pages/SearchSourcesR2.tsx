@@ -25,12 +25,12 @@ import { EducationalContentDrawer, type KpiType } from '../components/Educationa
 
 
 const hardcodedLlmOptions = [
-  { value: 'chatgpt', label: 'ChatGPT' },
-  { value: 'perplexity', label: 'Perplexity' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'google_aio', label: 'Google AIO' },
-  { value: 'copilot', label: 'Copilot' },
-  { value: 'gemini', label: 'Gemini' },
+  { value: 'ChatGPT', label: 'ChatGPT' },
+  { value: 'Perplexity', label: 'Perplexity' },
+  { value: 'Claude', label: 'Claude' },
+  { value: 'Google AIO', label: 'Google AIO' },
+  { value: 'Copilot', label: 'Copilot' },
+  { value: 'Gemini', label: 'Gemini' },
 ];
 
 export const SearchSourcesR2 = () => {

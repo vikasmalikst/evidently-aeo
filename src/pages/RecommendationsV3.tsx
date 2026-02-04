@@ -334,6 +334,16 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             .filter(rec => rec.id && rec.id.length > 10) // Filter out invalid IDs
             .map(rec => ({ ...rec, id: rec.id! })); // Ensure ID is defined
 
+          // Sort selected recommendation to the top if navigating to it
+          const targetId = currentStep === 3 ? expandedRecId : targetExpandedId;
+          if (targetId) {
+            const index = recommendationsWithIds.findIndex(rec => rec.id === targetId);
+            if (index > 0) { // If found and not already at top
+              const [item] = recommendationsWithIds.splice(index, 1);
+              recommendationsWithIds.unshift(item);
+            }
+          }
+
           console.log(`✅ [RecommendationsV3] Loaded ${recommendationsWithIds.length} recommendations for Step ${currentStep}`);
           if (currentStep === 2) {
             console.log(`📊 [RecommendationsV3] Step 2 recommendations (approved only):`,
@@ -1088,9 +1098,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   // Render inline structure editor for Step 2
   const renderStep2ExpandedContent = (recommendation: RecommendationV3) => {
     console.log(`[RecommendationsV3Step2] Rendering Editor for ${recommendation.id}`, {
-        competitorsOriginal: recommendation.competitors_target, 
-        competitorsMapped: recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || [],
-        brandName
+      competitorsOriginal: recommendation.competitors_target,
+      competitorsMapped: recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || [],
+      brandName
     });
     return (
       <ContentStructureInlineEditor
@@ -1484,6 +1494,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 4: currentStep <= 3 && hasCompletedForStep4
               }}
               onStepClick={async (step: number) => {
+                // Clear any specific recommendation target when manually navigating
+                setTargetExpandedId(null);
+
                 // Set manual loading flags
                 isManuallyNavigatingRef.current = true;
                 setIsManuallyLoading(true);
@@ -2411,39 +2424,39 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                     return (
                                       <div className="space-y-4">
-                                          {/* Header with overall title - Premium Library Card Design */}
-                                          <div className="bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between relative overflow-hidden">
-                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-slate-400 to-slate-300" />
-                                            <div className="relative flex items-center gap-4 pl-2">
+                                        {/* Header with overall title - Premium Library Card Design */}
+                                        <div className="bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between relative overflow-hidden">
+                                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-slate-400 to-slate-300" />
+                                          <div className="relative flex items-center gap-4 pl-2">
 
-                                              <div>
-                                                <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
-                                                <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections </p>
-                                              </div>
+                                            <div>
+                                              <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
+                                              <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections </p>
                                             </div>
-
-                                            {/* Refine with Feedback Button - Moved to Header */}
-                                            <button
-                                              onClick={handleRefine}
-                                              disabled={isRefining || !hasFeedback}
-                                              className={`px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2 ${isRefining || !hasFeedback
-                                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                                : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3] border border-transparent'
-                                                }`}
-                                            >
-                                              {isRefining ? (
-                                                <>
-                                                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                  Refining...
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <IconSparkles size={16} />
-                                                  Refine with Feedback
-                                                </>
-                                              )}
-                                            </button>
                                           </div>
+
+                                          {/* Refine with Feedback Button - Moved to Header */}
+                                          <button
+                                            onClick={handleRefine}
+                                            disabled={isRefining || !hasFeedback}
+                                            className={`px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2 ${isRefining || !hasFeedback
+                                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                                              : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3] border border-transparent'
+                                              }`}
+                                          >
+                                            {isRefining ? (
+                                              <>
+                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                Refining...
+                                              </>
+                                            ) : (
+                                              <>
+                                                <IconSparkles size={16} />
+                                                Refine with Feedback
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
 
                                         {/* Section Cards */}
                                         {sections.map((section: any, idx: number) => {
@@ -2470,7 +2483,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                   ) : (
                                                     <h4 className="text-[15px] font-bold text-slate-900 tracking-tight">{recTitleEdits.get(section.id) ?? section.title}</h4>
                                                   )}
-                                                  </div>
+                                                </div>
                                                 <div className="flex items-center gap-2">
                                                   <button
                                                     onClick={() => {

@@ -102,7 +102,7 @@ const CACHE_STRATEGIES: Record<string, CacheStrategy> = {
  * Generate cache key from endpoint and params
  * Includes customer_id for customer-specific endpoints to prevent cross-customer data leakage
  */
-function generateCacheKey(endpoint: string, params?: Record<string, any>): string {
+export function generateCacheKey(endpoint: string, params?: Record<string, any>): string {
   const [path, queryString] = endpoint.split('?');
   const baseKey = path;
 

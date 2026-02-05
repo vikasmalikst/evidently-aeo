@@ -307,9 +307,10 @@ export class DashboardService {
     range: NormalizedDashboardRange,
     collectors?: string[],
     timezoneOffset: number = 0,
-    skipCitations: boolean = false
+    skipCitations: boolean = false,
+    queryTags?: string[]
   ): Promise<BrandDashboardPayload> {
-    return buildDashboardPayload(brand, customerId, range, { collectors, timezoneOffset, skipCitations })
+    return buildDashboardPayload(brand, customerId, range, { collectors, timezoneOffset, skipCitations, queryTags })
   }
 }
 

@@ -19,6 +19,8 @@ export const useDashboardData = () => {
   // Replaced local state with global store
   const { startDate, endDate, setStartDate, setEndDate, llmFilters, queryTags } = useDashboardStore();
   const [reloadKey, setReloadKey] = useState(0);
+  // Track the last time we successfully received data to query for updates relative to that time
+  const lastSuccessfulFetch = useRef<string>(new Date(Date.now() - 5 * 60 * 1000).toISOString());
   const navigate = useNavigate();
   const location = useLocation();
   const [isDataCollectionInProgress, setIsDataCollectionInProgress] = useState(false);
@@ -249,20 +251,19 @@ export const useDashboardData = () => {
 
     const checkForNewData = async () => {
       try {
-        // Check if there are collector_results with raw_answer updated in the last 2 minutes
-        // This catches async BrightData responses that were just populated
-        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        // Query for updates since the last time we successfully fetched data
+        const since = lastSuccessfulFetch.current;
+
         const response = await apiClient.request<ApiResponse<{ hasUpdates: boolean; count?: number }>>(
-          `/brands/${selectedBrandId}/data-updates?since=${twoMinutesAgo}`,
+          `/brands/${selectedBrandId}/data-updates?since=${since}`,
           {},
           { requiresAuth: true }
         );
 
         if (response?.success && response.data?.hasUpdates) {
-          // Trigger immediate refresh when new data is detected
-          refetchDashboard().catch((err) => {
-            console.error('[DASHBOARD] Error refreshing after detecting new data:', err);
-          });
+          console.info(`[DASHBOARD] New data detected (since ${since}), forcing refresh...`);
+          // Force a reload using reloadKey to bypass cache
+          handleRetryFetch();
         }
       } catch (error) {
         // Silently fail - this is a background check, don't spam console
@@ -272,11 +273,11 @@ export const useDashboardData = () => {
       }
     };
 
-    // Check for new data every 20 seconds (between normal refresh intervals)
+    // Check for new data every 20 seconds
     const interval = setInterval(checkForNewData, 20000);
 
     return () => clearInterval(interval);
-  }, [selectedBrandId, dashboardEndpoint, refetchDashboard]);
+  }, [selectedBrandId, dashboardEndpoint]);
 
   useEffect(() => {
     if (dashboardResponse && !dashboardLoading) {
@@ -308,12 +309,14 @@ export const useDashboardData = () => {
       const processDuration = performance.now() - dataProcessStart.current;
       console.info('[DASHBOARD] Data processed', { durationMs: Number(processDuration.toFixed(2)) });
       dataProcessStart.current = performance.now();
+
+      // Update the reference time for "since" checks
+      lastSuccessfulFetch.current = new Date().toISOString();
     }
   }, [dashboardData]);
 
   const handleRetryFetch = () => {
     setReloadKey((prev) => prev + 1);
-    refetchDashboard();
   };
 
   const brandSelectionPending = !selectedBrandId && brandsLoading;
@@ -438,9 +441,8 @@ export const useDashboardData = () => {
         localStorage.setItem(completedAtKey, new Date().toISOString());
         setIsDataCollectionInProgress(false);
 
-        refetchDashboard().catch((err) => {
-          console.error('[DASHBOARD] Error refreshing dashboard after completion:', err);
-        });
+        console.info('[DASHBOARD] Data collection complete, forcing refresh...');
+        handleRetryFetch();
 
         // Keep progress data for a moment to show completion, then clear
         setTimeout(() => {

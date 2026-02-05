@@ -9,37 +9,25 @@ export type ValueScoreSource = Omit<EnhancedSource, 'quadrant'> & {
 
 interface ValueScoreTableProps {
   sources: ValueScoreSource[];
-  /**
-   * Optional cap on visible rows (useful for compact widgets).
-   * If omitted, all rows are rendered.
-   */
+
   maxRows?: number;
-  /**
-   * Max height for the table viewport; enables vertical scrolling.
-   */
+ 
   maxHeight?: number | string;
-  /**
-   * Optional selection UI for controlling the Impact Score Trends chart.
-   */
+ 
   trendSelection?: {
     selectedNames: Set<string>;
     maxSelected: number;
     onToggle: (name: string) => void;
     onDeselectAll?: () => void;
   };
-  /**
-   * Optional source name to highlight (e.g., from deep link)
-   */
+  
   highlightedSourceName?: string | null;
   disableSorting?: boolean;
   pagination?: {
     pageSize: number;
   };
   onHelpClick?: (key: string) => void;
-  /**
-   * Used to calculate percentage of citations (Share of Voice).
-   * If provided and > 0, the Citations column will show %.
-   */
+  
   totalCitations?: number;
 }
 
@@ -49,10 +37,10 @@ const zoneStyles: Record<
   string,
   { bg: string; text: string; label?: string }
 > = {
-  priority: { bg: '#06c686', text: '#fff', label: 'Priority Partnerships' },
-  reputation: { bg: '#f97373', text: '#fff', label: 'Reputation Management' },
-  growth: { bg: '#498cf9', text: '#fff', label: 'Growth Opportunities' },
-  monitor: { bg: '#cbd5e1', text: '#0f172a', label: 'Monitor' }
+  priority: { bg: '#dcfce7', text: '#166534', label: 'Priority Partnerships' }, // green-100 text-green-800
+  reputation: { bg: '#fee2e2', text: '#991b1b', label: 'Reputation Management' }, // red-100 text-red-800
+  growth: { bg: '#dbeafe', text: '#1e40af', label: 'Growth Opportunities' }, // blue-100 text-blue-800
+  monitor: { bg: '#f1f5f9', text: '#475569', label: 'Monitor' } // slate-100 text-slate-600
 };
 
 
@@ -97,31 +85,21 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
     // If all values are equal (span 0) or the value is invalid, still show a soft low score tint.
     const ratio = hasRange ? Math.min(1, Math.max(0, (value - range.min) / span)) : 0.1;
 
-    // Smooth gradient: low = soft red, mid = warm yellow, high = gentle green
-    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-    const colorHsl = (() => {
-      if (ratio < 0.5) {
-        const t = ratio * 2;
-        const h = lerp(8, 45, t); // red -> yellow hue
-        const s = lerp(78, 90, t);
-        const l = lerp(92, 88, t);
-        return `hsl(${h} ${s}% ${l}%)`;
-      }
-      const t = (ratio - 0.5) * 2;
-      const h = lerp(45, 120, t); // yellow -> green hue
-      const s = lerp(90, 55, t);
-      const l = lerp(88, 82, t);
-      return `hsl(${h} ${s}% ${l}%)`;
-    })();
+    // Determine color based on score (Red -> Yellow -> Green)
+    let color = '#334155'; // default slate-700
+    if (metric === 'valueScore') {
+       // Value score gets special treatment - bold and colored
+       if (ratio > 0.8) color = '#15803d'; // green-700
+       else if (ratio > 0.4) color = '#b45309'; // amber-700
+       else color = '#b91c1c'; // red-700
+    }
 
     return {
       style: {
-        backgroundColor: colorHsl,
-        borderRadius: 8,
-        boxShadow: 'inset 0 0 0 1px rgba(15,23,42,0.04)',
-        transition: 'background-color 140ms ease, color 140ms ease'
+        background: 'transparent',
+        transition: 'color 140ms ease'
       },
-      textColor: '#0f172a'
+      textColor: color
     };
   };
 
@@ -185,15 +163,19 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
   }, [isPaging, page, pageSize, sortedSources.length]);
 
   const headerCellBase: React.CSSProperties = {
-    padding: '10px 8px',
-    fontWeight: 700,
+    padding: '12px 16px',
+    fontWeight: 600,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
     cursor: disableSorting ? 'default' : 'pointer',
     position: 'sticky',
     top: 0,
     zIndex: 2,
     background: '#f8fafc',
-    color: '#475569',
-    boxShadow: 'inset 0 -1px 0 #e5e7eb'
+    color: '#64748b',
+    borderBottom: '1px solid #e2e8f0',
+    transition: 'background 200ms ease'
   };
 
   const selectedCount = trendSelection ? trendSelection.selectedNames.size : 0;
@@ -227,11 +209,11 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
   const endItem = Math.min(safePage * pageSize, totalCount);
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, height: '100%', boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+    <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20, height: '100%', boxShadow: '0 8px 18px rgba(15,23,42,0.06)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <h3 style={{ margin: 0, fontSize: 16, color: '#1a1d29', fontWeight: 700 }}>Top Sources</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h3 style={{ margin: 0, fontSize: 18, color: '#0f172a', fontWeight: 800 }}>Top Sources</h3>
             {onHelpClick && (
               <HelpButton
                 onClick={(e) => {
@@ -243,27 +225,27 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
               />
             )}
           </div>
-          <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Composite score based on Visibility, SOA, Sentiment, Citations and Topics</p>
+          <p style={{ margin: '2px 0 0', fontSize: 13, color: '#64748b', fontWeight: 500 }}>Composite score based on Visibility, SOA, Sentiment, Citations and Topics</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           {trendSelection && (
             <>
-              <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>
+              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
                 Trends: {selectedCount}/{trendSelection.maxSelected}
               </span>
               {selectedCount > 0 && trendSelection.onDeselectAll && (
                 <button
                   onClick={trendSelection.onDeselectAll}
                   style={{
-                    padding: '4px 10px',
-                    borderRadius: 6,
-                    border: '1px solid #e5e7eb',
+                    padding: '6px 12px',
+                    borderRadius: 8,
+                    border: '2px solid #e5e7eb',
                     background: '#fff',
                     color: '#64748b',
-                    fontSize: 11,
-                    fontWeight: 600,
+                    fontSize: 12,
+                    fontWeight: 700,
                     cursor: 'pointer',
-                    transition: 'background 160ms ease, border-color 160ms ease',
+                    transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
                     whiteSpace: 'nowrap'
                   }}
                   onMouseEnter={(e) => {
@@ -280,18 +262,7 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
               )}
             </>
           )}
-          <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Heatmap</span>
-          <div
-            aria-hidden
-            style={{
-              height: 8,
-              width: 84,
-              borderRadius: 999,
-              background:
-                'linear-gradient(90deg, hsl(8 78% 92%) 0%, hsl(45 90% 88%) 50%, hsl(120 55% 82%) 100%)',
-              boxShadow: 'inset 0 0 0 1px rgba(15,23,42,0.06)'
-            }}
-          />
+          
         </div>
       </div>
       {isPaging && (
@@ -526,11 +497,12 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                 <tr
                   key={s.name}
                   style={{
-                    borderTop: '1px solid #e5e7eb',
+                    borderBottom: '1px solid #f1f5f9',
                     backgroundColor: isHighlighted ? '#fef3c7' : undefined,
-                    borderLeft: isHighlighted ? '4px solid #f59e0b' : undefined,
-                    transition: 'background-color 0.3s ease, border-left 0.3s ease'
+                    borderLeft: isHighlighted ? '4px solid #f59e0b' : '4px solid transparent',
+                    transition: 'all 0.2s ease'
                   }}
+                  className="hover:bg-slate-50 transition-colors"
                 >
                   {trendSelection && (() => {
                     const isChecked = trendSelection.selectedNames.has(s.name);
@@ -548,17 +520,18 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                       </td>
                     );
                   })()}
-                  <td style={{ padding: '10px 8px', color: '#0f172a', fontWeight: 600 }}>{s.name}</td>
-                  <td style={{ padding: '10px 8px', color: '#475569' }}>{s.type}</td>
+                  <td style={{ padding: '12px 16px', color: '#0f172a', fontWeight: 600, fontSize: 13 }}>{s.name}</td>
+                  <td style={{ padding: '12px 16px', color: '#64748b', fontSize: 13 }}>{s.type}</td>
                   {(() => {
                     const { style, textColor } = heatmapStyle('valueScore', s.valueScore);
                     return (
                       <td
                         style={{
-                          padding: '10px 8px',
+                          padding: '12px 16px',
                           textAlign: 'right',
                           color: textColor || '#0f172a',
                           fontWeight: 700,
+                          fontFeatureSettings: '"tnum"',
                           ...style
                         }}
                       >
@@ -571,9 +544,10 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                     return (
                       <td
                         style={{
-                          padding: '10px 8px',
+                          padding: '12px 16px',
                           textAlign: 'right',
-                          color: textColor || '#0f172a',
+                          color: textColor || '#475569',
+                          fontFeatureSettings: '"tnum"',
                           ...style
                         }}
                       >
@@ -586,9 +560,10 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                     return (
                       <td
                         style={{
-                          padding: '10px 8px',
+                          padding: '12px 16px',
                           textAlign: 'right',
-                          color: textColor || '#0f172a',
+                          color: textColor || '#475569',
+                          fontFeatureSettings: '"tnum"',
                           ...style
                         }}
                       >
@@ -601,9 +576,10 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                     return (
                       <td
                         style={{
-                          padding: '10px 8px',
+                          padding: '12px 16px',
                           textAlign: 'right',
-                          color: textColor || '#0f172a',
+                          color: textColor || '#475569',
+                          fontFeatureSettings: '"tnum"',
                           ...style
                         }}
                       >
@@ -616,9 +592,10 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                     return (
                       <td
                         style={{
-                          padding: '10px 8px',
+                          padding: '12px 16px',
                           textAlign: 'right',
-                          color: textColor || '#0f172a',
+                          color: textColor || '#475569',
+                          fontFeatureSettings: '"tnum"',
                           ...style
                         }}
                       >
@@ -628,7 +605,7 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                       </td>
                     );
                   })()}
-                  <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                  <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                     <span
                       style={{
                         display: 'inline-block',
@@ -636,8 +613,10 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                         borderRadius: 999,
                         backgroundColor: zoneStyles[s.quadrant]?.bg || '#e2e8f0',
                         color: zoneStyles[s.quadrant]?.text || '#0f172a',
-                        fontWeight: 700,
-                        fontSize: 12
+                        fontWeight: 600,
+                        fontSize: 11,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.02em'
                       }}
                     >
                       {zoneStyles[s.quadrant]?.label || s.quadrant}

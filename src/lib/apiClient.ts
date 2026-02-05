@@ -93,7 +93,10 @@ class ApiClient {
   /**
    * Get the customer ID being impersonated by admin (from adminStore persistence)
    */
-  private getImpersonatingCustomerId(): string | null {
+  /**
+   * Get the customer ID being impersonated by admin (from adminStore persistence)
+   */
+  public getImpersonatingCustomerId(): string | null {
     try {
       const stored = localStorage.getItem('admin-selection-storage');
       if (stored) {

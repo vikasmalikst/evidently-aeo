@@ -36,6 +36,11 @@ interface ValueScoreTableProps {
     pageSize: number;
   };
   onHelpClick?: (key: string) => void;
+  /**
+   * Used to calculate percentage of citations (Share of Voice).
+   * If provided and > 0, the Citations column will show %.
+   */
+  totalCitations?: number;
 }
 
 type SortKey = 'name' | 'type' | 'valueScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' | 'quadrant';
@@ -52,7 +57,7 @@ const zoneStyles: Record<
 
 
 
-export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSelection, highlightedSourceName, disableSorting, pagination, onHelpClick }: ValueScoreTableProps) => {
+export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSelection, highlightedSourceName, disableSorting, pagination, onHelpClick, totalCitations }: ValueScoreTableProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('valueScore');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -491,7 +496,7 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
               </th>
               <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('citations')}>
                 <div className="flex items-center justify-end gap-1">
-                  Citations {sortIndicator('citations')}
+                  {totalCitations && totalCitations > 0 ? 'Citations %' : 'Citations'} {sortIndicator('citations')}
                   {onHelpClick && (
                     <HelpButton
                       onClick={(e) => {
@@ -617,7 +622,9 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                           ...style
                         }}
                       >
-                        {s.citations}
+                        {totalCitations && totalCitations > 0
+                          ? `${((s.citations / totalCitations) * 100).toFixed(1)}%`
+                          : s.citations}
                       </td>
                     );
                   })()}

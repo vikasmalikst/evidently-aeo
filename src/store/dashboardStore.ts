@@ -31,7 +31,7 @@ export const useDashboardStore = create<DashboardState>()(
             },
             llmFilters: [],
             setLlmFilters: (llmFilters) => set({ llmFilters }),
-            queryTags: [],
+            queryTags: ['blind'],
             setQueryTags: (queryTags) => set({ queryTags })
         }),
         {

@@ -373,6 +373,11 @@ export const SearchSourcesR2 = () => {
 
 
 
+  const totalCitations = useMemo(() => {
+    const list = isProcessedReady ? processedSources : sourceData;
+    return list?.reduce((acc, s) => acc + (s.citations || 0), 0) || 0;
+  }, [isProcessedReady, processedSources, sourceData]);
+
   const isLoading = authLoading || brandsLoading || loading;
   const errorMessage = error
     ? typeof error === 'string'
@@ -606,6 +611,7 @@ export const SearchSourcesR2 = () => {
               }}
               highlightedSourceName={highlightSource}
               onHelpClick={(key) => handleHelpClick(key as any)}
+              totalCitations={totalCitations}
             />
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>

@@ -61,6 +61,10 @@ export const CitationSourcesTableModal: React.FC<CitationSourcesTableModalProps>
 
     const displaySources = processedSources || [];
 
+    const totalCitations = useMemo(() => {
+        return displaySources.reduce((acc, s) => acc + (s.citations || 0), 0);
+    }, [displaySources]);
+
     if (!isOpen) return null;
 
     return (
@@ -115,6 +119,7 @@ export const CitationSourcesTableModal: React.FC<CitationSourcesTableModalProps>
                                 pagination={{ pageSize: 20 }}
                                 // No trend selection
                                 highlightedSourceName={null}
+                                totalCitations={totalCitations}
                             />
                         </div>
                     )}

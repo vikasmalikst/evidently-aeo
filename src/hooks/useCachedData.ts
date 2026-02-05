@@ -260,6 +260,9 @@ export function useCachedData<T>(
         }
       } else {
         cacheDebugLog(`[useCachedData] ❌ CACHE MISS at`, performance.now(), `- Cache check took: ${cacheCheckTime.toFixed(2)}ms`);
+        // If we don't have cached data for the new endpoint, strictly clear the state
+        // This prevents showing stale data from the previous endpoint (e.g. when switching filters)
+        setData(null);
       }
     } catch (e) {
       console.error(`[useCachedData] Error checking cache:`, e);

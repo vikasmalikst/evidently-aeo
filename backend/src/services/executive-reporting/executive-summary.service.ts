@@ -39,6 +39,7 @@ export class ExecutiveSummaryService {
                 biggest_loss: reportData.top_movers.queries.losses[0] || this.getEmptyTopMover(),
             },
             competitive_threats: this.identifyCompetitiveThreats(reportData.competitive_landscape),
+            query_opportunities: reportData.query_opportunities,
             traffic_impact: reportData.traffic_attribution ? {
                 sessions_change: reportData.traffic_attribution.deltas.sessions.percentage,
                 conversions_change: reportData.traffic_attribution.deltas.conversions.percentage,
@@ -256,6 +257,14 @@ ${input.user_feedback ? 'IMPORTANT: This is a REGENERATION request. You MUST pri
             .map(c => `${c.name}: SOA ${c.current.share_of_answer.toFixed(1)}% (${c.deltas.share_of_answer.absolute > 0 ? '+' : ''}${c.deltas.share_of_answer.absolute.toFixed(1)}%)`)
             .join(', ');
 
+        let queryOpportunitiesText = '';
+        if (input.query_opportunities && input.query_opportunities.top_opportunities.length > 0) {
+            queryOpportunitiesText = input.query_opportunities.top_opportunities
+                .slice(0, 3) // Only top 3 to save tokens
+                .map(o => `- ${o.severity} Priority: "${o.queryText}" (Gap: ${o.gap.toFixed(1)} ${o.metricName})`)
+                .join('\n');
+        }
+
         const basePrompt = `You are generating an executive-level summary for AEO performance.
 
 Input data:
@@ -278,6 +287,9 @@ ${summaryFactsText || '(No significant events detected)'}
 
 - Competitive landscape:
 ${competitiveThreatsText || 'No competitor data available'}
+
+- Strategic Opportunities:
+${queryOpportunitiesText || 'No critical gaps identified'}
 
 ${input.traffic_impact ? `- Traffic impact:\n  - Sessions: ${input.traffic_impact.sessions_change > 0 ? '+' : ''}${input.traffic_impact.sessions_change.toFixed(1)}%\n  - Conversions: ${input.traffic_impact.conversions_change > 0 ? '+' : ''}${input.traffic_impact.conversions_change.toFixed(1)}%` : ''}`;
 
@@ -306,7 +318,8 @@ Generate 3-5 bullet points for senior leadership:
 - Use plain business language (no jargon)
 - Every statement must reference specific metrics from the input above
 - Do not speculate or add information not present in the data
-- Focus on: biggest wins, important risks, competitive threats, strategic focus
+- Focus on: biggest wins, important risks, competitive threats, and strategic opportunities
+- If 'Strategic Opportunities' are provided, you MUST include one bullet point summarizing opportunities/gaps.
 
 Format as plain bullet points (start each with "-"). Do NOT use JSON or any other format.`;
     }

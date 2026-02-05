@@ -33,6 +33,11 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
     const [newQueryTopicId, setNewQueryTopicId] = useState<string | null>(null);
     const [newQueryText, setNewQueryText] = useState('');
 
+    // Add Topic State
+    const [isAddingTopic, setIsAddingTopic] = useState(false);
+    const [newTopicName, setNewTopicName] = useState('');
+    const [newTopicType, setNewTopicType] = useState<'biased' | 'blind'>('biased');
+
     // Initial load: Flatten the nested JSON structure into editable state
     useEffect(() => {
         const list: EditableTopic[] = [];
@@ -151,6 +156,32 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
         }
     };
 
+    // Topic Management
+    const deleteTopic = (id: string) => {
+        if (confirm('Are you sure you want to delete this entire category and all its queries?')) {
+            setTopics(prev => prev.filter(t => t.id !== id));
+        }
+    };
+
+    const addTopic = () => {
+        if (newTopicName.trim()) {
+            const newId = `${newTopicType}-${Date.now()}`;
+            const newTopic: EditableTopic = {
+                id: newId,
+                name: newTopicName.trim(),
+                type: newTopicType,
+                queries: []
+            };
+
+            setTopics(prev => [...prev, newTopic]);
+
+            // Reset state and open the new topic
+            setNewTopicName('');
+            setIsAddingTopic(false);
+            setOpenTopicIds(prev => ({ ...prev, [newId]: true }));
+        }
+    };
+
     const handleContinue = () => {
         // Re-structure data back to JSON format expected by backend/next steps
         // Note: We might be losing the original 'category' key mapping if we renamed topics,
@@ -250,6 +281,13 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
                                                 title="Rename Category"
                                             >
                                                 <IconPencil size={14} />
+                                            </button>
+                                            <button
+                                                onClick={() => deleteTopic(topic.id)}
+                                                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"
+                                                title="Delete Category"
+                                            >
+                                                <IconTrash size={14} />
                                             </button>
                                             <div className="flex items-center gap-2">
                                                 <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${isBiased
@@ -356,6 +394,81 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
                         </div>
                     );
                 })}
+            </div>
+
+            {/* Add New Topic Section */}
+            <div className="mt-4 pt-4 border-t border-[var(--border-default)]">
+                {isAddingTopic ? (
+                    <div className="border border-[var(--accent-primary)] rounded-xl bg-blue-50/20 p-4 animate-in fade-in zoom-in-95 duration-200">
+                        <h3 className="text-sm font-bold text-[var(--text-headings)] mb-3">Add New Category</h3>
+                        <div className="flex flex-col gap-3">
+                            <div className="flex flex-col gap-1">
+                                <label className="text-xs font-medium text-gray-600">Category Name</label>
+                                <input
+                                    value={newTopicName}
+                                    onChange={e => setNewTopicName(e.target.value)}
+                                    placeholder="e.g. Price & Cost"
+                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] bg-white"
+                                    autoFocus
+                                    onKeyDown={e => e.key === 'Enter' && addTopic()}
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                                <label className="text-xs font-medium text-gray-600">Attempt Type</label>
+                                <div className="flex items-center gap-4">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="topicType"
+                                            checked={newTopicType === 'biased'}
+                                            onChange={() => setNewTopicType('biased')}
+                                            className="text-[var(--accent-primary)] focus:ring-[var(--accent-primary)]"
+                                        />
+                                        <span className="text-sm text-gray-700">Biased (Brand Specific)</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="topicType"
+                                            checked={newTopicType === 'blind'}
+                                            onChange={() => setNewTopicType('blind')}
+                                            className="text-[var(--accent-primary)] focus:ring-[var(--accent-primary)]"
+                                        />
+                                        <span className="text-sm text-gray-700">Blind (Category Generic)</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 mt-2">
+                                <button
+                                    onClick={addTopic}
+                                    disabled={!newTopicName.trim()}
+                                    className="px-4 py-1.5 bg-[var(--accent-primary)] text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                >
+                                    Add Category
+                                </button>
+                                <button
+                                    onClick={() => setIsAddingTopic(false)}
+                                    className="px-4 py-1.5 text-gray-600 text-sm font-medium hover:bg-gray-100 rounded-lg transition-all"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <button
+                        onClick={() => {
+                            setIsAddingTopic(true);
+                            setNewTopicName('');
+                        }}
+                        className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-gray-500 font-medium text-sm hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)] hover:bg-blue-50/50 transition-all flex items-center justify-center gap-2"
+                    >
+                        <IconPlus size={18} />
+                        Add New Category
+                    </button>
+                )}
             </div>
 
             <div className="flex justify-between mt-8 pt-6 border-t border-gray-100 mb-6">

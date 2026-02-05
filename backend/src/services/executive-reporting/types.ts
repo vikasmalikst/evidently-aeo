@@ -26,6 +26,36 @@ export interface ReportDataSnapshot {
     actions_impact: ActionsImpactData;
     top_movers: TopMoversData;
     opportunities: OpportunitiesData;
+    query_opportunities?: QueryOpportunitiesData;
+}
+
+export interface QueryBasedOpportunity {
+    id: string;
+    queryId: string;
+    queryText: string;
+    queryCategory: 1 | 2 | 3;
+    metricName: 'visibility' | 'soa' | 'sentiment';
+    brandValue: number;
+    targetValue: number;
+    gap: number;
+    severity: 'Critical' | 'High' | 'Medium' | 'Low';
+    priorityScore: number;
+    competitor: string | null;
+    topSources: Array<{ domain: string; url?: string; impactScore: number }>;
+    responseCount: number;
+    topic: string | null;
+}
+
+export interface QueryOpportunitiesSummary {
+    total: number;
+    bySeverity: { critical: number; high: number; medium: number; low: number };
+    byCategory: { 1: number; 2: number; 3: number };
+    byMetric: { visibility: number; soa: number; sentiment: number };
+}
+
+export interface QueryOpportunitiesData {
+    summary: QueryOpportunitiesSummary;
+    top_opportunities: QueryBasedOpportunity[];
 }
 
 export interface OpportunityItem {
@@ -335,6 +365,7 @@ export interface ExecutiveSummaryInput {
         biggest_loss: TopMoverItem;
     };
     competitive_threats: CompetitorMetrics[];
+    query_opportunities?: QueryOpportunitiesData;
     traffic_impact?: {
         sessions_change: number;
         conversions_change: number;

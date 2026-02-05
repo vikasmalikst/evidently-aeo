@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IconCheck, IconLoader2, IconAlertTriangle } from '@tabler/icons-react';
 import { submitBrandOnboarding, type BrandOnboardingData } from '../../../api/brandApi';
+import { SafeLogo } from '../common/SafeLogo';
 
 interface CompletionStepProps {
     data: any;
@@ -18,6 +19,18 @@ export const CompletionStep = ({ data, enrichment, onBack }: CompletionStepProps
     const navigate = useNavigate();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Calculate counts
+    const getQueryCount = (promptsObj: any) => {
+        if (!promptsObj) return 0;
+        return Object.values(promptsObj).reduce((acc: number, val: any) => {
+            return acc + (Array.isArray(val) ? val.length : 0);
+        }, 0);
+    };
+
+    const biasedCount = getQueryCount(data.biased_prompts);
+    const blindCount = getQueryCount(data.blind_prompts);
+    const totalQueries = biasedCount + blindCount;
 
     const handleSubmit = async () => {
         setIsSubmitting(true);
@@ -122,7 +135,7 @@ export const CompletionStep = ({ data, enrichment, onBack }: CompletionStepProps
     };
 
     return (
-        <div className="max-w-2xl mx-auto text-center animate-in fade-in zoom-in duration-300">
+        <div className="max-w-3xl mx-auto text-center animate-in fade-in zoom-in duration-300">
 
             {!isSubmitting && !error && (
                 <>
@@ -131,30 +144,55 @@ export const CompletionStep = ({ data, enrichment, onBack }: CompletionStepProps
                     </div>
                     <h2 className="text-3xl font-bold text-[var(--text-headings)]">Ready to Import</h2>
                     <p className="text-[var(--text-caption)] mt-4 max-w-md mx-auto text-base">
-                        You are about to import <strong>{data.brand_name}</strong> with:
+                        You are about to import <strong>{data.brand_name}</strong>.
                     </p>
 
-                    <ul className="my-8 space-y-3 text-left max-w-sm mx-auto bg-gray-50 p-6 rounded-xl border border-[var(--border-default)]">
-                        <li className="flex items-center gap-3 text-sm font-medium">
-                            <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs">C</span>
-                            {data.competitors?.length || 0} Competitors
-                        </li>
-                        <li className="flex items-center gap-3 text-sm font-medium">
-                            <span className="w-6 h-6 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-xs">Q</span>
-                            Queries (Biased & Blind)
-                        </li>
-                        <li className="flex items-center gap-3 text-sm font-medium">
-                            <span className="w-6 h-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs">P</span>
-                            {enrichment.brandProducts?.length || 0} Products
-                        </li>
-                        <li className="flex items-center gap-3 text-sm font-medium">
-                            <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs">S</span>
-                            {enrichment.brandSynonyms?.length || 0} Synonyms
-                        </li>
-                    </ul>
+                    <div className="mt-8 mb-10 space-y-6">
+                        {/* Competitors Section */}
+                        <div className="bg-gray-50 border border-[var(--border-default)] rounded-xl p-6">
+                            <h3 className="text-sm font-bold text-[var(--text-headings)] mb-4 text-left flex items-center gap-2">
+                                <span className="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center text-xs">C</span>
+                                Tracking {data.competitors?.length || 0} Competitors
+                            </h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                {data.competitors?.map((comp: any, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
+                                        <SafeLogo
+                                            domain={comp.domain}
+                                            alt={comp.company_name}
+                                            className="w-8 h-8 rounded shrink-0 object-contain"
+                                        />
+                                        <span className="text-sm font-medium text-gray-700 truncate" title={comp.company_name}>
+                                            {comp.company_name}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
 
-                    <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl text-sm text-blue-800 mb-8 max-w-lg mx-auto">
-                        <strong>Note:</strong> Data collection will NOT start automatically. You will need to trigger it manually from the Admin console or Brand Settings after import.
+                        {/* Queries Section */}
+                        <div className="bg-gray-50 border border-[var(--border-default)] rounded-xl p-6">
+                            <h3 className="text-sm font-bold text-[var(--text-headings)] mb-4 text-left flex items-center gap-2">
+                                <span className="bg-purple-100 text-purple-700 w-5 h-5 rounded-full flex items-center justify-center text-xs">Q</span>
+                                Tracking {totalQueries} Queries
+                            </h3>
+                            <div className="flex flex-wrap gap-4">
+                                <div className="flex-1 p-3 bg-white rounded-lg border border-gray-100 shadow-sm flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                                        <span className="text-sm text-gray-600">Branded Queries</span>
+                                    </div>
+                                    <span className="text-lg font-bold text-purple-700">{biasedCount}</span>
+                                </div>
+                                <div className="flex-1 p-3 bg-white rounded-lg border border-gray-100 shadow-sm flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                        <span className="text-sm text-gray-600">Neutral Queries</span>
+                                    </div>
+                                    <span className="text-lg font-bold text-blue-700">{blindCount}</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div className="flex gap-4 justify-center">

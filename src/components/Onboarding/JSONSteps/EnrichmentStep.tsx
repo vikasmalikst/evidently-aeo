@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { IconTags, IconBulb, IconAlertCircle } from '@tabler/icons-react';
+import { useState, useEffect } from 'react';
+import { IconTags, IconBulb, IconRotateClockwise } from '@tabler/icons-react';
+import { generateSynonyms } from '../../../lib/onboardingUtils';
+import { SafeLogo } from '../common/SafeLogo';
 
 // SimpleTagList component defined locally to avoid import issues
 const SimpleTagList = ({ items, onItemsChange, placeholder, colorClass, bgClass }: any) => {
@@ -61,6 +63,7 @@ interface EnrichmentStepProps {
     setCompetitorProducts: (v: Record<string, string[]>) => void;
 
     brandName: string;
+    brandUrl: string;
     competitors: any[];
     onNext: () => void;
     onBack: () => void;
@@ -71,12 +74,31 @@ export const EnrichmentStep = ({
     brandProducts, setBrandProducts,
     competitorSynonyms, setCompetitorSynonyms,
     competitorProducts, setCompetitorProducts,
-    brandName, competitors,
+    brandName, brandUrl, competitors,
     onNext, onBack
 }: EnrichmentStepProps) => {
 
     const [activeTab, setActiveTab] = useState<'brand' | 'competitors'>('brand');
     const [selectedCompetitorIndex, setSelectedCompetitorIndex] = useState(0);
+
+    // Auto-generate synonyms on mount if empty (and we have brand name)
+    useEffect(() => {
+        if (brandName && brandSynonyms.length === 0) {
+            const generated = generateSynonyms(brandName, brandUrl);
+            if (generated.length > 0) {
+                setBrandSynonyms(generated);
+            }
+        }
+    }, [brandName, brandUrl]);
+
+    const handleRegenerateBrand = () => {
+        const generated = generateSynonyms(brandName, brandUrl);
+        if (generated.length > 0) {
+            // Merge with existing avoiding duplicates
+            const merged = Array.from(new Set([...brandSynonyms, ...generated]));
+            setBrandSynonyms(merged);
+        }
+    };
 
     const currentCompetitor = competitors[selectedCompetitorIndex];
 
@@ -96,12 +118,7 @@ export const EnrichmentStep = ({
                 </p>
             </div>
 
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-start gap-3">
-                <IconAlertCircle className="text-yellow-600 flex-shrink-0 mt-0.5" size={20} />
-                <div className="text-sm text-yellow-800">
-                    <strong>Why is this needed?</strong> The report JSON didn't contain explicit lists of products or brand aliases (e.g. "OTB" for On The Beach). Adding them here ensures we track all variations.
-                </div>
-            </div>
+
 
             <div className="flex border-b border-[var(--border-default)] mb-6">
                 <button
@@ -128,9 +145,30 @@ export const EnrichmentStep = ({
                 {activeTab === 'brand' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                         <div>
-                            <label className="block text-sm font-bold text-[var(--text-headings)] mb-2 flex items-center gap-2">
-                                <IconTags size={16} /> Brand Synonyms / Aliases
-                            </label>
+                            <div className="flex items-center gap-3 mb-6 bg-blue-50/50 p-3 rounded-lg border border-blue-100">
+                                <SafeLogo
+                                    domain={brandUrl}
+                                    alt={brandName}
+                                    className="w-10 h-10 rounded-md object-contain bg-white shadow-sm"
+                                />
+                                <div>
+                                    <div className="font-bold text-[var(--text-headings)]">{brandName}</div>
+                                    <div className="text-xs text-[var(--text-caption)]">{brandUrl}</div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-sm font-bold text-[var(--text-headings)] flex items-center gap-2">
+                                    <IconTags size={16} /> Brand Synonyms / Aliases
+                                </label>
+                                <button
+                                    onClick={handleRegenerateBrand}
+                                    className="text-[10px] flex items-center gap-1 text-[var(--accent-primary)] hover:underline font-medium"
+                                    title="Auto-generate based on Brand Name & URL"
+                                >
+                                    <IconRotateClockwise size={12} /> Auto-Generate
+                                </button>
+                            </div>
                             <p className="text-xs text-[var(--text-caption)] mb-3">
                                 Alternate names people use (e.g. "OTB", "OnTheBeach").
                             </p>
@@ -143,6 +181,7 @@ export const EnrichmentStep = ({
                             />
                         </div>
                         <div>
+                            <div className="h-[74px] mb-6"></div> {/* Spacer to align with logo section */}
                             <label className="block text-sm font-bold text-[var(--text-headings)] mb-2 flex items-center gap-2">
                                 <IconBulb size={16} /> Key Products / Categories
                             </label>
@@ -166,12 +205,18 @@ export const EnrichmentStep = ({
                                 <button
                                     key={idx}
                                     onClick={() => setSelectedCompetitorIndex(idx)}
-                                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm mb-1 transition-colors ${idx === selectedCompetitorIndex
+                                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm mb-1 transition-colors flex items-center gap-3 ${idx === selectedCompetitorIndex
                                         ? 'bg-[var(--accent-primary)] text-white shadow-sm font-medium'
                                         : 'hover:bg-gray-100 text-[var(--text-headings)]'
                                         }`}
                                 >
-                                    {comp.company_name}
+                                    <SafeLogo
+                                        domain={comp.domain}
+                                        alt={comp.company_name}
+                                        className={`w-6 h-6 rounded shrink-0 object-contain ${idx === selectedCompetitorIndex ? 'bg-white/20' : 'bg-white border border-gray-100'}`}
+                                        size={24}
+                                    />
+                                    <span className="truncate">{comp.company_name}</span>
                                 </button>
                             ))}
                         </div>
@@ -180,12 +225,21 @@ export const EnrichmentStep = ({
                         <div className="flex-1 pl-2">
                             {currentCompetitor && (
                                 <div>
-                                    <h3 className="font-bold text-lg text-[var(--text-headings)] mb-1">
-                                        {currentCompetitor.company_name}
-                                    </h3>
-                                    <p className="text-xs text-[var(--text-caption)] mb-6">
-                                        {currentCompetitor.domain}
-                                    </p>
+                                    <div className="flex items-center gap-4 mb-6 pb-4 border-b border-gray-100">
+                                        <SafeLogo
+                                            domain={currentCompetitor.domain}
+                                            alt={currentCompetitor.company_name}
+                                            className="w-12 h-12 rounded-lg object-contain bg-white border border-gray-100 shadow-sm"
+                                        />
+                                        <div>
+                                            <h3 className="font-bold text-lg text-[var(--text-headings)] mb-0.5">
+                                                {currentCompetitor.company_name}
+                                            </h3>
+                                            <p className="text-xs text-[var(--text-caption)]">
+                                                {currentCompetitor.domain}
+                                            </p>
+                                        </div>
+                                    </div>
 
                                     <label className="block text-sm font-bold text-[var(--text-headings)] mb-2">
                                         Synonyms / Aliases

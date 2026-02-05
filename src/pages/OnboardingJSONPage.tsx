@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
+import logo from '../assets/logo.png';
 import { OnboardingLayout } from './OnboardingLayout';
 import { useNavigate } from 'react-router-dom';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { IconUpload, IconBuildingStore, IconUsers, IconListCheck, IconTags, IconCheck, IconRotateClockwise } from '@tabler/icons-react';
+import { generateSynonyms } from '../lib/onboardingUtils';
 
 // Step Components (to be created)
 import { UploadStep } from '../components/Onboarding/JSONSteps/UploadStep';
+import { InitialAnalysisStep } from '../components/Onboarding/JSONSteps/InitialAnalysisStep';
 import { ReviewBrandStep } from '../components/Onboarding/JSONSteps/ReviewBrandStep';
 import { ReviewCompetitorsStep } from '../components/Onboarding/JSONSteps/ReviewCompetitorsStep';
 import { ReviewQueriesStep } from '../components/Onboarding/JSONSteps/ReviewQueriesStep';
@@ -14,7 +17,7 @@ import { CompletionStep } from '../components/Onboarding/JSONSteps/CompletionSte
 
 import type { BrandOnboardingData } from '../api/brandApi';
 
-export type JSONOnboardingStep = 'upload' | 'brand' | 'competitors' | 'queries' | 'enrichment' | 'completion';
+export type JSONOnboardingStep = 'upload' | 'initial-analysis' | 'brand' | 'competitors' | 'queries' | 'enrichment' | 'completion';
 
 const STORAGE_KEY = 'json_onboarding_state';
 
@@ -93,84 +96,7 @@ export const OnboardingJSONPage = () => {
         }
     };
 
-    // Helper to generate synonyms based on rules
-    const generateSynonyms = (name: string, url?: string): string[] => {
-        const synonyms = new Set<string>();
 
-        // 1. Brand Name (e.g. "On the Beach")
-        if (name) {
-            const cleanName = name.trim();
-            synonyms.add(cleanName);
-
-            // 1b. Strip common legal suffixes (e.g. "On the Beach Group plc" -> "On the Beach")
-            const legalSuffixes = [
-                /\s+Group\s+plc/i,
-                /\s+plc/i,
-                /\s+Ltd/i,
-                /\s+Limited/i,
-                /\s+Inc/i,
-                /\s+Incorporated/i,
-                /\s+Corp/i,
-                /\s+Corporation/i,
-                /\s+SA/i,
-                /\s+AG/i,
-                /\s+S\.p\.A\./i,
-                /\s+NV/i
-            ];
-
-            let baseName = cleanName;
-            let stripped = false;
-            for (const suffix of legalSuffixes) {
-                if (suffix.test(baseName)) {
-                    baseName = baseName.replace(suffix, '').trim();
-                    stripped = true;
-                    break;
-                }
-            }
-
-            if (stripped && baseName && baseName !== cleanName) {
-                synonyms.add(baseName);
-            }
-        }
-
-        // 2. Shortforms / Initials (e.g. "OTB")
-        if (name) {
-            const initials = name.split(/\s+/).map(w => w[0]).join('').toUpperCase();
-            if (initials.length > 1 && initials.length < 6) {
-                synonyms.add(initials);
-            }
-        }
-
-        // 3. Name without Spaces (e.g. "OnTheBeach")
-        if (name) {
-            // PascalCase-like or just remove space
-            // User example "OnTheBeatch" implies removing spaces but preserving casing? 
-            // Or Capitalizing each word.
-            // Let's assume input "On the Beach" -> "OntheBeach" is what removing spaces does.
-            const noSpaces = name.replace(/\s+/g, '');
-            if (noSpaces !== name) {
-                synonyms.add(noSpaces);
-            }
-        }
-
-        // 4. Website Domain (e.g. "www.onthebeach.com", "onthebeach.com")
-        if (url) {
-            try {
-                // Remove protocol
-                const cleanUrl = url.replace(/(^\w+:|^)\/\//, '').replace(/\/$/, '');
-                synonyms.add(cleanUrl); // "www.onthebeach.co.uk"
-
-                // Also add domain without www if present
-                if (cleanUrl.startsWith('www.')) {
-                    synonyms.add(cleanUrl.replace('www.', ''));
-                }
-            } catch (e) {
-                // ignore invalid urls
-            }
-        }
-
-        return Array.from(synonyms);
-    };
 
     const handleJSONLoaded = (data: any) => {
         // Basic mapping from JSON to internal structure
@@ -199,11 +125,11 @@ export const OnboardingJSONPage = () => {
             setCompetitorSynonyms(compSynonyms);
         }
 
-        setCurrentStep('brand');
+        setCurrentStep('initial-analysis');
     };
 
     const steps = [
-        { id: 'upload', label: 'Upload', icon: IconUpload },
+
         { id: 'brand', label: 'Brand', icon: IconBuildingStore },
         { id: 'competitors', label: 'Competitors', icon: IconUsers },
         { id: 'queries', label: 'Queries', icon: IconListCheck },
@@ -211,7 +137,9 @@ export const OnboardingJSONPage = () => {
         { id: 'completion', label: 'Complete', icon: IconCheck },
     ];
 
-    const currentStepIndex = steps.findIndex(s => s.id === currentStep);
+    // If we are in 'initial-analysis', we treat it as part of the "Brand" step visually (Index 0)
+    // or we could assume it's before brand. For now, let's make it look like "Brand" is active.
+    const currentStepIndex = currentStep === 'initial-analysis' ? 0 : steps.findIndex(s => s.id === currentStep);
 
     if (isLoading) return null; // Or a spinner
 
@@ -220,10 +148,12 @@ export const OnboardingJSONPage = () => {
             {/* Header */}
             <header className="h-16 border-b border-[var(--border-default)] bg-white px-8 flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-[var(--accent-primary)] rounded-lg flex items-center justify-center text-white font-bold">
-                        A
-                    </div>
-                    <h1 className="font-bold text-[var(--text-headings)]">Brand <span className="text-[var(--text-caption)] font-normal">Onboarding</span></h1>
+                    <img src={logo} alt="EvidentlyAEO Logo" className="h-8 w-8 object-contain" />
+                    <h1 className="text-xl font-bold text-[var(--text-headings)] tracking-tight">
+                        EvidentlyAEO
+                    </h1>
+                    <div className="h-6 w-px bg-gray-200 mx-1"></div>
+                    <span className="text-gray-500 font-medium">Brand Onboarding</span>
                 </div>
                 <div className="flex items-center gap-4">
                     {currentStep !== 'upload' && (
@@ -286,6 +216,13 @@ export const OnboardingJSONPage = () => {
                     {currentStep === 'upload' && (
                         <UploadStep onNext={handleJSONLoaded} />
                     )}
+                    {currentStep === 'initial-analysis' && (
+                        <InitialAnalysisStep
+                            data={onboardingData}
+                            updateData={setOnboardingData}
+                            onNext={() => setCurrentStep('brand')}
+                        />
+                    )}
                     {currentStep === 'brand' && (
                         <ReviewBrandStep
                             data={onboardingData}
@@ -322,6 +259,7 @@ export const OnboardingJSONPage = () => {
                             setCompetitorProducts={setCompetitorProducts}
                             // For context
                             brandName={onboardingData.brand_name || ''}
+                            brandUrl={onboardingData.website_url || (onboardingData as any).company_profile?.website || ''}
                             competitors={onboardingData.competitors || []}
                             onNext={() => setCurrentStep('completion')}
                             onBack={() => setCurrentStep('queries')}

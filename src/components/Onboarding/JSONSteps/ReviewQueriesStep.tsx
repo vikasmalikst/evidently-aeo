@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
-    IconListCheck, IconEyeOff, IconEye, IconChevronDown,
+    IconListCheck, IconChevronDown,
     IconChevronRight, IconPencil, IconTrash, IconCheck, IconX, IconPlus
 } from '@tabler/icons-react';
+import { SafeLogo } from '../common/SafeLogo';
 
 interface ReviewQueriesStepProps {
     data: any;
@@ -74,10 +75,8 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
 
         setTopics(list);
 
-        // Auto-open first few
-        const initialOpen: Record<string, boolean> = {};
-        list.slice(0, 2).forEach(t => initialOpen[t.id] = true);
-        setOpenTopicIds(initialOpen);
+        // All compacted by default
+        setOpenTopicIds({});
 
     }, []); // Run once on mount (ignoring data updates to prevent reset)
 
@@ -215,18 +214,25 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
         <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-right-4 duration-300">
             <div className="mb-6 flex justify-between items-end">
                 <div>
-                    <h2 className="text-2xl font-bold text-[var(--text-headings)]">Review Queries</h2>
+                    <div className="flex items-center gap-3 mb-2">
+                        <SafeLogo
+                            domain={data.website_url}
+                            alt={data.brand_name}
+                            className="w-10 h-10 rounded-lg shadow-sm border border-gray-100 object-contain bg-white"
+                        />
+                        <h2 className="text-2xl font-bold text-[var(--text-headings)]">Review Queries</h2>
+                    </div>
                     <div className="flex items-center gap-4 mt-2">
                         <div className="px-3 py-1 bg-purple-50 border border-purple-100 rounded-lg flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full bg-purple-500"></div>
                             <span className="text-sm font-medium text-purple-900">
-                                <strong>{splitCounts.biased}</strong> Biased Queries
+                                <strong>{splitCounts.biased}</strong> Branded Queries
                             </span>
                         </div>
                         <div className="px-3 py-1 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full bg-blue-500"></div>
                             <span className="text-sm font-medium text-blue-900">
-                                <strong>{splitCounts.blind}</strong> Blind Queries
+                                <strong>{splitCounts.blind}</strong> Neutral Queries
                             </span>
                         </div>
                         <span className="text-sm text-[var(--text-caption)] ml-2">
@@ -283,28 +289,38 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
                                                 <IconPencil size={14} />
                                             </button>
                                             <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (!isOpen) toggleTopic(topic.id);
+                                                    setNewQueryTopicId(topic.id);
+                                                    setNewQueryText('');
+                                                }}
+                                                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-[var(--accent-primary)] transition-all"
+                                                title="Add Query"
+                                            >
+                                                <IconPlus size={14} />
+                                            </button>
+                                            <button
                                                 onClick={() => deleteTopic(topic.id)}
                                                 className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"
                                                 title="Delete Category"
                                             >
                                                 <IconTrash size={14} />
                                             </button>
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${isBiased
-                                                    ? 'bg-purple-50 text-purple-700 border-purple-100'
-                                                    : 'bg-blue-50 text-blue-700 border-blue-100'
-                                                    }`}>
-                                                    {isBiased ? 'Biased' : 'Blind'}
-                                                </span>
-                                                <span className="text-xs text-[var(--text-caption)]">• {topic.queries.length} queries</span>
-                                            </div>
                                         </div>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-3 pl-4">
-                                    {isBiased ? <IconEye size={18} className="text-purple-300" /> : <IconEyeOff size={18} className="text-blue-300" />}
+                                <div className="flex items-center gap-2 pl-4">
+                                    <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${isBiased
+                                        ? 'bg-purple-50 text-purple-700 border-purple-100'
+                                        : 'bg-blue-50 text-blue-700 border-blue-100'
+                                        }`}>
+                                        {isBiased ? 'Branded' : 'Neutral'}
+                                    </span>
+                                    <span className="text-xs text-[var(--text-caption)]">• {topic.queries.length} queries</span>
                                 </div>
                             </div>
+
 
                             {/* Queries List */}
                             {isOpen && (
@@ -425,7 +441,7 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
                                             onChange={() => setNewTopicType('biased')}
                                             className="text-[var(--accent-primary)] focus:ring-[var(--accent-primary)]"
                                         />
-                                        <span className="text-sm text-gray-700">Biased (Brand Specific)</span>
+                                        <span className="text-sm text-gray-700">Branded (Brand Specific)</span>
                                     </label>
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
@@ -435,7 +451,7 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
                                             onChange={() => setNewTopicType('blind')}
                                             className="text-[var(--accent-primary)] focus:ring-[var(--accent-primary)]"
                                         />
-                                        <span className="text-sm text-gray-700">Blind (Category Generic)</span>
+                                        <span className="text-sm text-gray-700">Neutral (Category Generic)</span>
                                     </label>
                                 </div>
                             </div>

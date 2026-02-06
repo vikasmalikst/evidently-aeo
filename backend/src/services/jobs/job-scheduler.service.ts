@@ -17,7 +17,7 @@ const supabase: SupabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
   db: { schema: 'public' },
 });
 
-export type JobType = 'data_collection' | 'scoring' | 'data_collection_and_scoring';
+export type JobType = 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry';
 
 export interface ScheduledJob {
   id: string;

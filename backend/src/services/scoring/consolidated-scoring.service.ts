@@ -64,7 +64,7 @@ export class ConsolidatedScoringService {
     try {
       const { data, error } = await this.supabase
         .from('consolidated_analysis_cache')
-        .select('products, sentiment')
+        .select('sentiment')
         .eq('collector_result_id', collectorResultId)
         .maybeSingle();
 
@@ -79,7 +79,7 @@ export class ConsolidatedScoringService {
 
       // Reconstruct analysis object from cached data
       return {
-        products: data.products || { brand: [], competitors: {} },
+        products: { brand: [], competitors: {} }, // Default empty structure as column is removed
         sentiment: data.sentiment || { brand: { label: 'NEUTRAL', score: 60 }, competitors: {} },
         citations: {}, // Citations are stored separately
       };

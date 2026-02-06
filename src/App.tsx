@@ -25,6 +25,7 @@ import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
 import { CustomerEntitlements } from './pages/admin/CustomerEntitlements';
 import { CollectionStats } from './pages/admin/CollectionStats';
+import { OperationsDashboard } from './pages/admin/OperationsDashboard';
 import { DomainReadinessPage } from './pages/DomainReadiness/DomainReadinessPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { EntitlementRoute } from './components/EntitlementRoute';
@@ -428,6 +429,7 @@ function App() {
           <Route path="/admin/data-collection-status" element={<DataCollectionStatus />} />
           <Route path="/admin/collection-stats" element={<CollectionStats />} />
           <Route path="/admin/entitlements" element={<CustomerEntitlements />} />
+          <Route path="/admin/operations" element={<OperationsDashboard />} />
         </Route>
         <Route
           path="/admin/Data_Collection_Status"

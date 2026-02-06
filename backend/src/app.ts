@@ -12,6 +12,8 @@ import './config/database';
 // Import routes
 import authRoutes from './routes/auth.routes';
 import brandRoutes from './routes/brand.routes';
+import scheduledJobsRoutes from './routes/scheduled-jobs.routes';
+import operationsRoutes from './routes/operations.routes';
 import queryGenerationRoutes from './routes/query-generation.routes';
 import trendingKeywordsRoutes from './routes/trending-keywords.routes';
 import dataCollectionRoutes from './routes/data-collection.routes';
@@ -129,6 +131,8 @@ app.use('/api/keywords', keywordGenerationRoutes);
 app.use('/api/citations', citationCategorizationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', promptManagementRoutes);
+app.use('/api/scheduled-jobs', scheduledJobsRoutes);
+app.use('/api/operations', operationsRoutes);
 
 app.use('/api/recommendations-v3', recommendationsV3Routes);
 app.use('/api/movers-shakers', moversShakersRoutes);

@@ -39,6 +39,7 @@ export class DataCollectionJobService {
       country?: string;
       since?: string; // Only collect data for queries created after this timestamp
       suppressScoring?: boolean;
+      specificQueryIds?: string[]; // Only execute these specific query IDs (for filtering/retries)
     }
   ): Promise<DataCollectionJobResult> {
     console.log(`\n🔍 Starting data collection for brand ${brandId} (customer: ${customerId})`);
@@ -75,21 +76,6 @@ export class DataCollectionJobService {
 
       console.log(`\n🔍 [DEBUG] Checking queries for brand ${brandId}, customer ${customerId}`);
       console.log(`   Total queries found (any status): ${allQueries?.length || 0}`);
-      if (allQueries && allQueries.length > 0) {
-        console.log(`   Sample query:`, {
-          id: allQueries[0].id,
-          brand_id: allQueries[0].brand_id,
-          customer_id: allQueries[0].customer_id,
-          is_active: allQueries[0].is_active,
-          is_active_type: typeof allQueries[0].is_active,
-          query_text: allQueries[0].query_text?.substring(0, 50),
-        });
-        const activeCount = allQueries.filter(q => q.is_active === true || q.is_active === 'true').length;
-        const inactiveCount = allQueries.filter(q => q.is_active === false || q.is_active === 'false').length;
-        console.log(`   Breakdown: ${activeCount} active, ${inactiveCount} inactive`);
-      } else if (allQueriesError) {
-        console.error(`   Error fetching all queries:`, allQueriesError);
-      }
 
       // Fetch customer entitlements
       const customerEntitlements = await customerEntitlementsService.getCustomerEntitlements(customerId);
@@ -134,6 +120,12 @@ export class DataCollectionJobService {
       // If 'since' is provided, only get queries created after that time
       if (options?.since) {
         queryBuilder = queryBuilder.gt('created_at', options.since);
+      }
+
+      // 🎯 SURGICAL RETRY / FILTERING: If specific IDs are provided, filter ONLY those
+      if (options?.specificQueryIds && options.specificQueryIds.length > 0) {
+        console.log(`🎯 Executing specific queries only: ${options.specificQueryIds.length} IDs provided`);
+        queryBuilder = queryBuilder.in('id', options.specificQueryIds);
       }
 
       const { data: rawQueries, error: queriesError } = await queryBuilder;

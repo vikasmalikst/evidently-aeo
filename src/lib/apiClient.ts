@@ -98,15 +98,24 @@ class ApiClient {
    */
   public getImpersonatingCustomerId(): string | null {
     try {
+      // First try the admin store persistence
       const stored = localStorage.getItem('admin-selection-storage');
       if (stored) {
         const parsed = JSON.parse(stored);
-        return parsed?.state?.selectedCustomerId || null;
+        if (parsed?.state?.selectedCustomerId) {
+          return parsed.state.selectedCustomerId;
+        }
       }
     } catch {
       // Ignore parse errors
     }
-    return null;
+
+    // Fallback to the direct key used by AdminLayout and manual dashboard
+    try {
+      return localStorage.getItem('admin-impersonation:customer-id');
+    } catch {
+      return null;
+    }
   }
 
   getAccessToken(): string | null {

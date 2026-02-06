@@ -30,7 +30,7 @@ export const QueryTagFilter: React.FC<QueryTagFilterProps> = ({ className, varia
 
     const tooltips: Record<string, string> = {
         'All': 'Show all queries combined.',
-        'Branded Queries': 'Brand-specific queries (e.g. "Adidas running shoes").',
+        'Branded Queries': 'Queries that include Brand names (e.g. "Adidas running shoes").',
         'Neutral Queries': 'Unbranded category queries (e.g. "best running shoes").'
     };
 

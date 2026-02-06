@@ -2066,6 +2066,9 @@ const CreateJobModal = ({
     is_active: true,
   });
 
+  const [time, setTime] = useState('09:00');
+  const [isAdvanced, setIsAdvanced] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -2122,19 +2125,54 @@ const CreateJobModal = ({
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Cron Expression</label>
-            <input
-              type="text"
-              value={formData.cron_expression}
-              onChange={(e) => setFormData({ ...formData, cron_expression: e.target.value })}
-              placeholder="0 9 * * *"
-              className="w-full border rounded px-3 py-2 font-mono text-sm"
-              required
-              disabled={isSubmitting}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Format: minute hour day month weekday (e.g., "0 9 * * *" = daily at 9 AM)
-            </p>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium">Schedule</label>
+              <button
+                type="button"
+                onClick={() => setIsAdvanced(!isAdvanced)}
+                className="text-xs text-blue-600 hover:text-blue-800 underline"
+              >
+                {isAdvanced ? 'Switch to Simple Time' : 'Advanced (Custom Cron)'}
+              </button>
+            </div>
+            
+            {!isAdvanced ? (
+              <div className="relative">
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => {
+                    const newTime = e.target.value;
+                    setTime(newTime);
+                    if (newTime) {
+                      const [hours, minutes] = newTime.split(':');
+                      setFormData({ ...formData, cron_expression: `${parseInt(minutes)} ${parseInt(hours)} * * *` });
+                    }
+                  }}
+                  className="w-full border rounded px-3 py-2"
+                  required={!isAdvanced}
+                  disabled={isSubmitting}
+                />
+                <div className="mt-1 text-xs text-gray-500">
+                  Runs daily at {time} ({formData.cron_expression})
+                </div>
+              </div>
+            ) : (
+              <div>
+                <input
+                  type="text"
+                  value={formData.cron_expression}
+                  onChange={(e) => setFormData({ ...formData, cron_expression: e.target.value })}
+                  placeholder="0 9 * * *"
+                  className="w-full border rounded px-3 py-2 font-mono text-sm"
+                  required={isAdvanced}
+                  disabled={isSubmitting}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Format: min hour day month weekday (e.g. "*/5 * * * *" = every 5 mins)
+                </p>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Timezone</label>

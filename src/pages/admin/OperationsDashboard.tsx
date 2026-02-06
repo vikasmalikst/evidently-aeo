@@ -21,12 +21,15 @@ interface OperationsData {
 
 const COLLECTOR_TYPES = [
     { id: 'all', name: 'All Types' },
-    { id: 'google_search', name: 'Google Search' },
+    { id: 'google_search', name: 'GoogleAIO' },
     { id: 'chatgpt', name: 'ChatGPT' },
     { id: 'claude', name: 'Claude' },
     { id: 'perplexity', name: 'Perplexity' },
     { id: 'gemini', name: 'Gemini' },
+    { id: 'grok', name: 'Grok' },
 ];
+
+
 
 export const OperationsDashboard = () => {
     const { selectedBrandId: hookSelectedBrandId, brands } = useManualBrandDashboard();
@@ -134,6 +137,7 @@ export const OperationsDashboard = () => {
             'perplexity': 'bg-indigo-100 text-indigo-800 border-indigo-200',
             'claude': 'bg-violet-100 text-violet-800 border-violet-200',
             'gemini': 'bg-teal-100 text-teal-800 border-teal-200',
+            'grok': 'bg-orange-100 text-orange-800 border-orange-200',
             'default': 'bg-gray-100 text-gray-800 border-gray-200'
         };
         
@@ -334,7 +338,7 @@ export const OperationsDashboard = () => {
                                                     type="date"
                                                     value={filters.startDate}
                                                     onChange={(e) => setFilters({...filters, startDate: e.target.value})}
-                                                    className="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                                    className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                                 />
                                             </div>
                                             <div>
@@ -343,7 +347,7 @@ export const OperationsDashboard = () => {
                                                     type="date"
                                                     value={filters.endDate}
                                                     onChange={(e) => setFilters({...filters, endDate: e.target.value})}
-                                                    className="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                                    className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                                 />
                                             </div>
                                         </div>
@@ -355,7 +359,7 @@ export const OperationsDashboard = () => {
                                                 <select
                                                     value={filters.brandId}
                                                     onChange={(e) => setFilters({...filters, brandId: e.target.value})}
-                                                    className="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                                    className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                                 >
                                                     <option value="">All Brands</option>
                                                     {brands.map(b => (
@@ -368,7 +372,7 @@ export const OperationsDashboard = () => {
                                                 <select
                                                     value={filters.collectorType}
                                                     onChange={(e) => setFilters({...filters, collectorType: e.target.value})}
-                                                    className="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                                    className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                                 >
                                                     {COLLECTOR_TYPES.map(type => (
                                                         <option key={type.id} value={type.id}>{type.name}</option>
@@ -385,7 +389,7 @@ export const OperationsDashboard = () => {
                                                 placeholder="e.g. 15246"
                                                 value={filters.collectorResultId}
                                                 onChange={(e) => setFilters({...filters, collectorResultId: e.target.value})}
-                                                className="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                                className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                             />
                                         </div>
 
@@ -396,7 +400,7 @@ export const OperationsDashboard = () => {
                                                 placeholder="Contains..."
                                                 value={filters.snapshotId}
                                                 onChange={(e) => setFilters({...filters, snapshotId: e.target.value})}
-                                                className="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                                className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                             />
                                         </div>
                                         
@@ -405,7 +409,7 @@ export const OperationsDashboard = () => {
                                             <select
                                                 value={limit}
                                                 onChange={(e) => setLimit(Number(e.target.value))}
-                                                className="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                                className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                             >
                                                 <option value={10}>10</option>
                                                 <option value={50}>50</option>

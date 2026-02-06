@@ -38,7 +38,7 @@ export const OpportunityFlagsTable = ({ opportunities, competitors = [] }: Oppor
         const gap = opp.gap.toFixed(1);
 
         if (opp.competitor) {
-            return `Share of ${metric} is trailing ${opp.competitor} by ${gap} points`;
+            return `${metric} is trailing ${opp.competitor} by ${gap} points`;
         }
         return `${metric} is less than threshold by ${gap} points`;
     };

@@ -754,6 +754,23 @@ export const MeasurePage = () => {
 
       return [
         {
+          key: 'brandPresence',
+          title: 'Brand Presence',
+          value: `${brandPresencePercentage}%`,
+          subtitle: '',
+          trend: computeTrend(dashboardData?.trendPercentage),
+          icon: <Activity size={20} />,
+          color: '#7c3aed',
+          linkTo: '/measure?kpi=brandPresence',
+          comparisons: buildComparisons('brandPresence'),
+          comparisonSuffix: comparisonSuffix.brandPresence,
+          description: '% of Answers that mention your brand\'s name in the answers.',
+          isActive: selectedKpi === 'brandPresence',
+          onHelpClick: () => handleHelpClick('brandPresence'),
+          metricType: 'brandPresence' as const,
+          hideComparisonHeader: true
+        },
+        {
           key: 'visibility',
           title: 'Visibility Score',
           value: formatMetricValue(visibilityMetric, ''),
@@ -802,23 +819,6 @@ export const MeasurePage = () => {
           isActive: selectedKpi === 'sentiment',
           onHelpClick: () => handleHelpClick('sentiment'),
           metricType: 'sentiment' as const,
-          hideComparisonHeader: true
-        },
-        {
-          key: 'brandPresence',
-          title: 'Brand Presence',
-          value: `${brandPresencePercentage}%`,
-          subtitle: '',
-          trend: computeTrend(dashboardData?.trendPercentage),
-          icon: <Activity size={20} />,
-          color: '#7c3aed',
-          linkTo: '/measure?kpi=brandPresence',
-          comparisons: buildComparisons('brandPresence'),
-          comparisonSuffix: comparisonSuffix.brandPresence,
-          description: '% of Answers that mention your brand\'s name in the answers.',
-          isActive: selectedKpi === 'brandPresence',
-          onHelpClick: () => handleHelpClick('brandPresence'),
-          metricType: 'brandPresence' as const,
           hideComparisonHeader: true
         }
       ];

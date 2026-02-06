@@ -31,6 +31,8 @@ const hardcodedLlmOptions = [
   { value: 'Google AIO', label: 'Google AIO' },
   { value: 'Copilot', label: 'Copilot' },
   { value: 'Gemini', label: 'Gemini' },
+  { value: 'Grok', label: 'Grok' },
+  { value: 'Meta AI', label: 'Meta AI' },
 ];
 
 export const SearchSourcesR2 = () => {
@@ -39,10 +41,44 @@ export const SearchSourcesR2 = () => {
   const { selectedBrandId, selectedBrand, isLoading: brandsLoading } = useManualBrandDashboard();
   const { llmFilters, setLlmFilters, queryTags, startDate, endDate, setStartDate, setEndDate } = useDashboardStore();
 
+  // Filter available LLM options based on brand metadata
+  const availableLlmOptions = useMemo(() => {
+    if (!selectedBrand?.metadata?.ai_models && !selectedBrand?.metadata?.collectors) {
+      return hardcodedLlmOptions;
+    }
+
+    const activeModels: string[] = (selectedBrand.metadata?.ai_models || selectedBrand.metadata?.collectors || [])
+      .map((m: any) => String(m).toLowerCase());
+
+    if (activeModels.length === 0) return hardcodedLlmOptions;
+
+    return hardcodedLlmOptions.filter(opt => {
+      const optLower = opt.value.toLowerCase();
+      // Check for fuzzy match
+      return activeModels.some(active => {
+        if (active.includes(optLower) || optLower.includes(active)) return true;
+        // Special case mappings
+        if (optLower === 'google aio' && (active.includes('google') || active.includes('sge'))) return true;
+        if (optLower === 'copilot' && active.includes('bing')) return true;
+        if (optLower === 'meta ai' && (active.includes('llama') || active.includes('meta'))) return true;
+        return false;
+      });
+    });
+  }, [selectedBrand]);
+
   // Read date range from URL params if available
   const urlStartDate = searchParams.get('startDate');
   const urlEndDate = searchParams.get('endDate');
   const highlightSource = searchParams.get('highlightSource');
+
+  // Clean up selected filters if they suggest a model that isn't available anymore
+  useEffect(() => {
+    const validValues = new Set(availableLlmOptions.map(o => o.value));
+    const validFilters = llmFilters.filter(f => validValues.has(f));
+    if (validFilters.length !== llmFilters.length) {
+      setLlmFilters(validFilters);
+    }
+  }, [availableLlmOptions, llmFilters, setLlmFilters]);
 
   const [activeQuadrant, setActiveQuadrant] = useState<EnhancedSource['quadrant'] | null>(null);
   const [selectedTrendSources, setSelectedTrendSources] = useState<string[]>([]);
@@ -98,31 +134,32 @@ export const SearchSourcesR2 = () => {
   );
 
   const sourceData: SourceData[] = response?.success && response.data ? response.data.sources : [];
-  
+
   // Dynamically filter LLM options based on available data from API
-  const llmOptions = useMemo(() => {
-    // If response is loading or availableModels property is missing (legacy backend), fallback to hardcoded
-    if (!response?.success || !response.data || response.data.availableModels === undefined) {
-      return hardcodedLlmOptions;
-    }
-    
-    const availableModels = response.data.availableModels;
-    
-    // If backend returns empty array, it means no models found in data.
-    // However, if we have no data at all, we might want to show all options?
-    // User requirement: "only show those collecters... for which the brand's data was collected"
-    // So if empty, we return empty.
-    if (!availableModels || availableModels.length === 0) {
-       // If sourceData is also empty, it means truly no data. 
-       // If we return empty here, the filter bar will only show "All".
-       return [];
-    }
-    
-    // Normalize to handle case sensitivity
-    const availableSet = new Set(availableModels.map(m => m.toLowerCase()));
-    
-    return hardcodedLlmOptions.filter(opt => availableSet.has(opt.value.toLowerCase()));
-  }, [response]);
+  // This old logic is now superseded by availableLlmOptions
+  // const llmOptions = useMemo(() => {
+  //   // If response is loading or availableModels property is missing (legacy backend), fallback to hardcoded
+  //   if (!response?.success || !response.data || response.data.availableModels === undefined) {
+  //     return hardcodedLlmOptions;
+  //   }
+
+  //   const availableModels = response.data.availableModels;
+
+  //   // If backend returns empty array, it means no models found in data.
+  //   // However, if we have no data at all, we might want to show all options?
+  //   // User requirement: "only show those collecters... for which the brand's data was collected"
+  //   // So if empty, we return empty.
+  //   if (!availableModels || availableModels.length === 0) {
+  //      // If sourceData is also empty, it means truly no data. 
+  //      // If we return empty here, the filter bar will only show "All".
+  //      return [];
+  //   }
+
+  //   // Normalize to handle case sensitivity
+  //   const availableSet = new Set(availableModels.map(m => m.toLowerCase()));
+
+  //   return hardcodedLlmOptions.filter(opt => availableSet.has(opt.value.toLowerCase()));
+  // }, [response]);
 
   const [processedSources, setProcessedSources] = useState<EnhancedSource[] | null>(null);
 
@@ -412,26 +449,26 @@ export const SearchSourcesR2 = () => {
 
   return (
     <Layout>
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        gap: 12, 
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
         padding: 20,
         background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
         minHeight: '100vh'
       }}>
-        <div style={{ 
-          background: 'rgba(255, 255, 255, 0.9)', 
-          border: '1px solid #e5e7eb', 
-          borderRadius: 12, 
-          padding: 14, 
-          boxShadow: '0 8px 18px rgba(15,23,42,0.06)', 
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.9)',
+          border: '1px solid #e5e7eb',
+          borderRadius: 12,
+          padding: 14,
+          boxShadow: '0 8px 18px rgba(15,23,42,0.06)',
           backdropFilter: 'blur(8px)',
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
-          gap: 20, 
-          flexWrap: 'wrap' 
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 20,
+          flexWrap: 'wrap'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             {selectedBrand && (
@@ -457,7 +494,7 @@ export const SearchSourcesR2 = () => {
               showComparisonInfo={false}
               className="flex-shrink-0"
             />
-            
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm h-[36px]" />
 
@@ -486,7 +523,7 @@ export const SearchSourcesR2 = () => {
                   </button>
 
                   {/* Individual LLM Buttons */}
-                  {llmOptions.map((opt, index) => {
+                  {availableLlmOptions.map((opt, index) => {
                     const isActive = llmFilters.includes(opt.value);
                     return (
                       <button

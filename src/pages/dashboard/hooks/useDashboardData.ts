@@ -224,7 +224,7 @@ export const useDashboardData = () => {
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     console.debug(`[useDashboardData] Endpoint created: ${endpoint}`);
     return endpoint;
-  }, [selectedBrandId, startDate, endDate, reloadKey, isDataCollectionInProgress, brandsLoading, brands, llmFilters, queryTags]);
+  }, [selectedBrandId, startDate, endDate, reloadKey, isDataCollectionInProgress, brandsLoading, brands, llmFilters, queryTags.join(',')]);
 
   const dataFetchStart = useRef(performance.now());
   const {

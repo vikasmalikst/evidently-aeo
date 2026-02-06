@@ -833,7 +833,8 @@ export const MeasurePage = () => {
       brandLabel,
       brandLabel,
       selectedKpi,
-      handleHelpClick
+      handleHelpClick,
+      queryTags
     ]
   );
 

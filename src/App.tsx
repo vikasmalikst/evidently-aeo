@@ -306,7 +306,7 @@ function App() {
           }
         />
         <Route
-          path="/improve/opportunities-qbres"
+          path="/improve/opportunities/qbrs"
           element={
             <EntitlementRoute requiredFeature="recommendations">
               <OpportunitiesQBRES />

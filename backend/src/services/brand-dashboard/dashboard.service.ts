@@ -263,7 +263,8 @@ export class DashboardService {
         (Array.isArray(payload.competitorVisibility) && payload.competitorVisibility.length > 0)
 
       // Only cache if we have valid data structure (even if arrays are empty) AND payload has meaningful data
-      if (!hasCollectorFilter) {
+      // Don't cache if any filter is active (collector or queryTags) since the cache key doesn't include filters
+      if (!hasCollectorFilter && !hasQueryTagFilter) {
         if (
           hasMeaningfulData &&
           payload &&
@@ -307,9 +308,10 @@ export class DashboardService {
     range: NormalizedDashboardRange,
     collectors?: string[],
     timezoneOffset: number = 0,
-    skipCitations: boolean = false
+    skipCitations: boolean = false,
+    queryTags?: string[]
   ): Promise<BrandDashboardPayload> {
-    return buildDashboardPayload(brand, customerId, range, { collectors, timezoneOffset, skipCitations })
+    return buildDashboardPayload(brand, customerId, range, { collectors, timezoneOffset, skipCitations, queryTags })
   }
 }
 

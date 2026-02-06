@@ -178,13 +178,16 @@ export async function generateRecommendationsV3(
 
     const url = `${apiClient.baseUrl}/recommendations-v3/generate`;
     const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
 
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+          ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
         },
         body: JSON.stringify(request),
         signal: timeoutController.signal
@@ -325,13 +328,16 @@ export async function generateContentBulkV3(
 
     const url = `${apiClient.baseUrl}/recommendations-v3/generate-content-bulk`;
     const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
 
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+          ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
         },
         body: JSON.stringify({ generationId, structureConfig }),
         signal: timeoutController.signal
@@ -385,13 +391,16 @@ export async function generateGuidesBulkV3(
 
     const url = `${apiClient.baseUrl}/recommendations-v3/generate-guides-bulk`;
     const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
 
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
         },
         body: JSON.stringify({ generationId }),
         signal: timeoutController.signal
@@ -449,13 +458,15 @@ export async function generateContentV3(
 
     const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/content`;
     const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
 
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+          ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
         },
         body: JSON.stringify(request || {}),
         signal: timeoutController.signal

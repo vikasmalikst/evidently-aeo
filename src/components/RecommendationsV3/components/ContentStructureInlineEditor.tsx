@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { IconPlus, IconTrash, IconSparkles, IconGripVertical, IconDeviceFloppy, IconCheck } from '@tabler/icons-react';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import { StructureSection } from './ContentStructureEditor';
 import { TableStructureEditor } from './TableStructureEditor';
 import { CONTENT_TEMPLATES, getContentTemplates, ContentTemplateType } from '../data/structure-templates';
@@ -15,6 +15,91 @@ interface ContentStructureInlineEditorProps {
     competitors?: string[];
     brandName?: string; // New prop
 }
+
+// Extracted component to handle individual drag controls
+const DraggableSectionItem = ({
+    section,
+    index,
+    onUpdate,
+    onRemove
+}: {
+    section: StructureSection;
+    index: number;
+    onUpdate: (index: number, field: keyof StructureSection, value: string) => void;
+    onRemove: (index: number) => void;
+}) => {
+    const dragControls = useDragControls();
+
+    return (
+        <Reorder.Item
+            value={section}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="group relative"
+            dragListener={false}
+            dragControls={dragControls}
+            whileDrag={{ scale: 1.02, boxShadow: "0px 8px 24px rgba(0,188,220,0.15)", zIndex: 50 }}
+        >
+            <div className="bg-white rounded-xl border border-slate-200/80 hover:border-[#00bcdc]/30 transition-all duration-200 shadow-sm hover:shadow-md overflow-hidden">
+                {/* Section Header */}
+                <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-slate-50/80 to-white border-b border-slate-100">
+                    {/* Drag Handle */}
+                    <div
+                        className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-[#00bcdc] transition-colors touch-none"
+                        onPointerDown={(e) => dragControls.start(e)}
+                    >
+                        <IconGripVertical size={18} />
+                    </div>
+
+                    {/* Section Number Badge */}
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#00bcdc] to-[#0891b2] text-white text-[11px] font-bold flex items-center justify-center shadow-sm flex-shrink-0">
+                        {index + 1}
+                    </div>
+
+                    {/* Title Input */}
+                    <input
+                        type="text"
+                        value={section.title}
+                        onChange={(e) => onUpdate(index, 'title', e.target.value)}
+                        className="flex-1 bg-transparent border-none p-0 text-[14px] font-semibold text-slate-800 focus:ring-0 focus:outline-none placeholder:text-slate-400"
+                        placeholder="Section Title"
+                        onPointerDown={(e) => e.stopPropagation()}
+                    />
+
+                    {/* Delete Button */}
+                    <button
+                        onClick={() => onRemove(index)}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                        onPointerDown={(e) => e.stopPropagation()}
+                    >
+                        <IconTrash size={14} />
+                    </button>
+                </div>
+
+                {/* Section Content */}
+                <div className="px-4 py-3">
+                    {/* Use Table Editor for comparison_table sections, otherwise textarea */}
+                    {section.sectionType === 'comparison_table' ? (
+                        <TableStructureEditor
+                            content={section.content}
+                            onChange={(newContent) => onUpdate(index, 'content', newContent)}
+                        />
+                    ) : (
+                        <textarea
+                            value={section.content}
+                            onChange={(e) => onUpdate(index, 'content', e.target.value)}
+                            className="w-full bg-slate-50/50 border border-slate-200/60 rounded-lg p-3 text-[13px] text-slate-600 focus:ring-2 focus:ring-[#00bcdc]/20 focus:border-[#00bcdc]/40 outline-none transition-all resize-none placeholder:text-slate-400"
+                            placeholder="Describe what this section should cover..."
+                            rows={2}
+                            onPointerDown={(e) => e.stopPropagation()}
+                        />
+                    )}
+                </div>
+            </div>
+        </Reorder.Item>
+    );
+};
 
 export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditorProps> = ({
     recommendationId,
@@ -45,50 +130,50 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
     // Update: Now uses dynamic templates that incorporate brand/competitor data natively
     useEffect(() => {
         console.log(`[ContentStructureInlineEditor] Effect Triggered. Brand: "${brandName}", Competitors: ${competitors?.length}`);
-        
+
         // 1. Get fresh templates with current context
         const templates = getContentTemplates({ brandName, competitors });
-        
-        let template = initialSections 
-            ? [...initialSections] 
+
+        let template = initialSections
+            ? [...initialSections]
             : (templates[contentType] || templates['article']);
 
         // 2. Check for stale comparison table (containing placeholders)
         if (contentType === 'comparison_table') {
-             const tableIndex = template.findIndex(s => s.id === 'table');
-             if (tableIndex >= 0) {
-                 const currentContent = template[tableIndex].content;
-                 const hasPlaceholder = currentContent.includes('[Brand Name]') || currentContent.includes('[Competitor]');
-                 
-                 console.log(`[ContentStructureInlineEditor] Checking table content:`, {
-                     currentContent: currentContent.substring(0, 100) + '...',
-                     hasPlaceholder,
-                     initialSectionsExists: !!initialSections
-                 });
+            const tableIndex = template.findIndex(s => s.id === 'table');
+            if (tableIndex >= 0) {
+                const currentContent = template[tableIndex].content;
+                const hasPlaceholder = currentContent.includes('[Brand Name]') || currentContent.includes('[Competitor]');
 
-                 // If it still has generic placeholders, override with fresh dynamic content
-                 if (hasPlaceholder) {
-                     const freshTemplate = templates['comparison_table'];
-                     const freshTable = freshTemplate.find(s => s.id === 'table');
-                     
-                     if (freshTable) {
-                         console.log(`[ContentStructureInlineEditor] UPGRADING table to dynamic version with brand: ${brandName}`);
-                         
-                         // Create new array to trigger re-render
-                         const newSections = [...template];
-                         newSections[tableIndex] = { ...freshTable };
-                         setSections(newSections);
-                         
-                         // CRITICAL: Propagate to parent so "Generate" uses the updated version
-                         if (initialSections && onChange) {
-                             console.log(`[ContentStructureInlineEditor] Propagating data to parent via onChange`);
-                             onChange(newSections);
-                         }
-                         return;
-                     }
-                 } else {
-                     console.log(`[ContentStructureInlineEditor] validation passed: Table content appears to be already populated.`);
-                 }
+                console.log(`[ContentStructureInlineEditor] Checking table content:`, {
+                    currentContent: currentContent.substring(0, 100) + '...',
+                    hasPlaceholder,
+                    initialSectionsExists: !!initialSections
+                });
+
+                // If it still has generic placeholders, override with fresh dynamic content
+                if (hasPlaceholder) {
+                    const freshTemplate = templates['comparison_table'];
+                    const freshTable = freshTemplate.find(s => s.id === 'table');
+
+                    if (freshTable) {
+                        console.log(`[ContentStructureInlineEditor] UPGRADING table to dynamic version with brand: ${brandName}`);
+
+                        // Create new array to trigger re-render
+                        const newSections = [...template];
+                        newSections[tableIndex] = { ...freshTable };
+                        setSections(newSections);
+
+                        // CRITICAL: Propagate to parent so "Generate" uses the updated version
+                        if (initialSections && onChange) {
+                            console.log(`[ContentStructureInlineEditor] Propagating data to parent via onChange`);
+                            onChange(newSections);
+                        }
+                        return;
+                    }
+                } else {
+                    console.log(`[ContentStructureInlineEditor] validation passed: Table content appears to be already populated.`);
+                }
             }
         }
 
@@ -165,69 +250,13 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
                 <Reorder.Group axis="y" values={sections} onReorder={handleReorder} className="space-y-3">
                     <AnimatePresence initial={false}>
                         {sections.map((section, index) => (
-                            <Reorder.Item
+                            <DraggableSectionItem
                                 key={section.id}
-                                value={section}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, scale: 0.95 }}
-                                className="group relative"
-                                whileDrag={{ scale: 1.02, boxShadow: "0px 8px 24px rgba(0,188,220,0.15)", zIndex: 50 }}
-                            >
-                                <div className="bg-white rounded-xl border border-slate-200/80 hover:border-[#00bcdc]/30 transition-all duration-200 shadow-sm hover:shadow-md overflow-hidden">
-                                    {/* Section Header */}
-                                    <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-slate-50/80 to-white border-b border-slate-100">
-                                        {/* Drag Handle */}
-                                        <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-[#00bcdc] transition-colors">
-                                            <IconGripVertical size={18} />
-                                        </div>
-                                        
-                                        {/* Section Number Badge */}
-                                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#00bcdc] to-[#0891b2] text-white text-[11px] font-bold flex items-center justify-center shadow-sm flex-shrink-0">
-                                            {index + 1}
-                                        </div>
-
-                                        {/* Title Input */}
-                                        <input
-                                            type="text"
-                                            value={section.title}
-                                            onChange={(e) => handleUpdateSection(index, 'title', e.target.value)}
-                                            className="flex-1 bg-transparent border-none p-0 text-[14px] font-semibold text-slate-800 focus:ring-0 focus:outline-none placeholder:text-slate-400"
-                                            placeholder="Section Title"
-                                            onPointerDown={(e) => e.stopPropagation()}
-                                        />
-
-                                        {/* Delete Button */}
-                                        <button
-                                            onClick={() => handleRemoveSection(index)}
-                                            className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                            onPointerDown={(e) => e.stopPropagation()}
-                                        >
-                                            <IconTrash size={14} />
-                                        </button>
-                                    </div>
-
-                                    {/* Section Content */}
-                                    <div className="px-4 py-3">
-                                        {/* Use Table Editor for comparison_table sections, otherwise textarea */}
-                                        {section.sectionType === 'comparison_table' ? (
-                                            <TableStructureEditor
-                                                content={section.content}
-                                                onChange={(newContent) => handleUpdateSection(index, 'content', newContent)}
-                                            />
-                                        ) : (
-                                            <textarea
-                                                value={section.content}
-                                                onChange={(e) => handleUpdateSection(index, 'content', e.target.value)}
-                                                className="w-full bg-slate-50/50 border border-slate-200/60 rounded-lg p-3 text-[13px] text-slate-600 focus:ring-2 focus:ring-[#00bcdc]/20 focus:border-[#00bcdc]/40 outline-none transition-all resize-none placeholder:text-slate-400"
-                                                placeholder="Describe what this section should cover..."
-                                                rows={2}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                            />
-                                        )}
-                                    </div>
-                                </div>
-                            </Reorder.Item>
+                                section={section}
+                                index={index}
+                                onUpdate={handleUpdateSection}
+                                onRemove={handleRemoveSection}
+                            />
                         ))}
                     </AnimatePresence>
                 </Reorder.Group>
@@ -284,13 +313,13 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
                         className="group relative flex items-center gap-2.5 px-6 py-2.5 bg-gradient-to-r from-slate-50 to-white border border-slate-200 text-slate-700 rounded-xl text-[13px] font-bold hover:border-slate-300 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm overflow-hidden"
                     >
                         {/* Subtle hover glow */}
-                        <motion.div 
+                        <motion.div
                             className="absolute inset-0 bg-gradient-to-r from-slate-100/0 via-slate-100/50 to-slate-100/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                             initial={false}
                         />
                         {isSaving ? (
                             <>
-                                <motion.div 
+                                <motion.div
                                     className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full"
                                     animate={{ rotate: 360 }}
                                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}

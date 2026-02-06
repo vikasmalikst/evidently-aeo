@@ -11,6 +11,7 @@ import { SentimentLandscape2 } from './pages/SentimentLandscape2';
 import { RecommendationsV3 } from './pages/RecommendationsV3';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
+import { OnboardingJSONPage } from './pages/OnboardingJSONPage';
 import { PromptSelection } from './pages/PromptSelection';
 import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCollectionLoadingScreen';
 import { OnboardingDomainReadinessScreenRoute } from './components/Onboarding/OnboardingDomainReadinessScreen';
@@ -24,6 +25,7 @@ import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
 import { CustomerEntitlements } from './pages/admin/CustomerEntitlements';
 import { CollectionStats } from './pages/admin/CollectionStats';
+import { OperationsDashboard } from './pages/admin/OperationsDashboard';
 import { DomainReadinessPage } from './pages/DomainReadiness/DomainReadinessPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { EntitlementRoute } from './components/EntitlementRoute';
@@ -305,7 +307,7 @@ function App() {
           }
         />
         <Route
-          path="/improve/opportunities-qbres"
+          path="/improve/opportunities/qbrs"
           element={
             <EntitlementRoute requiredFeature="recommendations">
               <OpportunitiesQBRES />
@@ -427,6 +429,7 @@ function App() {
           <Route path="/admin/data-collection-status" element={<DataCollectionStatus />} />
           <Route path="/admin/collection-stats" element={<CollectionStats />} />
           <Route path="/admin/entitlements" element={<CustomerEntitlements />} />
+          <Route path="/admin/operations" element={<OperationsDashboard />} />
         </Route>
         <Route
           path="/admin/Data_Collection_Status"
@@ -447,6 +450,15 @@ function App() {
         <Route
           path="/app"
           element={<DefaultRedirect />}
+        />
+        {/* New JSON Onboarding Route */}
+        <Route
+          path="/onboarding-json"
+          element={
+            <ProtectedRoute>
+              <OnboardingJSONPage />
+            </ProtectedRoute>
+          }
         />
       </Routes>
     </BrowserRouter>

@@ -103,7 +103,7 @@ interface JobRun {
   scheduled_job_id: string;
   brand_id: string;
   customer_id: string;
-  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring';
+  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry';
   scheduled_for: string;
 }
 
@@ -121,7 +121,7 @@ interface ScheduledJobRow {
   id: string;
   brand_id: string;
   customer_id: string;
-  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring';
+  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry';
   is_active: boolean;
   metadata: ScheduledJobMetadata;
   last_run_at: string | null;
@@ -212,11 +212,56 @@ async function processSingleRun(run: JobRun): Promise<void> {
     const errors: Array<{ operation: string; error: string }> = [];
 
     // Determine what to execute based on job_type
-    if (run.job_type === 'data_collection' || run.job_type === 'data_collection_and_scoring') {
+    if (
+      run.job_type === 'data_collection' ||
+      run.job_type === 'data_collection_and_scoring' ||
+      run.job_type === 'data_collection_retry'
+    ) {
       // Execute data collection
       try {
-        console.log(`[Worker] Executing data collection for brand ${run.brand_id}...`);
-        
+        const isRetryJob = run.job_type === 'data_collection_retry';
+        console.log(`[Worker] Executing data collection (${isRetryJob ? 'RETRY' : 'NORMAL'}) for brand ${run.brand_id}...`);
+
+        let specificQueryIds: string[] | undefined;
+
+        // 🎯 RETRY LOGIC: If this is a retry job, find failed queries
+        if (isRetryJob) {
+          const lookbackMinutes = (scheduleRow.metadata as any)?.lookback_minutes || 60;
+          const lookbackTime = new Date(Date.now() - lookbackMinutes * 60 * 1000).toISOString();
+
+          console.log(`[Worker] Retry Job: Looking for failures since ${lookbackTime}`);
+
+          // Find failed executions for this brand
+          const { data: failedExecutions, error: fetchError } = await supabase
+            .from('query_executions')
+            .select('query_id')
+            .eq('brand_id', run.brand_id)
+            .eq('status', 'failed')
+            .gt('created_at', lookbackTime); // Only retry recent failures
+
+          if (fetchError) {
+            throw new Error(`Failed to fetch failed executions: ${fetchError.message}`);
+          }
+
+          if (failedExecutions && failedExecutions.length > 0) {
+            // Get unique query IDs
+            specificQueryIds = [...new Set(failedExecutions.map(e => e.query_id).filter(id => !!id))];
+            console.log(`[Worker] Retry Job: Found ${specificQueryIds.length} unique failed queries to retry.`);
+          } else {
+            console.log(`[Worker] Retry Job: No failed executions found in the last ${lookbackMinutes} minutes.`);
+            // Mark job as completed early
+            await supabase
+              .from('job_runs')
+              .update({
+                status: 'completed',
+                finished_at: new Date().toISOString(),
+                metadata: { message: 'No failed queries found to retry' }
+              })
+              .eq('id', run.id);
+            return;
+          }
+        }
+
         const since = scheduleRow.last_run_at || undefined;
         let collectors = scheduleRow.metadata?.collectors || undefined;
         const locale = scheduleRow.metadata?.locale || undefined;
@@ -296,6 +341,7 @@ async function processSingleRun(run: JobRun): Promise<void> {
             country,
             since,
             suppressScoring: run.job_type === 'data_collection',
+            specificQueryIds
           }
         );
 
@@ -327,7 +373,7 @@ async function processSingleRun(run: JobRun): Promise<void> {
       // Execute scoring
       try {
         console.log(`[Worker] Executing scoring for brand ${run.brand_id}...`);
-        
+
         const since = scheduleRow.last_run_at || undefined;
         const positionLimit = scheduleRow.metadata?.positionLimit || undefined;
         const sentimentLimit = scheduleRow.metadata?.sentimentLimit || undefined;

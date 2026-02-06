@@ -31,6 +31,8 @@ const hardcodedLlmOptions = [
   { value: 'Google AIO', label: 'Google AIO' },
   { value: 'Copilot', label: 'Copilot' },
   { value: 'Gemini', label: 'Gemini' },
+  { value: 'Grok', label: 'Grok' },
+  { value: 'Meta AI', label: 'Meta AI' },
 ];
 
 export const SearchSourcesR2 = () => {
@@ -39,10 +41,44 @@ export const SearchSourcesR2 = () => {
   const { selectedBrandId, selectedBrand, isLoading: brandsLoading } = useManualBrandDashboard();
   const { llmFilters, setLlmFilters, queryTags, startDate, endDate, setStartDate, setEndDate } = useDashboardStore();
 
+  // Filter available LLM options based on brand metadata
+  const availableLlmOptions = useMemo(() => {
+    if (!selectedBrand?.metadata?.ai_models && !selectedBrand?.metadata?.collectors) {
+      return hardcodedLlmOptions;
+    }
+
+    const activeModels: string[] = (selectedBrand.metadata?.ai_models || selectedBrand.metadata?.collectors || [])
+      .map((m: any) => String(m).toLowerCase());
+
+    if (activeModels.length === 0) return hardcodedLlmOptions;
+
+    return hardcodedLlmOptions.filter(opt => {
+      const optLower = opt.value.toLowerCase();
+      // Check for fuzzy match
+      return activeModels.some(active => {
+        if (active.includes(optLower) || optLower.includes(active)) return true;
+        // Special case mappings
+        if (optLower === 'google aio' && (active.includes('google') || active.includes('sge'))) return true;
+        if (optLower === 'copilot' && active.includes('bing')) return true;
+        if (optLower === 'meta ai' && (active.includes('llama') || active.includes('meta'))) return true;
+        return false;
+      });
+    });
+  }, [selectedBrand]);
+
   // Read date range from URL params if available
   const urlStartDate = searchParams.get('startDate');
   const urlEndDate = searchParams.get('endDate');
   const highlightSource = searchParams.get('highlightSource');
+
+  // Clean up selected filters if they suggest a model that isn't available anymore
+  useEffect(() => {
+    const validValues = new Set(availableLlmOptions.map(o => o.value));
+    const validFilters = llmFilters.filter(f => validValues.has(f));
+    if (validFilters.length !== llmFilters.length) {
+      setLlmFilters(validFilters);
+    }
+  }, [availableLlmOptions, llmFilters, setLlmFilters]);
 
   const [activeQuadrant, setActiveQuadrant] = useState<EnhancedSource['quadrant'] | null>(null);
   const [selectedTrendSources, setSelectedTrendSources] = useState<string[]>([]);
@@ -98,6 +134,32 @@ export const SearchSourcesR2 = () => {
   );
 
   const sourceData: SourceData[] = response?.success && response.data ? response.data.sources : [];
+
+  // Dynamically filter LLM options based on available data from API
+  // This old logic is now superseded by availableLlmOptions
+  // const llmOptions = useMemo(() => {
+  //   // If response is loading or availableModels property is missing (legacy backend), fallback to hardcoded
+  //   if (!response?.success || !response.data || response.data.availableModels === undefined) {
+  //     return hardcodedLlmOptions;
+  //   }
+
+  //   const availableModels = response.data.availableModels;
+
+  //   // If backend returns empty array, it means no models found in data.
+  //   // However, if we have no data at all, we might want to show all options?
+  //   // User requirement: "only show those collecters... for which the brand's data was collected"
+  //   // So if empty, we return empty.
+  //   if (!availableModels || availableModels.length === 0) {
+  //      // If sourceData is also empty, it means truly no data. 
+  //      // If we return empty here, the filter bar will only show "All".
+  //      return [];
+  //   }
+
+  //   // Normalize to handle case sensitivity
+  //   const availableSet = new Set(availableModels.map(m => m.toLowerCase()));
+
+  //   return hardcodedLlmOptions.filter(opt => availableSet.has(opt.value.toLowerCase()));
+  // }, [response]);
 
   const [processedSources, setProcessedSources] = useState<EnhancedSource[] | null>(null);
 
@@ -373,6 +435,11 @@ export const SearchSourcesR2 = () => {
 
 
 
+  const totalCitations = useMemo(() => {
+    const list = isProcessedReady ? processedSources : sourceData;
+    return list?.reduce((acc, s) => acc + (s.citations || 0), 0) || 0;
+  }, [isProcessedReady, processedSources, sourceData]);
+
   const isLoading = authLoading || brandsLoading || loading;
   const errorMessage = error
     ? typeof error === 'string'
@@ -382,24 +449,43 @@ export const SearchSourcesR2 = () => {
 
   return (
     <Layout>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 8px 18px rgba(15,23,42,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24 }}>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        padding: 20,
+        background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+        minHeight: '100vh'
+      }}>
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.9)',
+          border: '1px solid #e5e7eb',
+          borderRadius: 12,
+          padding: 14,
+          boxShadow: '0 8px 18px rgba(15,23,42,0.06)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 20,
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             {selectedBrand && (
               <SafeLogo
                 src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
                 domain={selectedBrand.homepage_url || undefined}
                 alt={selectedBrand.name}
-                size={48}
-                className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+                size={36}
+                className="w-9 h-9 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
               />
             )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#0f172a' }}>Citations Sources</h1>
-              <p style={{ margin: 0, color: '#475569' }}>Analyze your brand's performance across various citation sources used by LLMs to answer users' queries.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' }}>Citations Sources</h1>
+              <p style={{ margin: 0, color: '#64748b', fontSize: 12, lineHeight: 1.4 }}>Analyze your brand's performance across various citation sources used by LLMs.</p>
             </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
             <DateRangePicker
               startDate={startDate}
               endDate={endDate}
@@ -409,24 +495,24 @@ export const SearchSourcesR2 = () => {
               className="flex-shrink-0"
             />
 
-            <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <QueryTagFilter variant="outline" className="border-gray-300/60 shadow-sm h-[36px]" />
 
-            {/* LLM Filters */}
-            <div className="flex items-center gap-4">
+              {/* LLM Filters */}
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wider">LLMs</span>
-                <div className="relative flex items-center bg-[#f1f5f9] rounded-xl p-1 gap-0.5">
+                <span className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wide">LLMs</span>
+                <div className="relative flex items-center bg-[#f1f5f9] rounded-lg p-0.5 gap-0.5">
                   {/* "All" Button */}
                   <button
                     type="button"
                     onClick={() => setLlmFilters([])}
                     onMouseEnter={() => setHoveredLlmIndex(-1)}
                     onMouseLeave={() => setHoveredLlmIndex(null)}
-                    className="relative px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors z-10 cursor-pointer border-0"
+                    className="relative px-3 h-[36px] flex items-center rounded-md text-[13px] font-medium transition-colors z-10 cursor-pointer border-0"
                   >
                     {hoveredLlmIndex === -1 && (
                       <motion.span
-                        className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                        className="absolute inset-0 bg-white/80 rounded-md -z-10 shadow-sm"
                         layoutId="llm-filter-hover"
                         transition={{ type: "spring", bounce: 0, duration: 0.4 }}
                       />
@@ -437,7 +523,7 @@ export const SearchSourcesR2 = () => {
                   </button>
 
                   {/* Individual LLM Buttons */}
-                  {hardcodedLlmOptions.map((opt, index) => {
+                  {availableLlmOptions.map((opt, index) => {
                     const isActive = llmFilters.includes(opt.value);
                     return (
                       <button
@@ -451,17 +537,17 @@ export const SearchSourcesR2 = () => {
                         }}
                         onMouseEnter={() => setHoveredLlmIndex(index)}
                         onMouseLeave={() => setHoveredLlmIndex(null)}
-                        className="relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors z-10 cursor-pointer border-0"
+                        className="relative flex items-center justify-center w-[36px] h-[36px] rounded-md transition-colors z-10 cursor-pointer border-0"
                         title={opt.label}
                       >
                         {hoveredLlmIndex === index && (
                           <motion.span
-                            className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                            className="absolute inset-0 bg-white/80 rounded-md -z-10 shadow-sm"
                             layoutId="llm-filter-hover"
                             transition={{ type: "spring", bounce: 0, duration: 0.4 }}
                           />
                         )}
-                        <span className={`relative z-10 ${isActive ? 'opacity-100' : 'opacity-60'}`}>
+                        <span className={`relative z-10 ${isActive ? 'opacity-100' : 'opacity-60'}`} style={{ fontSize: '20px' }}>
                           {getLLMIcon(opt.label)}
                         </span>
                         {isActive && (
@@ -538,58 +624,73 @@ export const SearchSourcesR2 = () => {
           </div>
         ) : (
           <>
-            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 8px 18px rgba(15,23,42,0.05)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                <input
-                  type="text"
-                  value={sourceSearchQuery}
-                  onChange={(e) => setSourceSearchQuery(e.target.value)}
-                  placeholder="Search sources by domain or name..."
-                  style={{
-                    flex: 1,
-                    padding: '10px 14px',
-                    borderRadius: 8,
-                    border: '1px solid #e5e7eb',
-                    background: '#fff',
-                    color: '#0f172a',
-                    fontSize: 13,
-                    outline: 'none',
-                    transition: 'border-color 160ms ease'
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = '#0ea5e9';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = '#e5e7eb';
-                  }}
-                />
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(15,23,42,0.04)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: sourceSearchQuery || !isProcessedReady ? 12 : 0 }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <input
+                    type="text"
+                    value={sourceSearchQuery}
+                    onChange={(e) => setSourceSearchQuery(e.target.value)}
+                    placeholder="🔍 Search sources by domain or name..."
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      paddingLeft: '16px',
+                      borderRadius: 10,
+                      border: '2px solid #e5e7eb',
+                      background: '#fff',
+                      color: '#0f172a',
+                      fontSize: 14,
+                      outline: 'none',
+                      transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+                      fontWeight: 500
+                    }}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = '#3b82f6';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = '#e5e7eb';
+                      e.target.style.boxShadow = 'none';
+                    }}
+                  />
+                </div>
                 {sourceSearchQuery && (
                   <button
                     onClick={() => setSourceSearchQuery('')}
                     style={{
-                      padding: '10px 14px',
-                      borderRadius: 8,
-                      border: '1px solid #e5e7eb',
-                      background: '#f8fafc',
+                      padding: '12px 18px',
+                      borderRadius: 10,
+                      border: '2px solid #e5e7eb',
+                      background: '#fff',
                       color: '#64748b',
-                      fontSize: 12,
-                      fontWeight: 600,
+                      fontSize: 13,
+                      fontWeight: 700,
                       cursor: 'pointer',
-                      transition: 'background 160ms ease'
+                      transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+                      whiteSpace: 'nowrap'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#f8fafc';
+                      e.currentTarget.style.borderColor = '#cbd5e1';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#fff';
+                      e.currentTarget.style.borderColor = '#e5e7eb';
                     }}
                   >
-                    Clear
+                    ✕ Clear
                   </button>
                 )}
               </div>
               {sourceSearchQuery && (
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
+                <div style={{ fontSize: 13, color: '#64748b', fontWeight: 600, background: '#f8fafc', padding: '6px 12px', borderRadius: 6, display: 'inline-block' }}>
                   {displayedSources.length} source{displayedSources.length !== 1 ? 's' : ''} matching "{sourceSearchQuery}"
                 </div>
               )}
               {!isProcessedReady && (
-                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
-                  Loading categories in the background. Sorting and category filters will be enabled shortly.
+                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8, fontStyle: 'italic' }}>
+                  ⏳ Loading categories in the background. Sorting and category filters will be enabled shortly.
                 </div>
               )}
             </div>
@@ -606,36 +707,48 @@ export const SearchSourcesR2 = () => {
               }}
               highlightedSourceName={highlightSource}
               onHelpClick={(key) => handleHelpClick(key as any)}
+              totalCitations={totalCitations}
             />
-            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20, boxShadow: '0 8px 18px rgba(15,23,42,0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Impact Score Trends</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>Impact Score Trends</h3>
                     <HelpButton
                       onClick={() => handleHelpClick('trend-chart-guide')}
                       label="Impact Score Trends Guide"
                       size={14}
                     />
                   </div>
-                  <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#64748b' }}>
+                  <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b', fontWeight: 500 }}>
                     Top 10 sources - Daily trends for the last 7 days
                   </p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>Metric</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 13, color: '#64748b', fontWeight: 700 }}>Metric</span>
                   <select
                     value={trendMetric}
                     onChange={(e) => setTrendMetric(e.target.value as any)}
                     style={{
-                      height: 34,
-                      padding: '0 10px',
+                      height: 38,
+                      padding: '0 14px',
                       borderRadius: 8,
-                      border: '1px solid #e5e7eb',
+                      border: '2px solid #e5e7eb',
                       background: '#fff',
                       color: '#0f172a',
-                      fontSize: 12,
-                      fontWeight: 700
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      outline: 'none',
+                      transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = '#3b82f6';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = '#e5e7eb';
+                      e.target.style.boxShadow = 'none';
                     }}
                   >
                     <option value="impactScore">Impact Score</option>
@@ -647,11 +760,11 @@ export const SearchSourcesR2 = () => {
                 </div>
               </div>
               {trendsLoading ? (
-                <div style={{ padding: 24, color: '#94a3b8', textAlign: 'center' }}>
+                <div style={{ padding: 32, color: '#94a3b8', textAlign: 'center', fontSize: 14 }}>
                   Loading trends data...
                 </div>
               ) : trendsError ? (
-                <div style={{ padding: 24, color: '#ef4444', textAlign: 'center' }}>
+                <div style={{ padding: 32, color: '#ef4444', textAlign: 'center', fontSize: 14 }}>
                   Error loading trends data. Please try again.
                 </div>
               ) : (

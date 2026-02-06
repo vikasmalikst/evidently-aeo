@@ -13,10 +13,12 @@ import './utils/cacheCleanup';
 // aborted/duplicated API calls (and heavy backend recomputation) for data-heavy pages.
 // Keep DEV behavior closer to production for performance debugging.
 import { HelmetProvider } from 'react-helmet-async';
+import { Toaster } from './components/landing/ui/toaster';
 
 const Root = (
   <HelmetProvider>
     <App />
+    <Toaster />
   </HelmetProvider>
 );
 

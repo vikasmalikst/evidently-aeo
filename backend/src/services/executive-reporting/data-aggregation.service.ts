@@ -20,12 +20,16 @@ import type {
     OpportunitiesData,
     OpportunityItem,
     TrackOutcomeItem,
+    QueryOpportunitiesData,
 } from './types';
 import { SourceAttributionService } from '../source-attribution.service';
+import { OpportunityIdentifierService } from '../../modules/opportunity-identifier/opportunity-identifier.service';
 
 const sourceAttributionService = new SourceAttributionService();
 
 export class DataAggregationService {
+    private opportunityIdentifierService = new OpportunityIdentifierService();
+
     /**
      * Main method to aggregate all report data
      */
@@ -48,6 +52,7 @@ export class DataAggregationService {
             actionsImpact,
             topMovers,
             opportunities,
+            queryOpportunities,
         ] = await Promise.all([
             this.aggregateBrandPerformance(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
             this.aggregateLLMPerformance(brandId, periodStart, periodEnd),
@@ -56,6 +61,7 @@ export class DataAggregationService {
             this.aggregateActionsImpact(brandId, periodStart, periodEnd),
             this.calculateTopMovers(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
             this.aggregateOpportunities(brandId),
+            this.aggregateQueryOpportunities(brandId),
         ]);
 
         return {
@@ -66,6 +72,7 @@ export class DataAggregationService {
             actions_impact: actionsImpact,
             top_movers: topMovers,
             opportunities: opportunities,
+            query_opportunities: queryOpportunities,
         };
     }
 
@@ -1355,6 +1362,60 @@ export class DataAggregationService {
             todo,
             refine,
             track,
+        };
+    }
+
+    /**
+     * Aggregate query-based opportunities
+     */
+    async aggregateQueryOpportunities(brandId: string): Promise<QueryOpportunitiesData> {
+        console.log(`🔎 [EXEC-REPORT] Aggregating query opportunities for ${brandId}`);
+        
+        try {
+            // Get customer ID
+            const { data: brandData } = await supabaseAdmin
+                .from('brands')
+                .select('customer_id')
+                .eq('id', brandId)
+                .single();
+                
+            if (!brandData) {
+                console.warn(`⚠️ [EXEC-REPORT] Brand ${brandId} not found or no customer_id`);
+                return this.getEmptyQueryOpportunities();
+            }
+
+            // Identify opportunities
+            const result = await this.opportunityIdentifierService.identifyOpportunities({
+                brandId,
+                customerId: brandData.customer_id,
+                days: 14 // Standard analysis period
+            });
+
+            // Filter for top opportunities (Critical/High priority)
+            // Sort by priorityScore descending
+            const topOpportunities = result.opportunities
+                .sort((a, b) => b.priorityScore - a.priorityScore)
+                .slice(0, 5); // Limit to top 5
+
+            return {
+                summary: result.summary,
+                top_opportunities: topOpportunities as any
+            };
+        } catch (error) {
+            console.error('❌ [EXEC-REPORT] Error aggregating query opportunities:', error);
+            return this.getEmptyQueryOpportunities();
+        }
+    }
+
+    private getEmptyQueryOpportunities(): QueryOpportunitiesData {
+        return {
+            summary: {
+                total: 0,
+                bySeverity: { critical: 0, high: 0, medium: 0, low: 0 },
+                byCategory: { 1: 0, 2: 0, 3: 0 },
+                byMetric: { visibility: 0, soa: 0, sentiment: 0 }
+            },
+            top_opportunities: []
         };
     }
 }

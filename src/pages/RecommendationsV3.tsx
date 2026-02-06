@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
@@ -54,6 +55,9 @@ interface RecommendationsV3Props {
 }
 
 export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) => {
+  const [searchParams] = useSearchParams();
+  const highlightRecId = searchParams.get('highlightRecId');
+
   const {
     brands,
     isLoading: brandsLoading,
@@ -335,7 +339,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             .map(rec => ({ ...rec, id: rec.id! })); // Ensure ID is defined
 
           // Sort selected recommendation to the top if navigating to it
-          const targetId = currentStep === 3 ? expandedRecId : targetExpandedId;
+          const targetId = currentStep === 3 ? expandedRecId : (targetExpandedId || highlightRecId);
           if (targetId) {
             const index = recommendationsWithIds.findIndex(rec => rec.id === targetId);
             if (index > 0) { // If found and not already at top
@@ -410,6 +414,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             const contentPromises = recommendationsWithIds
               .filter(r => r.id && r.isContentGenerated)
               .map(async (rec) => {
+                // Determine if we need to load content for this item
+                // Yes if it's content generated AND (it's the target OR we load all)
+                // For now, load all
                 try {
                   const contentResponse = await fetchRecommendationContentLatest(rec.id!);
                   if (contentResponse.success && contentResponse.data?.content) {
@@ -1460,1123 +1467,1135 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   return (
     <Layout>
-      <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-        {/* Header */}
-        <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm px-5 py-3 mb-4">
-          {/* Title Row */}
-          <div className="flex items-center gap-3 mb-3">
-            {selectedBrand && (
-              <SafeLogo
-                src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
-                domain={selectedBrand.homepage_url || undefined}
-                alt={selectedBrand.name}
-                size={32}
-                className="w-8 h-8 rounded-lg shadow-sm object-contain bg-white p-0.5 border border-gray-100"
+      <div className="flex flex-row relative min-h-screen bg-[#f9f9fb]">
+        <div
+          className={`p-6 transition-all duration-300 w-full ${scorePanel?.isOpen ? 'pr-[480px]' : ''}`}
+          style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}
+        >
+          {/* Header */}
+          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm px-5 py-3 mb-4">
+            {/* Title Row */}
+            <div className="flex items-center gap-3 mb-3">
+              {selectedBrand && (
+                <SafeLogo
+                  src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                  domain={selectedBrand.homepage_url || undefined}
+                  alt={selectedBrand.name}
+                  size={32}
+                  className="w-8 h-8 rounded-lg shadow-sm object-contain bg-white p-0.5 border border-gray-100"
+                />
+              )}
+              <h1 className="text-[16px] font-bold text-[#1a1d29] m-0">Optimize</h1>
+            </div>
+
+            {/* Full-width Tab Navigator */}
+            {generationId && (
+              <PremiumTabNavigator
+                currentStep={currentStep}
+                counts={stepCounts}
+                attentionSteps={{
+                  2: (() => {
+                    const sourceArray = allRecommendations.length > 0 ? allRecommendations : recommendations;
+                    const approvedCount = sourceArray.filter(
+                      rec => (rec.reviewStatus || 'pending_review') === 'approved'
+                    ).length;
+                    return currentStep === 1 && approvedCount > 0;
+                  })(),
+                  3: currentStep <= 2 && hasGeneratedContentForStep3,
+                  4: currentStep <= 3 && hasCompletedForStep4
+                }}
+                onStepClick={async (step: number) => {
+                  // Clear any specific recommendation target when manually navigating
+                  setTargetExpandedId(null);
+
+                  // Set manual loading flags
+                  isManuallyNavigatingRef.current = true;
+                  setIsManuallyLoading(true);
+                  lastManuallyLoadedStepRef.current = step;
+
+                  try {
+                    setIsLoading(true);
+                    setError(null);
+                    console.log(`📥 [RecommendationsV3] Manual step navigation to Step ${step}`);
+                    const response = await getRecommendationsByStepV3(generationId, step);
+                    if (response.success && response.data) {
+                      // Update dataMaturity if provided
+                      if (response.data.dataMaturity !== undefined) {
+                        const newMaturity = (response.data.dataMaturity as any) || null;
+                        setDataMaturity(newMaturity);
+                        console.log(`🧊 [RecommendationsV3] Step ${step} - Updated dataMaturity to: ${newMaturity}`);
+                      }
+                      const recommendationsWithIds = response.data.recommendations
+                        .filter(rec => rec.id && rec.id.length > 10)
+                        .map(rec => ({ ...rec, id: rec.id! }));
+
+                      console.log(`✅ [RecommendationsV3] Loaded ${recommendationsWithIds.length} recommendations for Step ${step}`);
+
+                      setRecommendations(recommendationsWithIds);
+                      // Update allRecommendations for Step 1 to ensure filter works correctly
+                      // This prevents race condition where filter useEffect clears recommendations
+                      if (step === 1) {
+                        setAllRecommendations(recommendationsWithIds);
+                      }
+                      setError(null);
+
+                      // Load content/guides for Step 3
+                      if (step === 3) {
+                        setHasGeneratedContentForStep3(false);
+                        const isColdStartForThisStep = (response.data?.dataMaturity === 'cold_start') || isColdStart;
+                        const newExpandedSections = new Map(expandedSections);
+                        recommendationsWithIds.forEach(rec => {
+                          if (rec.id && !newExpandedSections.has(rec.id)) {
+                            newExpandedSections.set(rec.id, { content: true });
+                          }
+                        });
+                        setExpandedSections(newExpandedSections);
+
+                        const contentPromises = recommendationsWithIds
+                          .filter(r => r.id && r.isContentGenerated)
+                          .map(async (rec) => {
+                            try {
+                              const contentResponse = await fetchRecommendationContentLatest(rec.id!);
+                              if (contentResponse.success && contentResponse.data?.content) {
+                                return { id: rec.id, content: contentResponse.data.content };
+                              }
+                            } catch (err) {
+                              console.error(`Error loading content for ${rec.id}:`, err);
+                            }
+                            return null;
+                          });
+
+                        const contentResults = await Promise.all(contentPromises);
+                        if (isColdStartForThisStep) {
+                          const newGuideMap = new Map(guideMap);
+                          contentResults.forEach(result => {
+                            if (result) {
+                              newGuideMap.set(result.id!, extractGuideObject(result.content));
+                            }
+                          });
+                          setGuideMap(newGuideMap);
+                        } else {
+                          const newContentMap = new Map(contentMap);
+                          contentResults.forEach(result => {
+                            if (result) {
+                              newContentMap.set(result.id!, result.content);
+                            }
+                          });
+                          setContentMap(newContentMap);
+                        }
+
+                        // Default all to collapsed for Step 3 accordion
+                        setExpandedRecId(null);
+                      }
+
+                      // Clear "completed" attention once user visits Step 4
+                      if (step === 4) {
+                        setHasCompletedForStep4(false);
+                      }
+
+                      setCurrentStep(step);
+                    } else {
+                      setRecommendations([]);
+                      setCurrentStep(step);
+                      if (response.error && !response.error.includes('not found') && !response.error.includes('No recommendations')) {
+                        setError(response.error);
+                      }
+                    }
+                  } catch (err: any) {
+                    console.error('Error loading step data:', err);
+                    setError(err.message || 'Failed to load recommendations');
+                    setCurrentStep(step);
+                  } finally {
+                    setIsLoading(false);
+                    setTimeout(() => {
+                      setIsManuallyLoading(false);
+                      isManuallyNavigatingRef.current = false;
+                    }, 300);
+                  }
+                }}
               />
             )}
-            <h1 className="text-[16px] font-bold text-[#1a1d29] m-0">Optimize</h1>
           </div>
 
-          {/* Full-width Tab Navigator */}
-          {generationId && (
-            <PremiumTabNavigator
-              currentStep={currentStep}
-              counts={stepCounts}
-              attentionSteps={{
-                2: (() => {
-                  const sourceArray = allRecommendations.length > 0 ? allRecommendations : recommendations;
-                  const approvedCount = sourceArray.filter(
-                    rec => (rec.reviewStatus || 'pending_review') === 'approved'
-                  ).length;
-                  return currentStep === 1 && approvedCount > 0;
-                })(),
-                3: currentStep <= 2 && hasGeneratedContentForStep3,
-                4: currentStep <= 3 && hasCompletedForStep4
-              }}
-              onStepClick={async (step: number) => {
-                // Clear any specific recommendation target when manually navigating
-                setTargetExpandedId(null);
-
-                // Set manual loading flags
-                isManuallyNavigatingRef.current = true;
-                setIsManuallyLoading(true);
-                lastManuallyLoadedStepRef.current = step;
-
-                try {
-                  setIsLoading(true);
-                  setError(null);
-                  console.log(`📥 [RecommendationsV3] Manual step navigation to Step ${step}`);
-                  const response = await getRecommendationsByStepV3(generationId, step);
-                  if (response.success && response.data) {
-                    // Update dataMaturity if provided
-                    if (response.data.dataMaturity !== undefined) {
-                      const newMaturity = (response.data.dataMaturity as any) || null;
-                      setDataMaturity(newMaturity);
-                      console.log(`🧊 [RecommendationsV3] Step ${step} - Updated dataMaturity to: ${newMaturity}`);
-                    }
-                    const recommendationsWithIds = response.data.recommendations
-                      .filter(rec => rec.id && rec.id.length > 10)
-                      .map(rec => ({ ...rec, id: rec.id! }));
-
-                    console.log(`✅ [RecommendationsV3] Loaded ${recommendationsWithIds.length} recommendations for Step ${step}`);
-
-                    setRecommendations(recommendationsWithIds);
-                    // Update allRecommendations for Step 1 to ensure filter works correctly
-                    // This prevents race condition where filter useEffect clears recommendations
-                    if (step === 1) {
-                      setAllRecommendations(recommendationsWithIds);
-                    }
-                    setError(null);
-
-                    // Load content/guides for Step 3
-                    if (step === 3) {
-                      setHasGeneratedContentForStep3(false);
-                      const isColdStartForThisStep = (response.data?.dataMaturity === 'cold_start') || isColdStart;
-                      const newExpandedSections = new Map(expandedSections);
-                      recommendationsWithIds.forEach(rec => {
-                        if (rec.id && !newExpandedSections.has(rec.id)) {
-                          newExpandedSections.set(rec.id, { content: true });
-                        }
-                      });
-                      setExpandedSections(newExpandedSections);
-
-                      const contentPromises = recommendationsWithIds
-                        .filter(r => r.id && r.isContentGenerated)
-                        .map(async (rec) => {
-                          try {
-                            const contentResponse = await fetchRecommendationContentLatest(rec.id!);
-                            if (contentResponse.success && contentResponse.data?.content) {
-                              return { id: rec.id, content: contentResponse.data.content };
-                            }
-                          } catch (err) {
-                            console.error(`Error loading content for ${rec.id}:`, err);
-                          }
-                          return null;
-                        });
-
-                      const contentResults = await Promise.all(contentPromises);
-                      if (isColdStartForThisStep) {
-                        const newGuideMap = new Map(guideMap);
-                        contentResults.forEach(result => {
-                          if (result) {
-                            newGuideMap.set(result.id!, extractGuideObject(result.content));
-                          }
-                        });
-                        setGuideMap(newGuideMap);
-                      } else {
-                        const newContentMap = new Map(contentMap);
-                        contentResults.forEach(result => {
-                          if (result) {
-                            newContentMap.set(result.id!, result.content);
-                          }
-                        });
-                        setContentMap(newContentMap);
-                      }
-
-                      // Default all to collapsed for Step 3 accordion
-                      setExpandedRecId(null);
-                    }
-
-                    // Clear "completed" attention once user visits Step 4
-                    if (step === 4) {
-                      setHasCompletedForStep4(false);
-                    }
-
-                    setCurrentStep(step);
-                  } else {
-                    setRecommendations([]);
-                    setCurrentStep(step);
-                    if (response.error && !response.error.includes('not found') && !response.error.includes('No recommendations')) {
-                      setError(response.error);
-                    }
-                  }
-                } catch (err: any) {
-                  console.error('Error loading step data:', err);
-                  setError(err.message || 'Failed to load recommendations');
-                  setCurrentStep(step);
-                } finally {
-                  setIsLoading(false);
-                  setTimeout(() => {
-                    setIsManuallyLoading(false);
-                    isManuallyNavigatingRef.current = false;
-                  }, 300);
-                }
-              }}
-            />
+          {/* Error Message */}
+          {error && (
+            <div className="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4 mb-6 flex items-center gap-3">
+              <IconAlertCircle size={20} className="text-[#ef4444] flex-shrink-0" />
+              <p className="text-[13px] text-[#991b1b]">{error}</p>
+            </div>
           )}
-        </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4 mb-6 flex items-center gap-3">
-            <IconAlertCircle size={20} className="text-[#ef4444] flex-shrink-0" />
-            <p className="text-[13px] text-[#991b1b]">{error}</p>
-          </div>
-        )}
-
-        {/* Step Content */}
-        {!generationId ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4 }}
-            className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-12 text-center"
-          >
-            <IconSparkles size={48} className="mx-auto mb-4 text-[#00bcdc] opacity-80" />
-            <h3 className="text-[20px] font-semibold text-[#1a1d29] mb-2">
-              No recommendations found
-            </h3>
-            <p className="text-[13px] text-[#64748b] max-w-md mx-auto">
-              Recommendations are generated automatically. Please check back later.
-            </p>
-          </motion.div>
-        ) : (
-          <AnimatePresence mode="wait">
-            {/* Step 1: Discover Opportunities */}
-            {currentStep === 1 && (
-              <motion.div
-                key="step1"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                  <div>
-                    <h2 className="text-[20px] font-bold text-[#0f172a] mb-1">Discover Opportunities</h2>
-                    <p className="text-[14px] text-[#64748b]">Review findings and prioritize recommendations</p>
-                  </div>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <CollapsibleFilters
-                      activeFilterCount={
-                        (statusFilter !== 'all' ? 1 : 0) +
-                        (priorityFilter !== 'all' ? 1 : 0) +
-                        (effortFilter !== 'all' ? 1 : 0) +
-                        (contentTypeFilter !== 'all' ? 1 : 0)
-                      }
-                      onClearAll={() => {
-                        setStatusFilter('all');
-                        setPriorityFilter('all');
-                        setEffortFilter('all');
-                        setContentTypeFilter('all');
-                      }}
-                    >
-                      <StatusFilter value={statusFilter} onChange={setStatusFilter} />
-                      <PriorityFilter value={priorityFilter} onChange={setPriorityFilter} />
-                      <EffortFilter value={effortFilter} onChange={setEffortFilter} />
-                      <ContentTypeFilter value={contentTypeFilter} onChange={setContentTypeFilter} options={availableContentTypes} />
-                    </CollapsibleFilters>
-                  </div>
-                </div>
-                <RecommendationsTableV3
-                  recommendations={recommendations}
-                  showCheckboxes={false}
-                  showStatusDropdown={true}
-                  onStatusChange={handleStatusChange}
-                  renderExpandedContent={(rec) => <OpportunityStrategyCard recommendation={rec} />}
-                  onNavigate={handleNavigate}
-                />
-              </motion.div>
-            )}
-
-            {/* Step 2: To-Do List */}
-            {currentStep === 2 && (
-              <motion.div
-                key="step2"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                  <div>
-                    <h2 className="text-[20px] font-bold text-[#0f172a] mb-1">Content Generation</h2>
-                    <p className="text-[14px] text-[#64748b]">
-                      {isColdStart
-                        ? 'Generate an execution-ready implementation guide for each approved action'
-                        : 'Approve and generate content for chosen actions'}
-                    </p>
-                  </div>
-                </div>
-                {recommendations.length === 0 ? (
-                  <div className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm p-12 text-center">
-                    <div className="w-16 h-16 bg-[#f0fdf4] rounded-full flex items-center justify-center mx-auto mb-4">
-                      <IconCheck size={32} className="text-[#06c686]" />
+          {/* Step Content */}
+          {!generationId ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
+              className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-12 text-center"
+            >
+              <IconSparkles size={48} className="mx-auto mb-4 text-[#00bcdc] opacity-80" />
+              <h3 className="text-[20px] font-semibold text-[#1a1d29] mb-2">
+                No recommendations found
+              </h3>
+              <p className="text-[13px] text-[#64748b] max-w-md mx-auto">
+                Recommendations are generated automatically. Please check back later.
+              </p>
+            </motion.div>
+          ) : (
+            <AnimatePresence mode="wait">
+              {/* Step 1: Discover Opportunities */}
+              {currentStep === 1 && (
+                <motion.div
+                  key="step1"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                    <div>
+                      <h2 className="text-[20px] font-bold text-[#0f172a] mb-1">Discover Opportunities</h2>
+                      <p className="text-[14px] text-[#64748b]">Review findings and prioritize recommendations</p>
                     </div>
-                    <h3 className="text-[20px] font-semibold text-[#1a1d29] mb-2">
-                      To-Do List is empty
-                    </h3>
-                    <p className="text-[14px] text-[#64748b] max-w-md mx-auto mb-8">
-                      You have no pending tasks in your To-Do List. Review other potential opportunities to find more actions to improve your performance.
-                    </p>
-                    <button
-                      onClick={() => setCurrentStep(1)}
-                      className="inline-flex items-center gap-2 px-6 py-3 bg-[#00bcdc] text-white rounded-lg text-[14px] font-bold hover:bg-[#00a8c6] transition-all shadow-md hover:shadow-lg active:scale-95"
-                    >
-                      <IconArrowLeft size={18} />
-                      Go back to Discover Opportunities
-                    </button>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <CollapsibleFilters
+                        activeFilterCount={
+                          (statusFilter !== 'all' ? 1 : 0) +
+                          (priorityFilter !== 'all' ? 1 : 0) +
+                          (effortFilter !== 'all' ? 1 : 0) +
+                          (contentTypeFilter !== 'all' ? 1 : 0)
+                        }
+                        onClearAll={() => {
+                          setStatusFilter('all');
+                          setPriorityFilter('all');
+                          setEffortFilter('all');
+                          setContentTypeFilter('all');
+                        }}
+                      >
+                        <StatusFilter value={statusFilter} onChange={setStatusFilter} />
+                        <PriorityFilter value={priorityFilter} onChange={setPriorityFilter} />
+                        <EffortFilter value={effortFilter} onChange={setEffortFilter} />
+                        <ContentTypeFilter value={contentTypeFilter} onChange={setContentTypeFilter} options={availableContentTypes} />
+                      </CollapsibleFilters>
+                    </div>
                   </div>
-                ) : (
                   <RecommendationsTableV3
                     recommendations={recommendations}
-                    showActions={true}
-                    onAction={isColdStart ? handleGenerateGuide : handleGenerateContent}
-                    actionLabel={isColdStart ? 'Generate Guide' : 'Generate'}
-                    actionType={isColdStart ? 'generate-guide' : 'generate-content'}
-                    generatedLabel={isColdStart ? 'Guide Ready' : 'Generated'}
-                    generatingContentIds={generatingContentIds}
-                    onStopTracking={(id) => {
-                      if (confirm('Stop tracking this recommendation? It will be removed from your view.')) {
-                        handleStatusChange(id, 'removed');
-                      }
-                    }}
-                    renderExpandedContent={renderStep2ExpandedContent}
-                    initialExpandedId={targetExpandedId}
+                    showCheckboxes={false}
+                    showStatusDropdown={true}
+                    onStatusChange={handleStatusChange}
+                    renderExpandedContent={(rec) => <OpportunityStrategyCard recommendation={rec} />}
+                    onNavigate={handleNavigate}
                   />
-                )}
-              </motion.div>
-            )}
+                </motion.div>
+              )}
 
-            {/* Step 3: Review and Refine */}
-            {currentStep === 3 && (
-              <motion.div
-                key="step3"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <div className="mb-6">
-                  <h2 className="text-[20px] font-bold text-[#0f172a]">Review and Refine</h2>
-                  <p className="text-[14px] text-[#64748b] mt-1">
-                    {isColdStart
-                      ? 'Cold-start brands skip content generation. Use previous step for implementation guides.'
-                      : 'Review generated content and finalize for publication'}
-                  </p>
-                </div>
-                {isColdStart && (
-                  <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-6">
-                    <p className="text-[13px] text-[#0f172a]">
-                      This step is not used for <span className="font-semibold">cold_start</span>. Your execution guides live in Step 2.
-                    </p>
-                    <div className="mt-4 flex gap-3">
-                      <button
-                        onClick={() => setCurrentStep(2)}
-                        className="px-4 py-2 bg-[#00bcdc] text-white rounded-lg text-[13px] font-semibold hover:bg-[#00a8c6] transition-colors"
-                      >
-                        Go to Step 2
-                      </button>
-                      <button
-                        onClick={() => setCurrentStep(4)}
-                        className="px-4 py-2 bg-white border border-[#e2e8f0] text-[#0f172a] rounded-lg text-[13px] font-semibold hover:bg-[#f8fafc] transition-colors"
-                      >
-                        Go to Step 4
-                      </button>
+              {/* Step 2: To-Do List */}
+              {currentStep === 2 && (
+                <motion.div
+                  key="step2"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                    <div>
+                      <h2 className="text-[20px] font-bold text-[#0f172a] mb-1">Content Generation</h2>
+                      <p className="text-[14px] text-[#64748b]">
+                        {isColdStart
+                          ? 'Generate an execution-ready implementation guide for each approved action'
+                          : 'Approve and generate content for chosen actions'}
+                      </p>
                     </div>
                   </div>
-                )}
-                {isColdStart ? (
-                  <div className="space-y-6">
-                    <AnimatePresence>
-                      {recommendations.map((rec) => {
-                        const guideRaw = rec.id ? guideMap.get(rec.id) : null;
-                        const guideObj = extractGuideObject(guideRaw);
-                        const isGuide = Boolean(guideObj && typeof guideObj === 'object' && guideObj.version === 'guide_v1');
+                  {recommendations.length === 0 ? (
+                    <div className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm p-12 text-center">
+                      <div className="w-16 h-16 bg-[#f0fdf4] rounded-full flex items-center justify-center mx-auto mb-4">
+                        <IconCheck size={32} className="text-[#06c686]" />
+                      </div>
+                      <h3 className="text-[20px] font-semibold text-[#1a1d29] mb-2">
+                        To-Do List is empty
+                      </h3>
+                      <p className="text-[14px] text-[#64748b] max-w-md mx-auto mb-8">
+                        You have no pending tasks in your To-Do List. Review other potential opportunities to find more actions to improve your performance.
+                      </p>
+                      <button
+                        onClick={() => setCurrentStep(1)}
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-[#00bcdc] text-white rounded-lg text-[14px] font-bold hover:bg-[#00a8c6] transition-all shadow-md hover:shadow-lg active:scale-95"
+                      >
+                        <IconArrowLeft size={18} />
+                        Go back to Discover Opportunities
+                      </button>
+                    </div>
+                  ) : (
+                    <RecommendationsTableV3
+                      recommendations={recommendations}
+                      showActions={true}
+                      onAction={isColdStart ? handleGenerateGuide : handleGenerateContent}
+                      actionLabel={isColdStart ? 'Generate Guide' : 'Generate'}
+                      actionType={isColdStart ? 'generate-guide' : 'generate-content'}
+                      generatedLabel={isColdStart ? 'Guide Ready' : 'Generated'}
+                      generatingContentIds={generatingContentIds}
+                      onStopTracking={(id) => {
+                        if (confirm('Stop tracking this recommendation? It will be removed from your view.')) {
+                          handleStatusChange(id, 'removed');
+                        }
+                      }}
+                      renderExpandedContent={renderStep2ExpandedContent}
+                      initialExpandedId={targetExpandedId}
+                    />
+                  )}
+                </motion.div>
+              )}
 
-                        return (
-                          <motion.div
-                            key={rec.id}
-                            layout
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, height: 0, marginBottom: 0, scale: 0.95 }}
-                            transition={{ duration: 0.3, layout: { duration: 0.3 } }}
-                            className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden"
-                          >
-                            {/* Header */}
-                            <div
-                              className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4 cursor-pointer hover:bg-[#f1f5f9] transition-colors"
-                              onClick={() => setExpandedRecId(expandedRecId === rec.id ? null : (rec.id || null))}
+              {/* Step 3: Review and Refine */}
+              {currentStep === 3 && (
+                <motion.div
+                  key="step3"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <div className="mb-6">
+                    <h2 className="text-[20px] font-bold text-[#0f172a]">Review and Refine</h2>
+                    <p className="text-[14px] text-[#64748b] mt-1">
+                      {isColdStart
+                        ? 'Cold-start brands skip content generation. Use previous step for implementation guides.'
+                        : 'Review generated content and finalize for publication'}
+                    </p>
+                  </div>
+                  {isColdStart && (
+                    <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-6">
+                      <p className="text-[13px] text-[#0f172a]">
+                        This step is not used for <span className="font-semibold">cold_start</span>. Your execution guides live in Step 2.
+                      </p>
+                      <div className="mt-4 flex gap-3">
+                        <button
+                          onClick={() => setCurrentStep(2)}
+                          className="px-4 py-2 bg-[#00bcdc] text-white rounded-lg text-[13px] font-semibold hover:bg-[#00a8c6] transition-colors"
+                        >
+                          Go to Step 2
+                        </button>
+                        <button
+                          onClick={() => setCurrentStep(4)}
+                          className="px-4 py-2 bg-white border border-[#e2e8f0] text-[#0f172a] rounded-lg text-[13px] font-semibold hover:bg-[#f8fafc] transition-colors"
+                        >
+                          Go to Step 4
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {isColdStart ? (
+                    <div className="space-y-6">
+                      <AnimatePresence>
+                        {recommendations.map((rec) => {
+                          const guideRaw = rec.id ? guideMap.get(rec.id) : null;
+                          const guideObj = extractGuideObject(guideRaw);
+                          const isGuide = Boolean(guideObj && typeof guideObj === 'object' && guideObj.version === 'guide_v1');
+
+                          return (
+                            <motion.div
+                              key={rec.id}
+                              layout
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, height: 0, marginBottom: 0, scale: 0.95 }}
+                              transition={{ duration: 0.3, layout: { duration: 0.3 } }}
+                              className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden"
                             >
-                              <div className="flex items-start justify-between gap-4">
-                                <div className="flex items-center gap-3 flex-1">
-                                  <span className="text-[#64748b]">
-                                    {expandedRecId === rec.id ? <IconMinus size={20} /> : <IconPlus size={20} />}
-                                  </span>
-                                  <div className="flex-1">
-                                    <h3 className="text-[16px] font-medium text-[#1a1d29] leading-tight">{rec.action}</h3>
-                                    <p className="text-[12px] text-[#64748b] mt-1">
-                                      KPI: {rec.kpi} · Source: {rec.citationSource} · Effort: {rec.effort} · Timeline: {rec.timeline}
-                                    </p>
-                                  </div>
-                                </div>
-                                {!rec.isCompleted ? (
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (confirm('Stop tracking this recommendation? It will be removed from your view.')) {
-                                          handleStatusChange(rec.id!, 'removed');
-                                        }
-                                      }}
-                                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                                      title="Stop Tracking"
-                                    >
-                                      <IconTrash size={18} />
-                                    </button>
-                                    <button
-                                      onClick={() => handleToggleComplete(rec)}
-                                      className="shrink-0 px-3 py-1.5 bg-[#06c686] text-white rounded-md text-[12px] font-semibold hover:bg-[#05a870] transition-colors"
-                                    >
-                                      Mark as Completed
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span className="shrink-0 inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold bg-[#d1fae5] text-[#065f46]">
-                                    ✓ Completed
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Body - Accordion */}
-                            {expandedRecId === rec.id && (
-                              <div className="p-6">
-                                {!guideRaw ? (
-                                  <div className="bg-[#fff7ed] border border-[#fed7aa] rounded-lg p-4">
-                                    <p className="text-[13px] text-[#9a3412] font-semibold">Guide not generated yet</p>
-                                    <p className="text-[12px] text-[#7c2d12] mt-1">
-                                      Go back to Step 2 and click <span className="font-semibold">Generate Guide</span> for this recommendation.
-                                    </p>
-                                    <button
-                                      onClick={() => setCurrentStep(2)}
-                                      className="mt-3 px-4 py-2 bg-[#00bcdc] text-white rounded-lg text-[13px] font-semibold hover:bg-[#00a8c6] transition-colors"
-                                    >
-                                      Go to Step 2
-                                    </button>
-                                  </div>
-                                ) : isGuide ? (
-                                  <div className="space-y-6">
-                                    {/* Summary */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                      <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-4">
-                                        <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Goal</p>
-                                        <p className="text-[13px] text-[#0f172a]">{guideObj?.summary?.goal || '—'}</p>
-                                      </div>
-                                      <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-4">
-                                        <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Why this matters</p>
-                                        <p className="text-[13px] text-[#0f172a]">{guideObj?.summary?.whyThisMatters || '—'}</p>
-                                      </div>
+                              {/* Header */}
+                              <div
+                                className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4 cursor-pointer hover:bg-[#f1f5f9] transition-colors"
+                                onClick={() => setExpandedRecId(expandedRecId === rec.id ? null : (rec.id || null))}
+                              >
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex items-center gap-3 flex-1">
+                                    <span className="text-[#64748b]">
+                                      {expandedRecId === rec.id ? <IconMinus size={20} /> : <IconPlus size={20} />}
+                                    </span>
+                                    <div className="flex-1">
+                                      <h3 className="text-[16px] font-medium text-[#1a1d29] leading-tight">{rec.action}</h3>
+                                      <p className="text-[12px] text-[#64748b] mt-1">
+                                        KPI: {rec.kpi} · Source: {rec.citationSource} · Effort: {rec.effort} · Timeline: {rec.timeline}
+                                      </p>
                                     </div>
+                                  </div>
+                                  {!rec.isCompleted ? (
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (confirm('Stop tracking this recommendation? It will be removed from your view.')) {
+                                            handleStatusChange(rec.id!, 'removed');
+                                          }
+                                        }}
+                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                        title="Stop Tracking"
+                                      >
+                                        <IconTrash size={18} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleToggleComplete(rec)}
+                                        className="shrink-0 px-3 py-1.5 bg-[#06c686] text-white rounded-md text-[12px] font-semibold hover:bg-[#05a870] transition-colors"
+                                      >
+                                        Mark as Completed
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="shrink-0 inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold bg-[#d1fae5] text-[#065f46]">
+                                      ✓ Completed
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
 
-                                    {/* Prerequisites */}
-                                    {Array.isArray(guideObj?.prerequisites) && guideObj.prerequisites.length > 0 && (
-                                      <div>
-                                        <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Prerequisites</p>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                          {guideObj.prerequisites.map((p: string, idx: number) => (
-                                            <li key={idx} className="text-[13px] text-[#0f172a]">{p}</li>
-                                          ))}
-                                        </ul>
-                                      </div>
-                                    )}
-
-                                    {/* Implementation plan */}
-                                    {Array.isArray(guideObj?.implementationPlan) && guideObj.implementationPlan.length > 0 && (
-                                      <div>
-                                        <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-3">Implementation Plan</p>
-                                        <div className="space-y-4">
-                                          {guideObj.implementationPlan.map((phase: any, pIdx: number) => (
-                                            <div key={pIdx} className="border border-[#e2e8f0] rounded-lg p-4">
-                                              <p className="text-[13px] font-semibold text-[#0f172a] mb-2">{phase.phase}</p>
-                                              <div className="space-y-3">
-                                                {(phase.steps || []).map((step: any, sIdx: number) => (
-                                                  <div key={sIdx} className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-3">
-                                                    <p className="text-[13px] font-semibold text-[#0f172a]">{step.title}</p>
-                                                    <p className="text-[13px] text-[#334155] mt-1 whitespace-pre-line">{step.howTo}</p>
-                                                    {step.deliverable && (
-                                                      <p className="text-[12px] text-[#475569] mt-2">
-                                                        <span className="font-semibold">Deliverable:</span> {step.deliverable}
-                                                      </p>
-                                                    )}
-                                                    {Array.isArray(step.qualityChecks) && step.qualityChecks.length > 0 && (
-                                                      <ul className="list-disc pl-5 mt-2 space-y-1">
-                                                        {step.qualityChecks.map((c: string, cIdx: number) => (
-                                                          <li key={cIdx} className="text-[12px] text-[#0f172a]">{c}</li>
-                                                        ))}
-                                                      </ul>
-                                                    )}
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            </div>
-                                          ))}
+                              {/* Body - Accordion */}
+                              {expandedRecId === rec.id && (
+                                <div className="p-6">
+                                  {!guideRaw ? (
+                                    <div className="bg-[#fff7ed] border border-[#fed7aa] rounded-lg p-4">
+                                      <p className="text-[13px] text-[#9a3412] font-semibold">Guide not generated yet</p>
+                                      <p className="text-[12px] text-[#7c2d12] mt-1">
+                                        Go back to Step 2 and click <span className="font-semibold">Generate Guide</span> for this recommendation.
+                                      </p>
+                                      <button
+                                        onClick={() => setCurrentStep(2)}
+                                        className="mt-3 px-4 py-2 bg-[#00bcdc] text-white rounded-lg text-[13px] font-semibold hover:bg-[#00a8c6] transition-colors"
+                                      >
+                                        Go to Step 2
+                                      </button>
+                                    </div>
+                                  ) : isGuide ? (
+                                    <div className="space-y-6">
+                                      {/* Summary */}
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-4">
+                                          <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Goal</p>
+                                          <p className="text-[13px] text-[#0f172a]">{guideObj?.summary?.goal || '—'}</p>
+                                        </div>
+                                        <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-4">
+                                          <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Why this matters</p>
+                                          <p className="text-[13px] text-[#0f172a]">{guideObj?.summary?.whyThisMatters || '—'}</p>
                                         </div>
                                       </div>
-                                    )}
 
-                                    {/* Success criteria */}
-                                    {guideObj?.successCriteria && (
-                                      <div className="bg-[#f0f9ff] border border-[#bae6fd] rounded-lg p-4">
-                                        <p className="text-[12px] font-semibold text-[#0369a1] uppercase tracking-wide mb-2">Success Criteria</p>
-                                        {Array.isArray(guideObj.successCriteria.whatToMeasure) && (
+                                      {/* Prerequisites */}
+                                      {Array.isArray(guideObj?.prerequisites) && guideObj.prerequisites.length > 0 && (
+                                        <div>
+                                          <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Prerequisites</p>
                                           <ul className="list-disc pl-5 space-y-1">
-                                            {guideObj.successCriteria.whatToMeasure.map((m: string, idx: number) => (
+                                            {guideObj.prerequisites.map((p: string, idx: number) => (
+                                              <li key={idx} className="text-[13px] text-[#0f172a]">{p}</li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+
+                                      {/* Implementation plan */}
+                                      {Array.isArray(guideObj?.implementationPlan) && guideObj.implementationPlan.length > 0 && (
+                                        <div>
+                                          <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-3">Implementation Plan</p>
+                                          <div className="space-y-4">
+                                            {guideObj.implementationPlan.map((phase: any, pIdx: number) => (
+                                              <div key={pIdx} className="border border-[#e2e8f0] rounded-lg p-4">
+                                                <p className="text-[13px] font-semibold text-[#0f172a] mb-2">{phase.phase}</p>
+                                                <div className="space-y-3">
+                                                  {(phase.steps || []).map((step: any, sIdx: number) => (
+                                                    <div key={sIdx} className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-3">
+                                                      <p className="text-[13px] font-semibold text-[#0f172a]">{step.title}</p>
+                                                      <p className="text-[13px] text-[#334155] mt-1 whitespace-pre-line">{step.howTo}</p>
+                                                      {step.deliverable && (
+                                                        <p className="text-[12px] text-[#475569] mt-2">
+                                                          <span className="font-semibold">Deliverable:</span> {step.deliverable}
+                                                        </p>
+                                                      )}
+                                                      {Array.isArray(step.qualityChecks) && step.qualityChecks.length > 0 && (
+                                                        <ul className="list-disc pl-5 mt-2 space-y-1">
+                                                          {step.qualityChecks.map((c: string, cIdx: number) => (
+                                                            <li key={cIdx} className="text-[12px] text-[#0f172a]">{c}</li>
+                                                          ))}
+                                                        </ul>
+                                                      )}
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Success criteria */}
+                                      {guideObj?.successCriteria && (
+                                        <div className="bg-[#f0f9ff] border border-[#bae6fd] rounded-lg p-4">
+                                          <p className="text-[12px] font-semibold text-[#0369a1] uppercase tracking-wide mb-2">Success Criteria</p>
+                                          {Array.isArray(guideObj.successCriteria.whatToMeasure) && (
+                                            <ul className="list-disc pl-5 space-y-1">
+                                              {guideObj.successCriteria.whatToMeasure.map((m: string, idx: number) => (
+                                                <li key={idx} className="text-[13px] text-[#0f172a]">{m}</li>
+                                              ))}
+                                            </ul>
+                                          )}
+                                          {guideObj.successCriteria.expectedDirection && (
+                                            <p className="text-[13px] text-[#0f172a] mt-2">{guideObj.successCriteria.expectedDirection}</p>
+                                          )}
+                                          {guideObj.successCriteria.checkInCadence && (
+                                            <p className="text-[12px] text-[#475569] mt-2">
+                                              <span className="font-semibold">Check-in cadence:</span> {guideObj.successCriteria.checkInCadence}
+                                            </p>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* If already done */}
+                                      {guideObj?.ifAlreadyDone && (
+                                        <div className="bg-[#fff7ed] border border-[#fed7aa] rounded-lg p-4">
+                                          <p className="text-[12px] font-semibold text-[#9a3412] uppercase tracking-wide mb-2">If you think this is already done</p>
+                                          {Array.isArray(guideObj.ifAlreadyDone.verificationSteps) && (
+                                            <>
+                                              <p className="text-[12px] font-semibold text-[#475569] mb-1">Verification steps</p>
+                                              <ul className="list-disc pl-5 space-y-1">
+                                                {guideObj.ifAlreadyDone.verificationSteps.map((v: string, idx: number) => (
+                                                  <li key={idx} className="text-[13px] text-[#0f172a]">{v}</li>
+                                                ))}
+                                              </ul>
+                                            </>
+                                          )}
+                                          {Array.isArray(guideObj.ifAlreadyDone.upgradePath) && guideObj.ifAlreadyDone.upgradePath.length > 0 && (
+                                            <>
+                                              <p className="text-[12px] font-semibold text-[#475569] mt-3 mb-1">Upgrade path</p>
+                                              <ul className="list-disc pl-5 space-y-1">
+                                                {guideObj.ifAlreadyDone.upgradePath.map((u: string, idx: number) => (
+                                                  <li key={idx} className="text-[13px] text-[#0f172a]">{u}</li>
+                                                ))}
+                                              </ul>
+                                            </>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Common mistakes */}
+                                      {Array.isArray(guideObj?.commonMistakes) && guideObj.commonMistakes.length > 0 && (
+                                        <div>
+                                          <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Common mistakes</p>
+                                          <ul className="list-disc pl-5 space-y-1">
+                                            {guideObj.commonMistakes.map((m: string, idx: number) => (
                                               <li key={idx} className="text-[13px] text-[#0f172a]">{m}</li>
                                             ))}
                                           </ul>
-                                        )}
-                                        {guideObj.successCriteria.expectedDirection && (
-                                          <p className="text-[13px] text-[#0f172a] mt-2">{guideObj.successCriteria.expectedDirection}</p>
-                                        )}
-                                        {guideObj.successCriteria.checkInCadence && (
-                                          <p className="text-[12px] text-[#475569] mt-2">
-                                            <span className="font-semibold">Check-in cadence:</span> {guideObj.successCriteria.checkInCadence}
-                                          </p>
-                                        )}
-                                      </div>
-                                    )}
+                                        </div>
+                                      )}
 
-                                    {/* If already done */}
-                                    {guideObj?.ifAlreadyDone && (
-                                      <div className="bg-[#fff7ed] border border-[#fed7aa] rounded-lg p-4">
-                                        <p className="text-[12px] font-semibold text-[#9a3412] uppercase tracking-wide mb-2">If you think this is already done</p>
-                                        {Array.isArray(guideObj.ifAlreadyDone.verificationSteps) && (
-                                          <>
-                                            <p className="text-[12px] font-semibold text-[#475569] mb-1">Verification steps</p>
-                                            <ul className="list-disc pl-5 space-y-1">
-                                              {guideObj.ifAlreadyDone.verificationSteps.map((v: string, idx: number) => (
-                                                <li key={idx} className="text-[13px] text-[#0f172a]">{v}</li>
-                                              ))}
-                                            </ul>
-                                          </>
-                                        )}
-                                        {Array.isArray(guideObj.ifAlreadyDone.upgradePath) && guideObj.ifAlreadyDone.upgradePath.length > 0 && (
-                                          <>
-                                            <p className="text-[12px] font-semibold text-[#475569] mt-3 mb-1">Upgrade path</p>
-                                            <ul className="list-disc pl-5 space-y-1">
-                                              {guideObj.ifAlreadyDone.upgradePath.map((u: string, idx: number) => (
-                                                <li key={idx} className="text-[13px] text-[#0f172a]">{u}</li>
-                                              ))}
-                                            </ul>
-                                          </>
-                                        )}
-                                      </div>
-                                    )}
-
-                                    {/* Common mistakes */}
-                                    {Array.isArray(guideObj?.commonMistakes) && guideObj.commonMistakes.length > 0 && (
-                                      <div>
-                                        <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Common mistakes</p>
-                                        <ul className="list-disc pl-5 space-y-1">
-                                          {guideObj.commonMistakes.map((m: string, idx: number) => (
-                                            <li key={idx} className="text-[13px] text-[#0f172a]">{m}</li>
-                                          ))}
-                                        </ul>
-                                      </div>
-                                    )}
-
-                                    {!isGuide && (
-                                      <div className="text-[13px] text-[#0f172a]">
-                                        <p className="text-[12px] text-[#64748b] mb-2">Guide generated (raw):</p>
-                                        <pre className="whitespace-pre-wrap text-[12px] bg-[#0b1220] text-[#e2e8f0] rounded-lg p-4 overflow-auto">
-                                          {typeof guideRaw === 'string' ? guideRaw : JSON.stringify(guideRaw, null, 2)}
-                                        </pre>
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4">
-                                    <p className="text-[13px] text-[#991b1b] font-semibold">Guide JSON is invalid / truncated</p>
-                                    <p className="text-[12px] text-[#7f1d1d] mt-1">
-                                      This can happen if the model output is cut off mid-response. Please go back to Step 2 and click Generate Guide again.
-                                    </p>
-                                    <pre className="mt-3 whitespace-pre-wrap text-[12px] bg-[#0b1220] text-[#e2e8f0] rounded-lg p-4 overflow-auto">
-                                      {typeof guideRaw === 'string' ? guideRaw : JSON.stringify(guideRaw, null, 2)}
-                                    </pre>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </motion.div>
-                        );
-                      })}
-                    </AnimatePresence>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    <AnimatePresence>
-                      {recommendations.map((rec) => {
-                        const content = rec.id ? contentMap.get(rec.id) : null;
-                        return (
-                          <motion.div
-                            key={rec.id}
-                            layout
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{
-                              opacity: 0,
-                              x: 100, // Slide right ("dumped")
-                              y: 20,  // Drop down slightly
-                              scale: 0.9,
-                              rotate: 5, // Tilted drop
-                              transition: { duration: 0.4, ease: "backIn" }
-                            }}
-                            transition={{ duration: 0.3, layout: { duration: 0.3 } }}
-                            className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm relative z-0"
-                          >
-                            {/* Header Section */}
-                            <div
-                              className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4 cursor-pointer hover:bg-[#f1f5f9] transition-colors rounded-t-xl"
-                              onClick={() => setExpandedRecId(expandedRecId === rec.id ? null : (rec.id || null))}
+                                      {!isGuide && (
+                                        <div className="text-[13px] text-[#0f172a]">
+                                          <p className="text-[12px] text-[#64748b] mb-2">Guide generated (raw):</p>
+                                          <pre className="whitespace-pre-wrap text-[12px] bg-[#0b1220] text-[#e2e8f0] rounded-lg p-4 overflow-auto">
+                                            {typeof guideRaw === 'string' ? guideRaw : JSON.stringify(guideRaw, null, 2)}
+                                          </pre>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4">
+                                      <p className="text-[13px] text-[#991b1b] font-semibold">Guide JSON is invalid / truncated</p>
+                                      <p className="text-[12px] text-[#7f1d1d] mt-1">
+                                        This can happen if the model output is cut off mid-response. Please go back to Step 2 and click Generate Guide again.
+                                      </p>
+                                      <pre className="mt-3 whitespace-pre-wrap text-[12px] bg-[#0b1220] text-[#e2e8f0] rounded-lg p-4 overflow-auto">
+                                        {typeof guideRaw === 'string' ? guideRaw : JSON.stringify(guideRaw, null, 2)}
+                                      </pre>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </AnimatePresence>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <AnimatePresence>
+                        {recommendations.map((rec) => {
+                          const content = rec.id ? contentMap.get(rec.id) : null;
+                          return (
+                            <motion.div
+                              key={rec.id}
+                              layout
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{
+                                opacity: 0,
+                                x: 100, // Slide right ("dumped")
+                                y: 20,  // Drop down slightly
+                                scale: 0.9,
+                                rotate: 5, // Tilted drop
+                                transition: { duration: 0.4, ease: "backIn" }
+                              }}
+                              transition={{ duration: 0.3, layout: { duration: 0.3 } }}
+                              className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm relative z-0"
                             >
-                              <div className="flex items-start justify-between">
-                                <div className="flex items-center gap-3 flex-1">
-                                  <span className="text-[#64748b]">
-                                    {expandedRecId === rec.id ? <IconMinus size={20} /> : <IconPlus size={20} />}
-                                  </span>
-                                  <div className="flex-1">
-                                    <h3 className="text-[14px] font-normal text-[#1a1d29] mb-2 leading-relaxed">{rec.action}</h3>
-                                    <div className="flex items-center gap-2">
-                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1] gap-1.5">
-                                        <SafeLogo
-                                          domain={rec.citationSource}
-                                          alt={rec.citationSource || 'Source'}
-                                          className="w-4 h-4 rounded-full bg-white object-contain"
-                                          size={16}
-                                        />
-                                        {rec.citationSource}
-                                      </span>
+                              {/* Header Section */}
+                              <div
+                                className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4 cursor-pointer hover:bg-[#f1f5f9] transition-colors rounded-t-xl"
+                                onClick={() => setExpandedRecId(expandedRecId === rec.id ? null : (rec.id || null))}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-center gap-3 flex-1">
+                                    <span className="text-[#64748b]">
+                                      {expandedRecId === rec.id ? <IconMinus size={20} /> : <IconPlus size={20} />}
+                                    </span>
+                                    <div className="flex-1">
+                                      <h3 className="text-[14px] font-normal text-[#1a1d29] mb-2 leading-relaxed">{rec.action}</h3>
+                                      <div className="flex items-center gap-2">
+                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1] gap-1.5">
+                                          <SafeLogo
+                                            domain={rec.citationSource}
+                                            alt={rec.citationSource || 'Source'}
+                                            className="w-4 h-4 rounded-full bg-white object-contain"
+                                            size={16}
+                                          />
+                                          {rec.citationSource}
+                                        </span>
+                                      </div>
                                     </div>
                                   </div>
+                                  {!rec.isCompleted && (
+                                    <div className="flex items-center gap-2 ml-4">
+                                      {/* AEO Score Badge */}
+                                      {content && (
+                                        <div className="mr-2">
+                                          <AEOScoreBadge
+                                            content={extractVisibleContent(content)}
+                                            brandName={selectedBrand?.name}
+                                            contentType={getTemplateForAction(rec.action)}
+                                            onClick={() => setScorePanel({
+                                              isOpen: true,
+                                              content: extractVisibleContent(content),
+                                              brandName: selectedBrand?.name,
+                                              contentType: getTemplateForAction(rec.action)
+                                            })}
+                                          />
+                                        </div>
+                                      )}
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (confirm('Stop tracking this recommendation? It will be removed from your view.')) {
+                                            handleStatusChange(rec.id!, 'removed');
+                                          }
+                                        }}
+                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                        title="Stop Tracking"
+                                      >
+                                        <IconTrash size={18} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleToggleComplete(rec)}
+                                        className="px-3 py-1.5 bg-[#06c686] text-white rounded-md text-[12px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
+                                      >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        Mark as Completed
+                                      </button>
+                                    </div>
+                                  )}
+                                  {rec.isCompleted && (
+                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-medium bg-[#d1fae5] text-[#065f46] ml-4">
+                                      ✓ Completed
+                                    </span>
+                                  )}
                                 </div>
-                                {!rec.isCompleted && (
-                                  <div className="flex items-center gap-2 ml-4">
-                                    {/* AEO Score Badge */}
-                                    {content && (
-                                      <div className="mr-2">
-                                        <AEOScoreBadge
-                                          content={extractVisibleContent(content)}
-                                          brandName={selectedBrand?.name}
-                                          contentType={getTemplateForAction(rec.action)}
-                                        />
-                                      </div>
-                                    )}
-
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (confirm('Stop tracking this recommendation? It will be removed from your view.')) {
-                                          handleStatusChange(rec.id!, 'removed');
-                                        }
-                                      }}
-                                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                                      title="Stop Tracking"
-                                    >
-                                      <IconTrash size={18} />
-                                    </button>
-                                    <button
-                                      onClick={() => handleToggleComplete(rec)}
-                                      className="px-3 py-1.5 bg-[#06c686] text-white rounded-md text-[12px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
-                                    >
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                      Mark as Completed
-                                    </button>
-                                  </div>
-                                )}
-                                {rec.isCompleted && (
-                                  <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-medium bg-[#d1fae5] text-[#065f46] ml-4">
-                                    ✓ Completed
-                                  </span>
-                                )}
                               </div>
-                            </div>
 
-                            {/* Content Section - Accordion */}
-                            {expandedRecId === rec.id && (
-                              <div className="p-6 rounded-b-xl overflow-hidden">
-                                {content ? (() => {
-                                  // Parse content - it might be a string (JSON), object with .content property, or already parsed
-                                  let parsedContent: any = null;
-                                  let rawContent: string = '';
+                              {/* Content Section - Accordion */}
+                              {expandedRecId === rec.id && (
+                                <div className="p-6 rounded-b-xl overflow-hidden">
+                                  {content ? (() => {
+                                    // Parse content - it might be a string (JSON), object with .content property, or already parsed
+                                    let parsedContent: any = null;
+                                    let rawContent: string = '';
 
-                                  // Strategy 1: Content is already an object
-                                  if (typeof content === 'object' && content !== null) {
-                                    if (content.content) {
-                                      // Content is in .content property
-                                      if (typeof content.content === 'string') {
-                                        rawContent = content.content;
-                                        try {
-                                          parsedContent = JSON.parse(content.content);
-                                        } catch {
-                                          // Try to extract JSON from string
-                                          const jsonMatch = content.content.match(/\{[\s\S]*\}/);
-                                          if (jsonMatch) {
-                                            try {
-                                              parsedContent = JSON.parse(jsonMatch[0]);
-                                            } catch {
-                                              parsedContent = null;
+                                    // Strategy 1: Content is already an object
+                                    if (typeof content === 'object' && content !== null) {
+                                      if (content.content) {
+                                        // Content is in .content property
+                                        if (typeof content.content === 'string') {
+                                          rawContent = content.content;
+                                          try {
+                                            parsedContent = JSON.parse(content.content);
+                                          } catch {
+                                            // Try to extract JSON from string
+                                            const jsonMatch = content.content.match(/\{[\s\S]*\}/);
+                                            if (jsonMatch) {
+                                              try {
+                                                parsedContent = JSON.parse(jsonMatch[0]);
+                                              } catch {
+                                                parsedContent = null;
+                                              }
                                             }
                                           }
+                                        } else {
+                                          parsedContent = content.content;
                                         }
                                       } else {
-                                        parsedContent = content.content;
+                                        parsedContent = content;
                                       }
-                                    } else {
-                                      parsedContent = content;
-                                    }
-                                  } else if (typeof content === 'string') {
-                                    // Strategy 2: Content is a string - try to parse it
-                                    rawContent = content;
-                                    try {
-                                      parsedContent = JSON.parse(content);
-                                    } catch {
-                                      // Try to extract JSON object from text
-                                      const jsonMatch = content.match(/\{[\s\S]*\}/);
-                                      if (jsonMatch) {
-                                        try {
-                                          parsedContent = JSON.parse(jsonMatch[0]);
-                                        } catch {
-                                          // v4.0 Recovery: Try to fix truncated JSON by closing brackets
-                                          if (content.includes('"version":"4.0"') || content.includes('"version": "4.0"')) {
-                                            try {
-                                              // Robust V4 Recovery
-                                              // 1. Extract the text following "sections": [
-                                              const sectionsStartMatch = content.match(/"sections"\s*:\s*\[([\s\S]*)/);
+                                    } else if (typeof content === 'string') {
+                                      // Strategy 2: Content is a string - try to parse it
+                                      rawContent = content;
+                                      try {
+                                        parsedContent = JSON.parse(content);
+                                      } catch {
+                                        // Try to extract JSON object from text
+                                        const jsonMatch = content.match(/\{[\s\S]*\}/);
+                                        if (jsonMatch) {
+                                          try {
+                                            parsedContent = JSON.parse(jsonMatch[0]);
+                                          } catch {
+                                            // v4.0 Recovery: Try to fix truncated JSON by closing brackets
+                                            if (content.includes('"version":"4.0"') || content.includes('"version": "4.0"')) {
+                                              try {
+                                                // Robust V4 Recovery
+                                                // 1. Extract the text following "sections": [
+                                                const sectionsStartMatch = content.match(/"sections"\s*:\s*\[([\s\S]*)/);
 
-                                              if (sectionsStartMatch) {
-                                                const sectionsStr = sectionsStartMatch[1];
-                                                const sections: any[] = [];
+                                                if (sectionsStartMatch) {
+                                                  const sectionsStr = sectionsStartMatch[1];
+                                                  const sections: any[] = [];
 
-                                                // 2. Match individual object blocks { ... } non-greedily
-                                                // Note: This simple regex assumes no nested braces within content (escaped braces are fine)
-                                                // If content has nested objects, this might be brittle, but standard V4 schema is flat.
-                                                // We look for { "id": ... } structure roughly
-                                                const objectBlockRegex = /\{[\s\S]*?\}(?=\s*,|\s*\]|\s*$)/g;
-                                                const potentialBlocks = sectionsStr.match(objectBlockRegex) || [];
+                                                  // 2. Match individual object blocks { ... } non-greedily
+                                                  // Note: This simple regex assumes no nested braces within content (escaped braces are fine)
+                                                  // If content has nested objects, this might be brittle, but standard V4 schema is flat.
+                                                  // We look for { "id": ... } structure roughly
+                                                  const objectBlockRegex = /\{[\s\S]*?\}(?=\s*,|\s*\]|\s*$)/g;
+                                                  const potentialBlocks = sectionsStr.match(objectBlockRegex) || [];
 
-                                                for (const block of potentialBlocks) {
-                                                  try {
-                                                    // Try to parse the individual block as JSON first
-                                                    const validBlock = JSON.parse(block);
-                                                    sections.push(validBlock);
-                                                  } catch {
-                                                    // If individual block checks fail, regex extract fields 
-                                                    const idMatch = block.match(/"id"\s*:\s*"([^"]+)"/);
-                                                    const titleMatch = block.match(/"title"\s*:\s*"([^"]+)"/);
-                                                    // Content match is tricky due to escaped quotes. 
-                                                    // Look for "content": "..." pattern
-                                                    const contentMatch = block.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-                                                    const typeMatch = block.match(/"sectionType"\s*:\s*"([^"]+)"/);
+                                                  for (const block of potentialBlocks) {
+                                                    try {
+                                                      // Try to parse the individual block as JSON first
+                                                      const validBlock = JSON.parse(block);
+                                                      sections.push(validBlock);
+                                                    } catch {
+                                                      // If individual block checks fail, regex extract fields 
+                                                      const idMatch = block.match(/"id"\s*:\s*"([^"]+)"/);
+                                                      const titleMatch = block.match(/"title"\s*:\s*"([^"]+)"/);
+                                                      // Content match is tricky due to escaped quotes. 
+                                                      // Look for "content": "..." pattern
+                                                      const contentMatch = block.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+                                                      const typeMatch = block.match(/"sectionType"\s*:\s*"([^"]+)"/);
 
-                                                    if (idMatch && contentMatch) {
-                                                      sections.push({
-                                                        id: idMatch[1],
-                                                        title: titleMatch ? titleMatch[1] : 'Section',
-                                                        content: contentMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
-                                                        sectionType: typeMatch ? typeMatch[1] : 'strategies'
-                                                      });
+                                                      if (idMatch && contentMatch) {
+                                                        sections.push({
+                                                          id: idMatch[1],
+                                                          title: titleMatch ? titleMatch[1] : 'Section',
+                                                          content: contentMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
+                                                          sectionType: typeMatch ? typeMatch[1] : 'strategies'
+                                                        });
+                                                      }
                                                     }
                                                   }
-                                                }
 
-                                                if (sections.length > 0) {
-                                                  // Extract title if present
-                                                  const titleMatch = content.match(/"contentTitle"\s*:\s*"([^"]+)"/);
-                                                  parsedContent = {
-                                                    version: '4.0',
-                                                    contentTitle: titleMatch ? titleMatch[1] : 'Content (Recovered)',
-                                                    sections,
-                                                    callToAction: '',
-                                                    requiredInputs: []
-                                                  };
-                                                } else {
-                                                  // Fallback: If no objects matched, try matching strictly by "id" presence
-                                                  // This catches cases where the brace matching failed (e.g. truncated end)
-                                                  // Logic: Find "id": "..." and take context around it? 
-                                                  // Actually simpler: Just accept null if recovery failed this hard.
-                                                  parsedContent = null;
+                                                  if (sections.length > 0) {
+                                                    // Extract title if present
+                                                    const titleMatch = content.match(/"contentTitle"\s*:\s*"([^"]+)"/);
+                                                    parsedContent = {
+                                                      version: '4.0',
+                                                      contentTitle: titleMatch ? titleMatch[1] : 'Content (Recovered)',
+                                                      sections,
+                                                      callToAction: '',
+                                                      requiredInputs: []
+                                                    };
+                                                  } else {
+                                                    // Fallback: If no objects matched, try matching strictly by "id" presence
+                                                    // This catches cases where the brace matching failed (e.g. truncated end)
+                                                    // Logic: Find "id": "..." and take context around it? 
+                                                    // Actually simpler: Just accept null if recovery failed this hard.
+                                                    parsedContent = null;
+                                                  }
                                                 }
+                                              } catch (e) {
+                                                console.warn('v4.0 recovery failed:', e);
+                                                parsedContent = null;
                                               }
-                                            } catch (e) {
-                                              console.warn('v4.0 recovery failed:', e);
+                                            } else {
                                               parsedContent = null;
                                             }
-                                          } else {
-                                            parsedContent = null;
                                           }
                                         }
                                       }
                                     }
-                                  }
 
-                                  // Handle v4.0 format (sectioned content with interactive refinement)
-                                  if (parsedContent && parsedContent.version === '4.0') {
-                                    const v4Content = refinedContent.get(rec.id || '') || parsedContent;
-                                    const sections = v4Content.sections || [];
-                                    const contentTitle = v4Content.contentTitle || '';
-                                    const callToAction = v4Content.callToAction || '';
-                                    const requiredInputs = v4Content.requiredInputs || [];
-                                    const recId = rec.id || '';
-                                    const isRefining = refiningIds.has(recId);
+                                    // Handle v4.0 format (sectioned content with interactive refinement)
+                                    if (parsedContent && parsedContent.version === '4.0') {
+                                      const v4Content = refinedContent.get(rec.id || '') || parsedContent;
+                                      const sections = v4Content.sections || [];
+                                      const contentTitle = v4Content.contentTitle || '';
+                                      const callToAction = v4Content.callToAction || '';
+                                      const requiredInputs = v4Content.requiredInputs || [];
+                                      const recId = rec.id || '';
+                                      const isRefining = refiningIds.has(recId);
 
-                                    // Get or initialize section feedback/edits for this recommendation
-                                    const recFeedback = sectionFeedback.get(recId) || new Map<string, string>();
-                                    const recEdits = sectionEdits.get(recId) || new Map<string, string>();
-                                    const refs = globalReferences.get(recId) || '';
+                                      // Get or initialize section feedback/edits for this recommendation
+                                      const recFeedback = sectionFeedback.get(recId) || new Map<string, string>();
+                                      const recEdits = sectionEdits.get(recId) || new Map<string, string>();
+                                      const refs = globalReferences.get(recId) || '';
 
-                                    // Highlight [FILL_IN: ...] markers
-                                    const highlightFillIns = (text: string) => {
-                                      if (!text) return text;
-                                      const cleanText = text.replace(/<span class="fill-in-placeholder">/g, '').replace(/<\/span>/g, '');
-                                      return cleanText.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
-                                    };
+                                      // Highlight [FILL_IN: ...] markers
+                                      const highlightFillIns = (text: string) => {
+                                        if (!text) return text;
+                                        const cleanText = text.replace(/<span class="fill-in-placeholder">/g, '').replace(/<\/span>/g, '');
+                                        return cleanText.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
+                                      };
 
-                                    // Handle section feedback update
-                                    const updateSectionFeedback = (sectionId: string, feedback: string) => {
-                                      setSectionFeedback(prev => {
-                                        const next = new Map(prev);
-                                        const recMap = new Map(next.get(recId) || new Map());
-                                        recMap.set(sectionId, feedback);
-                                        next.set(recId, recMap);
-                                        return next;
-                                      });
-                                    };
-
-                                    // Handle section edit update
-                                    const updateSectionEdit = (sectionId: string, content: string) => {
-                                      setSectionEdits(prev => {
-                                        const next = new Map(prev);
-                                        const recMap = new Map(next.get(recId) || new Map());
-                                        recMap.set(sectionId, content);
-                                        next.set(recId, recMap);
-                                        return next;
-                                      });
-                                    };
-
-                                    // Handle section title edit update
-                                    const updateSectionTitleEdit = (sectionId: string, title: string) => {
-                                      setSectionTitleEdits(prev => {
-                                        const next = new Map(prev);
-                                        const recMap = new Map(next.get(recId) || new Map());
-                                        recMap.set(sectionId, title);
-                                        next.set(recId, recMap);
-                                        return next;
-                                      });
-                                    };
-
-                                    // Get title edits for this recommendation
-                                    const recTitleEdits = sectionTitleEdits.get(recId) || new Map<string, string>();
-
-                                    // Handle references update
-                                    const updateReferences = (refs: string) => {
-                                      setGlobalReferences(prev => {
-                                        const next = new Map(prev);
-                                        next.set(recId, refs);
-                                        return next;
-                                      });
-                                    };
-
-                                    // Handle refinement
-                                    const handleRefine = async () => {
-                                      setRefiningIds(prev => new Set(prev).add(recId));
-                                      try {
-                                        const sectionsWithFeedback = sections.map((s: any) => ({
-                                          id: s.id,
-                                          title: s.title,
-                                          content: recEdits.get(s.id) || s.content,
-                                          feedback: recFeedback.get(s.id) || '',
-                                          sectionType: s.sectionType
-                                        }));
-
-                                        console.log('[Refine] Sending request with', sectionsWithFeedback.length, 'sections');
-                                        const accessToken = apiClient.getAccessToken();
-
-                                        const response = await fetch(`${apiClient.baseUrl}/recommendations-v3/refine-content`, {
-                                          method: 'POST',
-                                          headers: {
-                                            'Content-Type': 'application/json',
-                                            ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
-                                          },
-                                          body: JSON.stringify({
-                                            recommendationId: recId,
-                                            sections: sectionsWithFeedback,
-                                            references: refs,
-                                            brandName: v4Content.brandName || ''
-                                          })
-                                        });
-
-                                        console.log('[Refine] Response status:', response.status);
-                                        const result = await response.json();
-                                        console.log('[Refine] Result:', result);
-
-                                        if (result.success && result.data?.refinedContent) {
-                                          setRefinedContent(prev => {
-                                            const next = new Map(prev);
-                                            next.set(recId, result.data.refinedContent);
-                                            return next;
-                                          });
-                                          // Invalidate the cache for this recommendation's content so page refresh loads fresh data from DB
-                                          invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
-                                          // Clear feedback after successful refinement
-                                          setSectionFeedback(prev => {
-                                            const next = new Map(prev);
-                                            next.delete(recId);
-                                            return next;
-                                          });
-                                          // Clear any pending edits since we have fresh content
-                                          setSectionEdits(prev => {
-                                            const next = new Map(prev);
-                                            next.delete(recId);
-                                            return next;
-                                          });
-                                          setSectionTitleEdits(prev => {
-                                            const next = new Map(prev);
-                                            next.delete(recId);
-                                            return next;
-                                          });
-                                        } else {
-                                          console.error('[Refine] API returned error:', result.error);
-                                        }
-                                      } catch (error) {
-                                        console.error('Refinement failed:', error);
-                                      } finally {
-                                        setRefiningIds(prev => {
-                                          const next = new Set(prev);
-                                          next.delete(recId);
+                                      // Handle section feedback update
+                                      const updateSectionFeedback = (sectionId: string, feedback: string) => {
+                                        setSectionFeedback(prev => {
+                                          const next = new Map(prev);
+                                          const recMap = new Map(next.get(recId) || new Map());
+                                          recMap.set(sectionId, feedback);
+                                          next.set(recId, recMap);
                                           return next;
                                         });
-                                      }
-                                    };
+                                      };
 
-                                    // Handle saving section edits when Done is clicked
-                                    const handleSaveSection = async (sectionId: string) => {
-                                      const editedTitle = recTitleEdits.get(sectionId);
-                                      const editedContent = recEdits.get(sectionId);
-
-                                      // Only save if there are actual edits
-                                      if (!editedTitle && !editedContent) {
-                                        setEditingId(null);
-                                        return;
-                                      }
-
-                                      const sectionKey = `${recId}_${sectionId}`;
-                                      setSavingIds(prev => new Set(prev).add(sectionKey));
-
-                                      try {
-                                        // Build sections array with all current sections, applying edits
-                                        const sectionsToSave = sections.map((s: any) => ({
-                                          id: s.id,
-                                          title: recTitleEdits.get(s.id) ?? s.title,
-                                          content: recEdits.get(s.id) ?? s.content,
-                                          sectionType: s.sectionType
-                                        }));
-
-                                        const result = await saveSectionEditsV3(recId, sectionsToSave);
-
-                                        if (result.success && result.data?.content) {
-                                          console.log('[Save Section] Successfully saved section edits');
-                                          // Update contentMap with the saved content
-                                          setContentMap(prev => {
-                                            const next = new Map(prev);
-                                            next.set(recId, result.data!.content);
-                                            return next;
-                                          });
-
-                                          // Invalidate cache to ensure fresh content is fetched on reload
-                                          invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
-
-                                          // Clear title edits for this recommendation since they're now saved
-                                          setSectionTitleEdits(prev => {
-                                            const next = new Map(prev);
-                                            next.delete(recId);
-                                            return next;
-                                          });
-                                          // Clear content edits since they're now saved
-                                          setSectionEdits(prev => {
-                                            const next = new Map(prev);
-                                            next.delete(recId);
-                                            return next;
-                                          });
-                                        } else {
-                                          console.error('[Save Section] Failed to save:', result.error);
-                                        }
-                                      } catch (error) {
-                                        console.error('[Save Section] Error:', error);
-                                      } finally {
-                                        setSavingIds(prev => {
-                                          const next = new Set(prev);
-                                          next.delete(sectionKey);
+                                      // Handle section edit update
+                                      const updateSectionEdit = (sectionId: string, content: string) => {
+                                        setSectionEdits(prev => {
+                                          const next = new Map(prev);
+                                          const recMap = new Map(next.get(recId) || new Map());
+                                          recMap.set(sectionId, content);
+                                          next.set(recId, recMap);
                                           return next;
                                         });
-                                        setEditingId(null);
-                                      }
-                                    };
+                                      };
 
-                                    // Check if a section is being saved
-                                    const isSavingSection = (sectionId: string) => savingIds.has(`${recId}_${sectionId}`);
+                                      // Handle section title edit update
+                                      const updateSectionTitleEdit = (sectionId: string, title: string) => {
+                                        setSectionTitleEdits(prev => {
+                                          const next = new Map(prev);
+                                          const recMap = new Map(next.get(recId) || new Map());
+                                          recMap.set(sectionId, title);
+                                          next.set(recId, recMap);
+                                          return next;
+                                        });
+                                      };
 
-                                    // Check if any feedback exists
-                                    const hasFeedback = Array.from(recFeedback.values()).some(f => f.trim().length > 0) || refs.trim().length > 0;
+                                      // Get title edits for this recommendation
+                                      const recTitleEdits = sectionTitleEdits.get(recId) || new Map<string, string>();
 
-                                    return (
-                                      <div className="space-y-4">
-                                        {/* Header with overall title - Premium Library Card Design */}
-                                        <div className="bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between relative overflow-hidden">
-                                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-slate-400 to-slate-300" />
-                                          <div className="relative flex items-center gap-4 pl-2">
+                                      // Handle references update
+                                      const updateReferences = (refs: string) => {
+                                        setGlobalReferences(prev => {
+                                          const next = new Map(prev);
+                                          next.set(recId, refs);
+                                          return next;
+                                        });
+                                      };
 
-                                            <div>
-                                              <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
-                                              <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections </p>
+                                      // Handle refinement
+                                      const handleRefine = async () => {
+                                        setRefiningIds(prev => new Set(prev).add(recId));
+                                        try {
+                                          const sectionsWithFeedback = sections.map((s: any) => ({
+                                            id: s.id,
+                                            title: s.title,
+                                            content: recEdits.get(s.id) || s.content,
+                                            feedback: recFeedback.get(s.id) || '',
+                                            sectionType: s.sectionType
+                                          }));
+
+                                          console.log('[Refine] Sending request with', sectionsWithFeedback.length, 'sections');
+                                          const accessToken = apiClient.getAccessToken();
+                                          const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
+
+                                          const response = await fetch(`${apiClient.baseUrl}/recommendations-v3/refine-content`, {
+                                            method: 'POST',
+                                            headers: {
+                                              'Content-Type': 'application/json',
+                                              ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+                                              ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
+                                            },
+                                            body: JSON.stringify({
+                                              recommendationId: recId,
+                                              sections: sectionsWithFeedback,
+                                              references: refs,
+                                              brandName: v4Content.brandName || ''
+                                            })
+                                          });
+
+                                          console.log('[Refine] Response status:', response.status);
+                                          const result = await response.json();
+                                          console.log('[Refine] Result:', result);
+
+                                          if (result.success && result.data?.refinedContent) {
+                                            setRefinedContent(prev => {
+                                              const next = new Map(prev);
+                                              next.set(recId, result.data.refinedContent);
+                                              return next;
+                                            });
+                                            // Invalidate the cache for this recommendation's content so page refresh loads fresh data from DB
+                                            invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
+                                            // Clear feedback after successful refinement
+                                            setSectionFeedback(prev => {
+                                              const next = new Map(prev);
+                                              next.delete(recId);
+                                              return next;
+                                            });
+                                            // Clear any pending edits since we have fresh content
+                                            setSectionEdits(prev => {
+                                              const next = new Map(prev);
+                                              next.delete(recId);
+                                              return next;
+                                            });
+                                            setSectionTitleEdits(prev => {
+                                              const next = new Map(prev);
+                                              next.delete(recId);
+                                              return next;
+                                            });
+                                          } else {
+                                            console.error('[Refine] API returned error:', result.error);
+                                          }
+                                        } catch (error) {
+                                          console.error('Refinement failed:', error);
+                                        } finally {
+                                          setRefiningIds(prev => {
+                                            const next = new Set(prev);
+                                            next.delete(recId);
+                                            return next;
+                                          });
+                                        }
+                                      };
+
+                                      // Handle saving section edits when Done is clicked
+                                      const handleSaveSection = async (sectionId: string) => {
+                                        const editedTitle = recTitleEdits.get(sectionId);
+                                        const editedContent = recEdits.get(sectionId);
+
+                                        // Only save if there are actual edits
+                                        if (!editedTitle && !editedContent) {
+                                          setEditingId(null);
+                                          return;
+                                        }
+
+                                        const sectionKey = `${recId}_${sectionId}`;
+                                        setSavingIds(prev => new Set(prev).add(sectionKey));
+
+                                        try {
+                                          // Build sections array with all current sections, applying edits
+                                          const sectionsToSave = sections.map((s: any) => ({
+                                            id: s.id,
+                                            title: recTitleEdits.get(s.id) ?? s.title,
+                                            content: recEdits.get(s.id) ?? s.content,
+                                            sectionType: s.sectionType
+                                          }));
+
+                                          const result = await saveSectionEditsV3(recId, sectionsToSave);
+
+                                          if (result.success && result.data?.content) {
+                                            console.log('[Save Section] Successfully saved section edits');
+                                            // Update contentMap with the saved content
+                                            setContentMap(prev => {
+                                              const next = new Map(prev);
+                                              next.set(recId, result.data!.content);
+                                              return next;
+                                            });
+
+                                            // Invalidate cache to ensure fresh content is fetched on reload
+                                            invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
+
+                                            // Clear title edits for this recommendation since they're now saved
+                                            setSectionTitleEdits(prev => {
+                                              const next = new Map(prev);
+                                              next.delete(recId);
+                                              return next;
+                                            });
+                                            // Clear content edits since they're now saved
+                                            setSectionEdits(prev => {
+                                              const next = new Map(prev);
+                                              next.delete(recId);
+                                              return next;
+                                            });
+                                          } else {
+                                            console.error('[Save Section] Failed to save:', result.error);
+                                          }
+                                        } catch (error) {
+                                          console.error('[Save Section] Error:', error);
+                                        } finally {
+                                          setSavingIds(prev => {
+                                            const next = new Set(prev);
+                                            next.delete(sectionKey);
+                                            return next;
+                                          });
+                                          setEditingId(null);
+                                        }
+                                      };
+
+                                      // Check if a section is being saved
+                                      const isSavingSection = (sectionId: string) => savingIds.has(`${recId}_${sectionId}`);
+
+                                      // Check if any feedback exists
+                                      const hasFeedback = Array.from(recFeedback.values()).some(f => f.trim().length > 0) || refs.trim().length > 0;
+
+                                      return (
+                                        <div className="space-y-4">
+                                          {/* Header with overall title - Premium Library Card Design */}
+                                          <div className="bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between relative overflow-hidden">
+                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-slate-400 to-slate-300" />
+                                            <div className="relative flex items-center gap-4 pl-2">
+
+                                              <div>
+                                                <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
+                                                <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections </p>
+                                              </div>
                                             </div>
+
+                                            {/* Refine with Feedback Button - Moved to Header */}
+                                            <button
+                                              onClick={handleRefine}
+                                              disabled={isRefining || !hasFeedback}
+                                              className={`px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2 ${isRefining || !hasFeedback
+                                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                                                : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3] border border-transparent'
+                                                }`}
+                                            >
+                                              {isRefining ? (
+                                                <>
+                                                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                  Refining...
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <IconSparkles size={16} />
+                                                  Refine with Feedback
+                                                </>
+                                              )}
+                                            </button>
                                           </div>
 
-                                          {/* Refine with Feedback Button - Moved to Header */}
-                                          <button
-                                            onClick={handleRefine}
-                                            disabled={isRefining || !hasFeedback}
-                                            className={`px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2 ${isRefining || !hasFeedback
-                                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                              : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3] border border-transparent'
-                                              }`}
-                                          >
-                                            {isRefining ? (
-                                              <>
-                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                Refining...
-                                              </>
-                                            ) : (
-                                              <>
-                                                <IconSparkles size={16} />
-                                                Refine with Feedback
-                                              </>
-                                            )}
-                                          </button>
-                                        </div>
+                                          {/* Section Cards */}
+                                          {sections.map((section: any, idx: number) => {
+                                            const editedContent = recEdits.get(section.id) || section.content;
+                                            const feedback = recFeedback.get(section.id) || '';
+                                            const isEditingSection = editingId === `${recId}_${section.id}`;
 
-                                        {/* Section Cards */}
-                                        {sections.map((section: any, idx: number) => {
-                                          const editedContent = recEdits.get(section.id) || section.content;
-                                          const feedback = recFeedback.get(section.id) || '';
-                                          const isEditingSection = editingId === `${recId}_${section.id}`;
-
-                                          return (
-                                            <div key={section.id} className="bg-white border border-[#e2e8f0] rounded-lg shadow-sm overflow-hidden">
-                                              {/* Section Header - Clean Muted Style */}
-                                              <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50 border-b border-slate-100">
-                                                <div className="flex items-center gap-3">
-                                                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                                                    {String(idx + 1).padStart(2, '0')}
-                                                  </span>
-                                                  {isEditingSection ? (
-                                                    <input
-                                                      type="text"
-                                                      value={recTitleEdits.get(section.id) ?? section.title}
-                                                      onChange={(e) => updateSectionTitleEdit(section.id, e.target.value)}
-                                                      className="text-[14px] font-medium text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent min-w-[200px]"
-                                                      placeholder="Section title"
-                                                    />
-                                                  ) : (
-                                                    <h4 className="text-[15px] font-bold text-slate-900 tracking-tight">{recTitleEdits.get(section.id) ?? section.title}</h4>
-                                                  )}
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                  <button
-                                                    onClick={() => {
-                                                      const sectionKey = `${recId}_${section.id}`;
-                                                      setActiveFeedbackSection(activeFeedbackSection === sectionKey ? null : sectionKey);
-                                                    }}
-                                                    className={`p-1.5 rounded-md transition-colors relative ${feedback.trim().length > 0 ? 'text-slate-600 bg-slate-100' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
-                                                    title="Feedback"
-                                                  >
-                                                    <IconMessageCircle size={16} />
-                                                    {feedback.trim().length > 0 && (
-                                                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#f59e0b] rounded-full border border-white"></span>
+                                            return (
+                                              <div key={section.id} className="bg-white border border-[#e2e8f0] rounded-lg shadow-sm overflow-hidden">
+                                                {/* Section Header - Clean Muted Style */}
+                                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50 border-b border-slate-100">
+                                                  <div className="flex items-center gap-3">
+                                                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                                                      {String(idx + 1).padStart(2, '0')}
+                                                    </span>
+                                                    {isEditingSection ? (
+                                                      <input
+                                                        type="text"
+                                                        value={recTitleEdits.get(section.id) ?? section.title}
+                                                        onChange={(e) => updateSectionTitleEdit(section.id, e.target.value)}
+                                                        className="text-[14px] font-medium text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent min-w-[200px]"
+                                                        placeholder="Section title"
+                                                      />
+                                                    ) : (
+                                                      <h4 className="text-[15px] font-bold text-slate-900 tracking-tight">{recTitleEdits.get(section.id) ?? section.title}</h4>
                                                     )}
-                                                  </button>
-                                                  <button
-                                                    onClick={() => {
-                                                      if (isEditingSection) {
-                                                        handleSaveSection(section.id);
-                                                      } else {
-                                                        setEditingId(`${recId}_${section.id}`);
-                                                      }
-                                                    }}
-                                                    disabled={isSavingSection(section.id)}
-                                                    className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${isSavingSection(section.id)
-                                                      ? 'text-slate-300 cursor-not-allowed'
-                                                      : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                                                      }`}
-                                                  >
-                                                    {isSavingSection(section.id) ? '⏳ Saving...' : isEditingSection ? '✓ Done' : '✎ Edit'}
-                                                  </button>
-                                                </div>
-                                              </div>
-
-                                              {/* Feedback Popover */}
-                                              {activeFeedbackSection === `${recId}_${section.id}` && (
-                                                <div className="absolute top-12 right-4 z-50 w-[320px] bg-white border border-[#fcd34d] rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                                                  <div className="bg-[#fffbeb] px-4 py-2 border-b border-[#fcd34d] flex items-center justify-between">
-                                                    <span className="text-[12px] font-bold text-[#92400e]">Feedback for {section.title}</span>
+                                                  </div>
+                                                  <div className="flex items-center gap-2">
                                                     <button
-                                                      onClick={() => setActiveFeedbackSection(null)}
-                                                      className="text-[#92400e] hover:bg-[#fef3c7] p-1 rounded-md"
+                                                      onClick={() => {
+                                                        const sectionKey = `${recId}_${section.id}`;
+                                                        setActiveFeedbackSection(activeFeedbackSection === sectionKey ? null : sectionKey);
+                                                      }}
+                                                      className={`p-1.5 rounded-md transition-colors relative ${feedback.trim().length > 0 ? 'text-slate-600 bg-slate-100' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+                                                      title="Feedback"
                                                     >
-                                                      <IconX size={14} />
+                                                      <IconMessageCircle size={16} />
+                                                      {feedback.trim().length > 0 && (
+                                                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#f59e0b] rounded-full border border-white"></span>
+                                                      )}
+                                                    </button>
+                                                    <button
+                                                      onClick={() => {
+                                                        if (isEditingSection) {
+                                                          handleSaveSection(section.id);
+                                                        } else {
+                                                          setEditingId(`${recId}_${section.id}`);
+                                                        }
+                                                      }}
+                                                      disabled={isSavingSection(section.id)}
+                                                      className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${isSavingSection(section.id)
+                                                        ? 'text-slate-300 cursor-not-allowed'
+                                                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                                        }`}
+                                                    >
+                                                      {isSavingSection(section.id) ? '⏳ Saving...' : isEditingSection ? '✓ Done' : '✎ Edit'}
                                                     </button>
                                                   </div>
-                                                  <div className="p-4">
-                                                    <textarea
-                                                      className="w-full p-3 bg-white border border-[#fcd34d] rounded-lg text-[13px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#f59e0b] min-h-[100px]"
-                                                      placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
-                                                      autoFocus
-                                                      value={feedback}
-                                                      onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
-                                                    />
-                                                    <div className="mt-3 flex justify-end">
+                                                </div>
+
+                                                {/* Feedback Popover */}
+                                                {activeFeedbackSection === `${recId}_${section.id}` && (
+                                                  <div className="absolute top-12 right-4 z-50 w-[320px] bg-white border border-[#fcd34d] rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                                                    <div className="bg-[#fffbeb] px-4 py-2 border-b border-[#fcd34d] flex items-center justify-between">
+                                                      <span className="text-[12px] font-bold text-[#92400e]">Feedback for {section.title}</span>
                                                       <button
                                                         onClick={() => setActiveFeedbackSection(null)}
-                                                        className="px-4 py-1.5 bg-[#fcd34d] text-[#92400e] text-[12px] font-bold rounded-lg hover:bg-[#fbbf24] transition-colors"
+                                                        className="text-[#92400e] hover:bg-[#fef3c7] p-1 rounded-md"
                                                       >
-                                                        Done
+                                                        <IconX size={14} />
                                                       </button>
                                                     </div>
+                                                    <div className="p-4">
+                                                      <textarea
+                                                        className="w-full p-3 bg-white border border-[#fcd34d] rounded-lg text-[13px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#f59e0b] min-h-[100px]"
+                                                        placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
+                                                        autoFocus
+                                                        value={feedback}
+                                                        onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
+                                                      />
+                                                      <div className="mt-3 flex justify-end">
+                                                        <button
+                                                          onClick={() => setActiveFeedbackSection(null)}
+                                                          className="px-4 py-1.5 bg-[#fcd34d] text-[#92400e] text-[12px] font-bold rounded-lg hover:bg-[#fbbf24] transition-colors"
+                                                        >
+                                                          Done
+                                                        </button>
+                                                      </div>
+                                                    </div>
                                                   </div>
+                                                )}
+
+                                                {/* Section Content */}
+                                                <div className="p-4">
+                                                  <ContentSectionRenderer
+                                                    section={{
+                                                      id: section.id,
+                                                      title: section.title,
+                                                      content: section.content,
+                                                      sectionType: section.sectionType,
+                                                    }}
+                                                    isEditing={isEditingSection}
+                                                    editedContent={editedContent}
+                                                    onContentChange={(content) => updateSectionEdit(section.id, content)}
+                                                    highlightFillIns={highlightFillIns}
+                                                  />
                                                 </div>
-                                              )}
-
-                                              {/* Section Content */}
-                                              <div className="p-4">
-                                                <ContentSectionRenderer
-                                                  section={{
-                                                    id: section.id,
-                                                    title: section.title,
-                                                    content: section.content,
-                                                    sectionType: section.sectionType,
-                                                  }}
-                                                  isEditing={isEditingSection}
-                                                  editedContent={editedContent}
-                                                  onContentChange={(content) => updateSectionEdit(section.id, content)}
-                                                  highlightFillIns={highlightFillIns}
-                                                />
                                               </div>
+                                            );
+                                          })}
+
+                                          {/* Call to Action */}
+                                          {callToAction && (
+                                            <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg p-4">
+                                              <p className="text-[12px] font-semibold text-[#166534] mb-1">📢 Call to Action</p>
+                                              <p className="text-[13px] text-[#166534]">{callToAction}</p>
                                             </div>
-                                          );
-                                        })}
+                                          )}
 
-                                        {/* Call to Action */}
-                                        {callToAction && (
-                                          <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg p-4">
-                                            <p className="text-[12px] font-semibold text-[#166534] mb-1">📢 Call to Action</p>
-                                            <p className="text-[13px] text-[#166534]">{callToAction}</p>
-                                          </div>
-                                        )}
-
-                                        {/* Required Inputs
+                                          {/* Required Inputs
                                         {requiredInputs.length > 0 && (
                                           <div className="bg-[#fef3c7] border border-[#fcd34d] rounded-lg p-4">
                                             <p className="text-[12px] font-semibold text-[#92400e] mb-2">⚠️ Fill in before publishing:</p>
@@ -2588,336 +2607,110 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                           </div>
                                         )} */}
 
-                                        {/* Global References */}
-                                        <div className="bg-[#f1f5f9] border border-[#cbd5e1] rounded-lg p-4">
-                                          <label className="text-[12px] font-semibold text-[#475569] block mb-2">
-                                            📎 Additional References (optional)
-                                          </label>
-                                          <textarea
-                                            className="w-full p-3 bg-white border border-[#cbd5e1] rounded-lg text-[12px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-1 focus:ring-[#00bcdc]"
-                                            placeholder="Add any additional context, URLs, or reference material..."
-                                            rows={2}
-                                            value={refs}
-                                            onChange={(e) => updateReferences(e.target.value)}
-                                          />
-                                        </div>
-
-
-
-
-
-
-                                      </div>
-                                    );
-                                  }
-
-                                  // Handle v3.0 format (dual content: guide + publishable)
-                                  if (parsedContent && parsedContent.version === '3.0') {
-                                    const v3Content = parsedContent as any;
-                                    const publishableContent = v3Content.publishableContent;
-                                    const requiredInputs = v3Content.requiredInputs || [];
-
-                                    // Highlight [FILL_IN: ...] markers
-                                    const highlightFillIns = (text: string) => {
-                                      if (!text) return text;
-                                      const cleanText = text.replace(/<span class="fill-in-placeholder">/g, '').replace(/<\/span>/g, '');
-                                      return cleanText.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
-                                    };
-
-                                    return (
-                                      <div className="space-y-4">
-                                        {/* Publishable Content Section */}
-                                        {publishableContent && publishableContent.content && (
-                                          <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
-                                            {/* Header */}
-                                            <div className="flex items-center justify-between p-4 border-b border-[#e2e8f0]">
-                                              <div className="flex items-center gap-2">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-[#06c686]"></div>
-                                                <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">
-                                                  📝 Publishable Content
-                                                </h4>
-                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#06c686] text-white capitalize">
-                                                  {publishableContent.type?.replace(/_/g, ' ') || 'Content'}
-                                                </span>
-                                                <span className="text-[10px] text-[#94a3b8] italic ml-2 hidden lg:inline">
-                                                  AI Generated. Review before publishing.
-                                                </span>
-                                              </div>
-                                              <div className="flex items-center gap-2">
-                                                {editingId === rec.id ? (
-                                                  <>
-                                                    <button
-                                                      onClick={() => handleSaveEdit(rec.id!)}
-                                                      className="px-3 py-1.5 bg-[#06c686] text-white rounded text-[11px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
-                                                    >
-                                                      <IconDeviceFloppy size={14} />
-                                                      Save
-                                                    </button>
-                                                    <button
-                                                      onClick={() => setEditingId(null)}
-                                                      className="px-3 py-1.5 bg-[#ef4444] text-white rounded text-[11px] font-medium hover:bg-[#dc2626] transition-colors flex items-center gap-1.5"
-                                                    >
-                                                      <IconX size={14} />
-                                                      Cancel
-                                                    </button>
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <button
-                                                      onClick={() => {
-                                                        setEditingId(rec.id!);
-                                                        setEditBuffer(unescapeNewlines(publishableContent.content || ''));
-                                                      }}
-                                                      className="px-3 py-1.5 bg-white border border-[#e2e8f0] text-[#475569] rounded text-[11px] font-medium hover:bg-[#f8fafc] transition-colors flex items-center gap-1.5"
-                                                    >
-                                                      <IconPencil size={14} />
-                                                      Edit
-                                                    </button>
-                                                    <button
-                                                      onClick={() => navigator.clipboard.writeText(unescapeNewlines(publishableContent.content || ''))}
-                                                      className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
-                                                    >
-                                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                      </svg>
-                                                      Copy
-                                                    </button>
-                                                  </>
-                                                )}
-                                              </div>
-                                            </div>
-
-                                            {/* Content */}
-                                            <div className="p-6">
-                                              {publishableContent.title && (
-                                                <div className="mb-4">
-                                                  <h5 className="text-[16px] font-semibold text-[#1a1d29]">{publishableContent.title}</h5>
-                                                </div>
-                                              )}
-
-                                              {/* Main Content */}
-                                              {editingId === rec.id ? (
-                                                <textarea
-                                                  className="w-full h-[400px] p-4 bg-white border border-[#00bcdc] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00bcdc] text-[14px] text-[#1a1d29] leading-relaxed font-sans shadow-inner"
-                                                  value={editBuffer}
-                                                  onChange={(e) => setEditBuffer(e.target.value)}
-                                                  autoFocus
-                                                />
-                                              ) : (
-                                                <div
-                                                  className="prose prose-sm max-w-none text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans"
-                                                  dangerouslySetInnerHTML={{ __html: highlightFillIns(unescapeNewlines(publishableContent.content)) }}
-                                                />
-                                              )}
-
-                                              {/* Call to Action */}
-                                              {publishableContent.callToAction && (
-                                                <div className="mt-4 p-3 bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg">
-                                                  <p className="text-[12px] font-semibold text-[#166534] mb-1">Call to Action</p>
-                                                  <p className="text-[13px] text-[#166534]">{publishableContent.callToAction}</p>
-                                                </div>
-                                              )}
-
-                                              {/* Required Inputs */}
-                                              {requiredInputs.length > 0 && (
-                                                <div className="mt-4 p-3 bg-[#fef3c7] border border-[#fcd34d] rounded-lg">
-                                                  <p className="text-[12px] font-semibold text-[#92400e] mb-2">⚠️ Fill in before publishing:</p>
-                                                  <ul className="list-disc pl-5 space-y-1">
-                                                    {requiredInputs.map((input: string, idx: number) => (
-                                                      <li key={idx} className="text-[12px] text-[#92400e]">{input}</li>
-                                                    ))}
-                                                  </ul>
-                                                </div>
-                                              )}
-                                            </div>
+                                          {/* Global References */}
+                                          <div className="bg-[#f1f5f9] border border-[#cbd5e1] rounded-lg p-4">
+                                            <label className="text-[12px] font-semibold text-[#475569] block mb-2">
+                                              📎 Additional References (optional)
+                                            </label>
+                                            <textarea
+                                              className="w-full p-3 bg-white border border-[#cbd5e1] rounded-lg text-[12px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-1 focus:ring-[#00bcdc]"
+                                              placeholder="Add any additional context, URLs, or reference material..."
+                                              rows={2}
+                                              value={refs}
+                                              onChange={(e) => updateReferences(e.target.value)}
+                                            />
                                           </div>
-                                        )}
-                                      </div>
-                                    );
-                                  }
 
-                                  // Handle v2.0 format (new structure with separate sections)
-                                  if (parsedContent && parsedContent.version === '2.0') {
-                                    const v2Content = parsedContent as any;
-                                    const publishableContent = v2Content.publishableContent;
-                                    const sourceType = v2Content.targetSource?.sourceType || 'other';
 
-                                    // Get expanded state for this recommendation
-                                    const sectionState = expandedSections.get(rec.id || '') || { content: true };
-                                    const isContentExpanded = sectionState.content;
 
-                                    // Toggle function for content section
-                                    const toggleContent = () => {
-                                      setExpandedSections(prev => {
-                                        const next = new Map(prev);
-                                        const current = next.get(rec.id || '') || { content: true };
-                                        next.set(rec.id || '', { ...current, content: !current.content });
-                                        return next;
-                                      });
-                                    };
 
-                                    return (
-                                      <div className="space-y-6">
-                                        {/* Publishable Content Section - Collapsible */}
-                                        {publishableContent && publishableContent.content && (
-                                          <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
-                                            {/* Header - Clickable to toggle */}
-                                            <div
-                                              onClick={toggleContent}
-                                              className="flex items-center justify-between p-4 cursor-pointer hover:bg-[#f8fafc] transition-colors border-b border-[#e2e8f0]"
-                                            >
-                                              <div className="flex items-center gap-2">
-                                                {isContentExpanded ? (
-                                                  <IconChevronUp size={18} className="text-[#475569]" />
-                                                ) : (
-                                                  <IconChevronDown size={18} className="text-[#475569]" />
-                                                )}
-                                                <div className="w-1.5 h-1.5 rounded-full bg-[#00bcdc]"></div>
-                                                <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">
-                                                  {publishableContent.type === 'video_script' ? 'Video Script' :
-                                                    publishableContent.type === 'article' ? 'Article Content' :
-                                                      'Publishable Content'}
-                                                </h4>
-                                                {sourceType === 'youtube' && (
-                                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#ff0000] text-white">YouTube</span>
-                                                )}
-                                                {publishableContent.type === 'article' && (
-                                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#06c686] text-white">Article</span>
-                                                )}
-                                                <span className="text-[10px] text-[#94a3b8] italic ml-2 hidden lg:inline">
-                                                  Disclaimer: AI Generated. Review before publishing.
-                                                </span>
-                                              </div>
-                                              <div className="flex items-center gap-2">
-                                                {editingId === rec.id ? (
-                                                  <>
-                                                    <button
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleSaveEdit(rec.id!);
-                                                      }}
-                                                      className="px-3 py-1.5 bg-[#06c686] text-white rounded text-[11px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
-                                                    >
-                                                      <IconDeviceFloppy size={14} />
-                                                      Save
-                                                    </button>
-                                                    <button
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setEditingId(null);
-                                                      }}
-                                                      className="px-3 py-1.5 bg-[#ef4444] text-white rounded text-[11px] font-medium hover:bg-[#dc2626] transition-colors flex items-center gap-1.5"
-                                                    >
-                                                      <IconX size={14} />
-                                                      Cancel
-                                                    </button>
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <button
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setEditingId(rec.id!);
-                                                        setEditBuffer(unescapeNewlines(publishableContent.content || ''));
-                                                      }}
-                                                      className="px-3 py-1.5 bg-white border border-[#e2e8f0] text-[#475569] rounded text-[11px] font-medium hover:bg-[#f8fafc] transition-colors flex items-center gap-1.5"
-                                                    >
-                                                      <IconPencil size={14} />
-                                                      Edit
-                                                    </button>
-                                                    {regeneratingId === rec.id ? (
-                                                      <span className="inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium border bg-[#fef3c7] text-[#92400e] border-[#fde68a]">
-                                                        <div className="w-3 h-3 border-2 border-[#92400e] border-t-transparent rounded-full animate-spin mr-1.5" />
-                                                        Regenerating...
-                                                      </span>
-                                                    ) : (rec.regenRetry || 0) >= 1 ? (
-                                                      <span className="inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium border bg-[#f3f4f6] text-[#6b7280] border-[#d1d5db] cursor-not-allowed">
-                                                        Regenerated
-                                                      </span>
-                                                    ) : (
+
+
+                                        </div>
+                                      );
+                                    }
+
+                                    // Handle v3.0 format (dual content: guide + publishable)
+                                    if (parsedContent && parsedContent.version === '3.0') {
+                                      const v3Content = parsedContent as any;
+                                      const publishableContent = v3Content.publishableContent;
+                                      const requiredInputs = v3Content.requiredInputs || [];
+
+                                      // Highlight [FILL_IN: ...] markers
+                                      const highlightFillIns = (text: string) => {
+                                        if (!text) return text;
+                                        const cleanText = text.replace(/<span class="fill-in-placeholder">/g, '').replace(/<\/span>/g, '');
+                                        return cleanText.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
+                                      };
+
+                                      return (
+                                        <div className="space-y-4">
+                                          {/* Publishable Content Section */}
+                                          {publishableContent && publishableContent.content && (
+                                            <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+                                              {/* Header */}
+                                              <div className="flex items-center justify-between p-4 border-b border-[#e2e8f0]">
+                                                <div className="flex items-center gap-2">
+                                                  <div className="w-1.5 h-1.5 rounded-full bg-[#06c686]"></div>
+                                                  <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">
+                                                    📝 Publishable Content
+                                                  </h4>
+                                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#06c686] text-white capitalize">
+                                                    {publishableContent.type?.replace(/_/g, ' ') || 'Content'}
+                                                  </span>
+                                                  <span className="text-[10px] text-[#94a3b8] italic ml-2 hidden lg:inline">
+                                                    AI Generated. Review before publishing.
+                                                  </span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                  {editingId === rec.id ? (
+                                                    <>
                                                       <button
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          setSelectedRecommendationForRegen(rec);
-                                                          setShowFeedbackModal(true);
-                                                        }}
-                                                        className="px-3 py-1.5 bg-[#8b5cf6] text-white rounded text-[11px] font-medium hover:bg-[#7c3aed] transition-colors flex items-center gap-1.5"
+                                                        onClick={() => handleSaveEdit(rec.id!)}
+                                                        className="px-3 py-1.5 bg-[#06c686] text-white rounded text-[11px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
                                                       >
-                                                        <IconSparkles size={14} />
-                                                        Regenerate
+                                                        <IconDeviceFloppy size={14} />
+                                                        Save
                                                       </button>
-                                                    )}
-                                                    <button
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        navigator.clipboard.writeText(unescapeNewlines(publishableContent.content || ''));
-                                                      }}
-                                                      className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
-                                                    >
-                                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                      </svg>
-                                                      Copy
-                                                    </button>
-                                                  </>
-                                                )}
+                                                      <button
+                                                        onClick={() => setEditingId(null)}
+                                                        className="px-3 py-1.5 bg-[#ef4444] text-white rounded text-[11px] font-medium hover:bg-[#dc2626] transition-colors flex items-center gap-1.5"
+                                                      >
+                                                        <IconX size={14} />
+                                                        Cancel
+                                                      </button>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <button
+                                                        onClick={() => {
+                                                          setEditingId(rec.id!);
+                                                          setEditBuffer(unescapeNewlines(publishableContent.content || ''));
+                                                        }}
+                                                        className="px-3 py-1.5 bg-white border border-[#e2e8f0] text-[#475569] rounded text-[11px] font-medium hover:bg-[#f8fafc] transition-colors flex items-center gap-1.5"
+                                                      >
+                                                        <IconPencil size={14} />
+                                                        Edit
+                                                      </button>
+                                                      <button
+                                                        onClick={() => navigator.clipboard.writeText(unescapeNewlines(publishableContent.content || ''))}
+                                                        className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
+                                                      >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                        </svg>
+                                                        Copy
+                                                      </button>
+                                                    </>
+                                                  )}
+                                                </div>
                                               </div>
-                                            </div>
 
-                                            {/* Content - Collapsible */}
-                                            {isContentExpanded && (
+                                              {/* Content */}
                                               <div className="p-6">
                                                 {publishableContent.title && (
                                                   <div className="mb-4">
                                                     <h5 className="text-[16px] font-semibold text-[#1a1d29]">{publishableContent.title}</h5>
-                                                  </div>
-                                                )}
-
-                                                {/* Video Script Metadata */}
-                                                {publishableContent.type === 'video_script' && publishableContent.metadata && (
-                                                  <div className="mb-4 p-3 bg-[#f0f9ff] rounded border border-[#bae6fd]">
-                                                    {publishableContent.metadata.estimatedDuration && (
-                                                      <div className="text-[12px] text-[#0369a1] mb-2">
-                                                        <span className="font-semibold">Duration:</span> {publishableContent.metadata.estimatedDuration}
-                                                      </div>
-                                                    )}
-                                                    {publishableContent.metadata.scenes && publishableContent.metadata.scenes.length > 0 && (
-                                                      <div className="text-[12px] text-[#0369a1] mb-2">
-                                                        <span className="font-semibold">Scenes:</span> {publishableContent.metadata.scenes.length}
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                )}
-
-                                                {/* Article Metadata (H1, H2, FAQ) */}
-                                                {publishableContent.type === 'article' && publishableContent.metadata && (
-                                                  <div className="mb-4 space-y-3">
-                                                    {publishableContent.metadata.h1 && (
-                                                      <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
-                                                        <div className="text-[11px] font-semibold text-[#166534] mb-1">H1:</div>
-                                                        <div className="text-[14px] font-semibold text-[#166534]">{publishableContent.metadata.h1}</div>
-                                                      </div>
-                                                    )}
-                                                    {publishableContent.metadata.h2 && publishableContent.metadata.h2.length > 0 && (
-                                                      <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
-                                                        <div className="text-[11px] font-semibold text-[#166534] mb-2">H2 Headings:</div>
-                                                        <ul className="list-disc list-inside space-y-1">
-                                                          {publishableContent.metadata.h2.map((h2: string, idx: number) => (
-                                                            <li key={idx} className="text-[13px] text-[#166534]">{h2}</li>
-                                                          ))}
-                                                        </ul>
-                                                      </div>
-                                                    )}
-                                                    {publishableContent.metadata.faq && publishableContent.metadata.faq.length > 0 && (
-                                                      <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
-                                                        <div className="text-[11px] font-semibold text-[#166534] mb-2">FAQ Questions:</div>
-                                                        <ul className="list-disc list-inside space-y-1">
-                                                          {publishableContent.metadata.faq.map((faq: string, idx: number) => (
-                                                            <li key={idx} className="text-[13px] text-[#166534]">{faq}</li>
-                                                          ))}
-                                                        </ul>
-                                                      </div>
-                                                    )}
                                                   </div>
                                                 )}
 
@@ -2927,435 +2720,702 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                     className="w-full h-[400px] p-4 bg-white border border-[#00bcdc] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00bcdc] text-[14px] text-[#1a1d29] leading-relaxed font-sans shadow-inner"
                                                     value={editBuffer}
                                                     onChange={(e) => setEditBuffer(e.target.value)}
-                                                    onClick={(e) => e.stopPropagation()}
                                                     autoFocus
                                                   />
                                                 ) : (
-                                                  <div className="prose prose-sm max-w-none">
-                                                    <div className={`text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans ${publishableContent.type === 'video_script' ? 'font-mono' : ''
-                                                      }`}>
-                                                      {unescapeNewlines(publishableContent.content)}
-                                                    </div>
+                                                  <div
+                                                    className="prose prose-sm max-w-none text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans"
+                                                    dangerouslySetInnerHTML={{ __html: highlightFillIns(unescapeNewlines(publishableContent.content)) }}
+                                                  />
+                                                )}
+
+                                                {/* Call to Action */}
+                                                {publishableContent.callToAction && (
+                                                  <div className="mt-4 p-3 bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg">
+                                                    <p className="text-[12px] font-semibold text-[#166534] mb-1">Call to Action</p>
+                                                    <p className="text-[13px] text-[#166534]">{publishableContent.callToAction}</p>
+                                                  </div>
+                                                )}
+
+                                                {/* Required Inputs */}
+                                                {requiredInputs.length > 0 && (
+                                                  <div className="mt-4 p-3 bg-[#fef3c7] border border-[#fcd34d] rounded-lg">
+                                                    <p className="text-[12px] font-semibold text-[#92400e] mb-2">⚠️ Fill in before publishing:</p>
+                                                    <ul className="list-disc pl-5 space-y-1">
+                                                      {requiredInputs.map((input: string, idx: number) => (
+                                                        <li key={idx} className="text-[12px] text-[#92400e]">{input}</li>
+                                                      ))}
+                                                    </ul>
                                                   </div>
                                                 )}
                                               </div>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  }
-
-                                  // Handle v1.0 format (backward compatibility)
-                                  let readyToPasteText: string | null = null;
-
-                                  // Strategy 1: Check structured format (version 1.0)
-                                  if (parsedContent && parsedContent.version === '1.0' && parsedContent.whatToPublishOrSend) {
-                                    readyToPasteText = parsedContent.whatToPublishOrSend.readyToPaste || null;
-                                  }
-                                  // Strategy 2: Check nested whatToPublishOrSend
-                                  else if (parsedContent?.whatToPublishOrSend?.readyToPaste) {
-                                    readyToPasteText = parsedContent.whatToPublishOrSend.readyToPaste;
-                                  }
-                                  // Strategy 3: Check direct readyToPaste
-                                  else if (parsedContent?.readyToPaste) {
-                                    readyToPasteText = parsedContent.readyToPaste;
-                                  }
-                                  // Strategy 4: Try to extract from raw string using regex
-                                  else if (rawContent) {
-                                    const readyToPasteMatch = rawContent.match(/"readyToPaste"\s*:\s*"([^"\\]*(\\.[^"\\]*)*)"/);
-                                    if (readyToPasteMatch && readyToPasteMatch[1]) {
-                                      readyToPasteText = readyToPasteMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
-                                    }
-                                  }
-
-                                  if (readyToPasteText && readyToPasteText.trim()) {
-                                    // Display readyToPaste content in a polished format (v1.0)
-                                    return (
-                                      <div className="relative">
-                                        {/* Content Card */}
-                                        <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6 shadow-sm">
-                                          <div className="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
-                                            <div className="flex items-center gap-2">
-                                              <div className="w-1.5 h-1.5 rounded-full bg-[#00bcdc]"></div>
-                                              <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Content</h4>
-                                              <span className="text-[10px] text-[#94a3b8] italic ml-2 hidden lg:inline">
-                                                Disclaimer: AI Generated. Review before publishing.
-                                              </span>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                              {editingId === rec.id ? (
-                                                <>
-                                                  <button
-                                                    onClick={() => handleSaveEdit(rec.id!)}
-                                                    className="px-3 py-1 bg-[#06c686] text-white rounded text-[11px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
-                                                  >
-                                                    <IconDeviceFloppy size={14} />
-                                                    Save
-                                                  </button>
-                                                  <button
-                                                    onClick={() => setEditingId(null)}
-                                                    className="px-3 py-1 bg-[#ef4444] text-white rounded text-[11px] font-medium hover:bg-[#dc2626] transition-colors flex items-center gap-1.5"
-                                                  >
-                                                    <IconX size={14} />
-                                                    Cancel
-                                                  </button>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <button
-                                                    onClick={() => {
-                                                      setEditingId(rec.id!);
-                                                      setEditBuffer(readyToPasteText || '');
-                                                    }}
-                                                    className="px-3 py-1 bg-white border border-[#e2e8f0] text-[#475569] rounded text-[11px] font-medium hover:bg-[#f8fafc] transition-colors flex items-center gap-1.5"
-                                                  >
-                                                    <IconPencil size={14} />
-                                                    Edit
-                                                  </button>
-                                                  {regeneratingId === rec.id ? (
-                                                    <span className="inline-flex items-center px-3 py-1 rounded text-[11px] font-medium border bg-[#fef3c7] text-[#92400e] border-[#fde68a]">
-                                                      <div className="w-3 h-3 border-2 border-[#92400e] border-t-transparent rounded-full animate-spin mr-1.5" />
-                                                      Regenerating...
-                                                    </span>
-                                                  ) : (rec.regenRetry || 0) >= 1 ? (
-                                                    <span className="inline-flex items-center px-3 py-1 rounded text-[11px] font-medium border bg-[#f3f4f6] text-[#6b7280] border-[#d1d5db] cursor-not-allowed">
-                                                      Regenerated
-                                                    </span>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+
+                                    // Handle v2.0 format (new structure with separate sections)
+                                    if (parsedContent && parsedContent.version === '2.0') {
+                                      const v2Content = parsedContent as any;
+                                      const publishableContent = v2Content.publishableContent;
+                                      const sourceType = v2Content.targetSource?.sourceType || 'other';
+
+                                      // Get expanded state for this recommendation
+                                      const sectionState = expandedSections.get(rec.id || '') || { content: true };
+                                      const isContentExpanded = sectionState.content;
+
+                                      // Toggle function for content section
+                                      const toggleContent = () => {
+                                        setExpandedSections(prev => {
+                                          const next = new Map(prev);
+                                          const current = next.get(rec.id || '') || { content: true };
+                                          next.set(rec.id || '', { ...current, content: !current.content });
+                                          return next;
+                                        });
+                                      };
+
+                                      return (
+                                        <div className="space-y-6">
+                                          {/* Publishable Content Section - Collapsible */}
+                                          {publishableContent && publishableContent.content && (
+                                            <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+                                              {/* Header - Clickable to toggle */}
+                                              <div
+                                                onClick={toggleContent}
+                                                className="flex items-center justify-between p-4 cursor-pointer hover:bg-[#f8fafc] transition-colors border-b border-[#e2e8f0]"
+                                              >
+                                                <div className="flex items-center gap-2">
+                                                  {isContentExpanded ? (
+                                                    <IconChevronUp size={18} className="text-[#475569]" />
                                                   ) : (
+                                                    <IconChevronDown size={18} className="text-[#475569]" />
+                                                  )}
+                                                  <div className="w-1.5 h-1.5 rounded-full bg-[#00bcdc]"></div>
+                                                  <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">
+                                                    {publishableContent.type === 'video_script' ? 'Video Script' :
+                                                      publishableContent.type === 'article' ? 'Article Content' :
+                                                        'Publishable Content'}
+                                                  </h4>
+                                                  {sourceType === 'youtube' && (
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#ff0000] text-white">YouTube</span>
+                                                  )}
+                                                  {publishableContent.type === 'article' && (
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#06c686] text-white">Article</span>
+                                                  )}
+                                                  <span className="text-[10px] text-[#94a3b8] italic ml-2 hidden lg:inline">
+                                                    Disclaimer: AI Generated. Review before publishing.
+                                                  </span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                  {editingId === rec.id ? (
+                                                    <>
+                                                      <button
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          handleSaveEdit(rec.id!);
+                                                        }}
+                                                        className="px-3 py-1.5 bg-[#06c686] text-white rounded text-[11px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
+                                                      >
+                                                        <IconDeviceFloppy size={14} />
+                                                        Save
+                                                      </button>
+                                                      <button
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          setEditingId(null);
+                                                        }}
+                                                        className="px-3 py-1.5 bg-[#ef4444] text-white rounded text-[11px] font-medium hover:bg-[#dc2626] transition-colors flex items-center gap-1.5"
+                                                      >
+                                                        <IconX size={14} />
+                                                        Cancel
+                                                      </button>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <button
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          setEditingId(rec.id!);
+                                                          setEditBuffer(unescapeNewlines(publishableContent.content || ''));
+                                                        }}
+                                                        className="px-3 py-1.5 bg-white border border-[#e2e8f0] text-[#475569] rounded text-[11px] font-medium hover:bg-[#f8fafc] transition-colors flex items-center gap-1.5"
+                                                      >
+                                                        <IconPencil size={14} />
+                                                        Edit
+                                                      </button>
+                                                      {regeneratingId === rec.id ? (
+                                                        <span className="inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium border bg-[#fef3c7] text-[#92400e] border-[#fde68a]">
+                                                          <div className="w-3 h-3 border-2 border-[#92400e] border-t-transparent rounded-full animate-spin mr-1.5" />
+                                                          Regenerating...
+                                                        </span>
+                                                      ) : (rec.regenRetry || 0) >= 1 ? (
+                                                        <span className="inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium border bg-[#f3f4f6] text-[#6b7280] border-[#d1d5db] cursor-not-allowed">
+                                                          Regenerated
+                                                        </span>
+                                                      ) : (
+                                                        <button
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setSelectedRecommendationForRegen(rec);
+                                                            setShowFeedbackModal(true);
+                                                          }}
+                                                          className="px-3 py-1.5 bg-[#8b5cf6] text-white rounded text-[11px] font-medium hover:bg-[#7c3aed] transition-colors flex items-center gap-1.5"
+                                                        >
+                                                          <IconSparkles size={14} />
+                                                          Regenerate
+                                                        </button>
+                                                      )}
+                                                      <button
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          navigator.clipboard.writeText(unescapeNewlines(publishableContent.content || ''));
+                                                        }}
+                                                        className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
+                                                      >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                        </svg>
+                                                        Copy
+                                                      </button>
+                                                    </>
+                                                  )}
+                                                </div>
+                                              </div>
+
+                                              {/* Content - Collapsible */}
+                                              {isContentExpanded && (
+                                                <div className="p-6">
+                                                  {publishableContent.title && (
+                                                    <div className="mb-4">
+                                                      <h5 className="text-[16px] font-semibold text-[#1a1d29]">{publishableContent.title}</h5>
+                                                    </div>
+                                                  )}
+
+                                                  {/* Video Script Metadata */}
+                                                  {publishableContent.type === 'video_script' && publishableContent.metadata && (
+                                                    <div className="mb-4 p-3 bg-[#f0f9ff] rounded border border-[#bae6fd]">
+                                                      {publishableContent.metadata.estimatedDuration && (
+                                                        <div className="text-[12px] text-[#0369a1] mb-2">
+                                                          <span className="font-semibold">Duration:</span> {publishableContent.metadata.estimatedDuration}
+                                                        </div>
+                                                      )}
+                                                      {publishableContent.metadata.scenes && publishableContent.metadata.scenes.length > 0 && (
+                                                        <div className="text-[12px] text-[#0369a1] mb-2">
+                                                          <span className="font-semibold">Scenes:</span> {publishableContent.metadata.scenes.length}
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  )}
+
+                                                  {/* Article Metadata (H1, H2, FAQ) */}
+                                                  {publishableContent.type === 'article' && publishableContent.metadata && (
+                                                    <div className="mb-4 space-y-3">
+                                                      {publishableContent.metadata.h1 && (
+                                                        <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
+                                                          <div className="text-[11px] font-semibold text-[#166534] mb-1">H1:</div>
+                                                          <div className="text-[14px] font-semibold text-[#166534]">{publishableContent.metadata.h1}</div>
+                                                        </div>
+                                                      )}
+                                                      {publishableContent.metadata.h2 && publishableContent.metadata.h2.length > 0 && (
+                                                        <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
+                                                          <div className="text-[11px] font-semibold text-[#166534] mb-2">H2 Headings:</div>
+                                                          <ul className="list-disc list-inside space-y-1">
+                                                            {publishableContent.metadata.h2.map((h2: string, idx: number) => (
+                                                              <li key={idx} className="text-[13px] text-[#166534]">{h2}</li>
+                                                            ))}
+                                                          </ul>
+                                                        </div>
+                                                      )}
+                                                      {publishableContent.metadata.faq && publishableContent.metadata.faq.length > 0 && (
+                                                        <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
+                                                          <div className="text-[11px] font-semibold text-[#166534] mb-2">FAQ Questions:</div>
+                                                          <ul className="list-disc list-inside space-y-1">
+                                                            {publishableContent.metadata.faq.map((faq: string, idx: number) => (
+                                                              <li key={idx} className="text-[13px] text-[#166534]">{faq}</li>
+                                                            ))}
+                                                          </ul>
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  )}
+
+                                                  {/* Main Content */}
+                                                  {editingId === rec.id ? (
+                                                    <textarea
+                                                      className="w-full h-[400px] p-4 bg-white border border-[#00bcdc] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00bcdc] text-[14px] text-[#1a1d29] leading-relaxed font-sans shadow-inner"
+                                                      value={editBuffer}
+                                                      onChange={(e) => setEditBuffer(e.target.value)}
+                                                      onClick={(e) => e.stopPropagation()}
+                                                      autoFocus
+                                                    />
+                                                  ) : (
+                                                    <div className="prose prose-sm max-w-none">
+                                                      <div className={`text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans ${publishableContent.type === 'video_script' ? 'font-mono' : ''
+                                                        }`}>
+                                                        {unescapeNewlines(publishableContent.content)}
+                                                      </div>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+
+                                    // Handle v1.0 format (backward compatibility)
+                                    let readyToPasteText: string | null = null;
+
+                                    // Strategy 1: Check structured format (version 1.0)
+                                    if (parsedContent && parsedContent.version === '1.0' && parsedContent.whatToPublishOrSend) {
+                                      readyToPasteText = parsedContent.whatToPublishOrSend.readyToPaste || null;
+                                    }
+                                    // Strategy 2: Check nested whatToPublishOrSend
+                                    else if (parsedContent?.whatToPublishOrSend?.readyToPaste) {
+                                      readyToPasteText = parsedContent.whatToPublishOrSend.readyToPaste;
+                                    }
+                                    // Strategy 3: Check direct readyToPaste
+                                    else if (parsedContent?.readyToPaste) {
+                                      readyToPasteText = parsedContent.readyToPaste;
+                                    }
+                                    // Strategy 4: Try to extract from raw string using regex
+                                    else if (rawContent) {
+                                      const readyToPasteMatch = rawContent.match(/"readyToPaste"\s*:\s*"([^"\\]*(\\.[^"\\]*)*)"/);
+                                      if (readyToPasteMatch && readyToPasteMatch[1]) {
+                                        readyToPasteText = readyToPasteMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+                                      }
+                                    }
+
+                                    if (readyToPasteText && readyToPasteText.trim()) {
+                                      // Display readyToPaste content in a polished format (v1.0)
+                                      return (
+                                        <div className="relative">
+                                          {/* Content Card */}
+                                          <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6 shadow-sm">
+                                            <div className="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
+                                              <div className="flex items-center gap-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-[#00bcdc]"></div>
+                                                <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Content</h4>
+                                                <span className="text-[10px] text-[#94a3b8] italic ml-2 hidden lg:inline">
+                                                  Disclaimer: AI Generated. Review before publishing.
+                                                </span>
+                                              </div>
+                                              <div className="flex items-center gap-2">
+                                                {editingId === rec.id ? (
+                                                  <>
+                                                    <button
+                                                      onClick={() => handleSaveEdit(rec.id!)}
+                                                      className="px-3 py-1 bg-[#06c686] text-white rounded text-[11px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
+                                                    >
+                                                      <IconDeviceFloppy size={14} />
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      onClick={() => setEditingId(null)}
+                                                      className="px-3 py-1 bg-[#ef4444] text-white rounded text-[11px] font-medium hover:bg-[#dc2626] transition-colors flex items-center gap-1.5"
+                                                    >
+                                                      <IconX size={14} />
+                                                      Cancel
+                                                    </button>
+                                                  </>
+                                                ) : (
+                                                  <>
                                                     <button
                                                       onClick={() => {
-                                                        setSelectedRecommendationForRegen(rec);
-                                                        setShowFeedbackModal(true);
+                                                        setEditingId(rec.id!);
+                                                        setEditBuffer(readyToPasteText || '');
                                                       }}
-                                                      className="px-3 py-1 bg-[#8b5cf6] text-white rounded text-[11px] font-medium hover:bg-[#7c3aed] transition-colors flex items-center gap-1.5"
+                                                      className="px-3 py-1 bg-white border border-[#e2e8f0] text-[#475569] rounded text-[11px] font-medium hover:bg-[#f8fafc] transition-colors flex items-center gap-1.5"
                                                     >
-                                                      <IconSparkles size={14} />
-                                                      Regenerate
+                                                      <IconPencil size={14} />
+                                                      Edit
                                                     </button>
-                                                  )}
-                                                  <button
-                                                    onClick={() => {
-                                                      navigator.clipboard.writeText(readyToPasteText || '');
-                                                    }}
-                                                    className="px-3 py-1 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
-                                                  >
-                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                    </svg>
-                                                    Copy
-                                                  </button>
-                                                </>
+                                                    {regeneratingId === rec.id ? (
+                                                      <span className="inline-flex items-center px-3 py-1 rounded text-[11px] font-medium border bg-[#fef3c7] text-[#92400e] border-[#fde68a]">
+                                                        <div className="w-3 h-3 border-2 border-[#92400e] border-t-transparent rounded-full animate-spin mr-1.5" />
+                                                        Regenerating...
+                                                      </span>
+                                                    ) : (rec.regenRetry || 0) >= 1 ? (
+                                                      <span className="inline-flex items-center px-3 py-1 rounded text-[11px] font-medium border bg-[#f3f4f6] text-[#6b7280] border-[#d1d5db] cursor-not-allowed">
+                                                        Regenerated
+                                                      </span>
+                                                    ) : (
+                                                      <button
+                                                        onClick={() => {
+                                                          setSelectedRecommendationForRegen(rec);
+                                                          setShowFeedbackModal(true);
+                                                        }}
+                                                        className="px-3 py-1 bg-[#8b5cf6] text-white rounded text-[11px] font-medium hover:bg-[#7c3aed] transition-colors flex items-center gap-1.5"
+                                                      >
+                                                        <IconSparkles size={14} />
+                                                        Regenerate
+                                                      </button>
+                                                    )}
+                                                    <button
+                                                      onClick={() => {
+                                                        navigator.clipboard.writeText(readyToPasteText || '');
+                                                      }}
+                                                      className="px-3 py-1 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
+                                                    >
+                                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                      </svg>
+                                                      Copy
+                                                    </button>
+                                                  </>
+                                                )}
+                                              </div>
+                                            </div>
+                                            <div className="prose prose-sm max-w-none">
+                                              {editingId === rec.id ? (
+                                                <textarea
+                                                  className="w-full h-[400px] p-4 bg-white border border-[#00bcdc] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00bcdc] text-[14px] text-[#1a1d29] leading-relaxed font-sans shadow-inner"
+                                                  value={editBuffer}
+                                                  onChange={(e) => setEditBuffer(e.target.value)}
+                                                  autoFocus
+                                                />
+                                              ) : (
+                                                <div className="text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans">
+                                                  {readyToPasteText}
+                                                </div>
                                               )}
                                             </div>
                                           </div>
-                                          <div className="prose prose-sm max-w-none">
-                                            {editingId === rec.id ? (
-                                              <textarea
-                                                className="w-full h-[400px] p-4 bg-white border border-[#00bcdc] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00bcdc] text-[14px] text-[#1a1d29] leading-relaxed font-sans shadow-inner"
-                                                value={editBuffer}
-                                                onChange={(e) => setEditBuffer(e.target.value)}
-                                                autoFocus
-                                              />
-                                            ) : (
-                                              <div className="text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans">
-                                                {readyToPasteText}
+                                        </div>
+                                      );
+                                    } else {
+                                      // Fallback: display raw content or JSON
+                                      const fallbackText = parsedContent?.raw || rawContent || JSON.stringify(parsedContent, null, 2);
+                                      return (
+                                        <div className="bg-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6">
+                                          <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-[#64748b]"></div>
+                                            <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Generated Content</h4>
+                                          </div>
+                                          <pre className="text-[13px] text-[#1a1d29] whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto max-h-96 overflow-y-auto">
+                                            {fallbackText}
+                                          </pre>
+                                        </div>
+                                      );
+                                    }
+                                  })() : rec.isContentGenerated ? (
+                                    <div className="flex items-center justify-center py-12">
+                                      <div className="text-center">
+                                        <div className="h-10 w-10 rounded-full border-2 border-t-transparent border-[#00bcdc] animate-spin mx-auto mb-3" />
+                                        <p className="text-[13px] text-[#64748b]">Content is being generated...</p>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="text-center py-8">
+                                      <p className="text-[13px] text-[#64748b]">No content available for this recommendation.</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </AnimatePresence>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Step 4: Track Outcomes */}
+              {currentStep === 4 && (
+                <motion.div
+                  key="step4"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <h2 className="text-[20px] font-bold text-[#0f172a] mb-6">Track Outcomes</h2>
+
+                  {/* KPI cards removed as requested for more compact table view */}
+                  <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed]">
+                            <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
+                              Recommendation Action
+                            </th>
+                            <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
+                              Domain/Source
+                            </th>
+                            <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[160px]">
+                              Visibility (Baseline / Current)
+                            </th>
+                            <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[160px]">
+                              SOA % (Baseline / Current)
+                            </th>
+                            <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[160px]">
+                              Sentiment (Baseline / Current)
+                            </th>
+                            <th className="px-6 py-4 text-right text-[12px] font-semibold text-[#64748b] uppercase tracking-wider w-[60px]">
+                              Action
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#e8e9ed]">
+                          {recommendations.length === 0 ? (
+                            <tr>
+                              <td colSpan={9} className="px-6 py-12 text-center text-[14px] text-[#64748b]">
+                                No completed recommendations found. Complete recommendations in Step 3 to see results here.
+                              </td>
+                            </tr>
+                          ) : (
+                            <AnimatePresence>
+                              {recommendations.map((rec) => {
+                                // Parse benchmarked values from recommendation snapshot - robust handling for 0/null
+                                const benchmarkedVisibility = (rec.visibilityScore !== null && rec.visibilityScore !== undefined && rec.visibilityScore !== "") ? parseFloat(String(rec.visibilityScore)) : null;
+                                const benchmarkedSOA = (rec.soa !== null && rec.soa !== undefined && rec.soa !== "") ? parseFloat(String(rec.soa)) : null;
+                                const benchmarkedSentiment = (rec.sentiment !== null && rec.sentiment !== undefined && rec.sentiment !== "") ? parseFloat(String(rec.sentiment)) : null;
+
+                                // Get LIVE Current values from the KPIs state
+                                // This ensures "Current" is actually current, not just "After"
+                                let currentVisibility: number | null = null;
+                                let currentSOA: number | null = null;
+                                let currentSentiment: number | null = null;
+
+                                // Helper to find KPI value by name pattern
+                                const getLiveValue = (pattern: string) =>
+                                  kpis.find(k => k.kpiName.toLowerCase().includes(pattern))?.currentValue ?? null;
+
+                                // We can use rec.focusArea to determine which MAIN metric matters, 
+                                // but we should try to populate ALL columns if data is available in KPIs
+                                currentVisibility = getLiveValue('visibility');
+                                currentSOA = getLiveValue('share') || getLiveValue('soa');
+                                currentSentiment = getLiveValue('sentiment');
+
+                                // Format completion date
+                                const formatCompletionDate = (dateString?: string): string | null => {
+                                  if (!dateString) return null;
+                                  try {
+                                    const date = new Date(dateString);
+                                    return date.toLocaleDateString('en-US', {
+                                      year: 'numeric',
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    });
+                                  } catch (e) {
+                                    return null;
+                                  }
+                                };
+
+                                const formattedCompletionDate = formatCompletionDate(rec.completedAt);
+
+                                return (
+                                  <motion.tr
+                                    key={rec.id}
+                                    layout
+                                    initial={{ opacity: 0, x: -20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{
+                                      opacity: 0,
+                                      x: 100, // Slide right ("dumped")
+                                      y: 20,  // Drop down slightly
+                                      scale: 0.9,
+                                      rotate: 5, // Tilted drop
+                                      transition: { duration: 0.4, ease: "backIn" }
+                                    }}
+                                    className="bg-white hover:bg-[#f8fafc] transition-colors group"
+                                  >
+                                    {/* Recommendation Action */}
+                                    <td className="px-6 py-4">
+                                      <div className="text-[14px] font-medium text-[#1a1d29] leading-snug">
+                                        {rec.action || 'N/A'}
+                                      </div>
+                                      {formattedCompletionDate && (
+                                        <div className="text-[11px] text-[#64748b] mt-1.5">
+                                          {rec.reviewStatus === 'removed' ? (
+                                            <span className="text-red-500">Deleted</span>
+                                          ) : (
+                                            <span>Completed: {formattedCompletionDate}</span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </td>
+
+                                    {/* Domain/Source */}
+                                    <td className="px-6 py-4">
+                                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
+                                        <svg className="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                        {rec.citationSource || 'N/A'}
+                                      </span>
+                                    </td>
+
+                                    {/* Visibility Metric Group */}
+                                    <td className="px-6 py-4">
+                                      {benchmarkedVisibility !== null || currentVisibility !== null ? (
+                                        <div className="space-y-1">
+                                          <div className="flex items-center text-[11px] text-[#64748b]">
+                                            <span className="w-16">Baseline:</span>
+                                            <span className="font-medium text-[#1a1d29]">{benchmarkedVisibility !== null ? benchmarkedVisibility.toFixed(2) : '—'}</span>
+                                          </div>
+                                          <div className="flex items-center">
+                                            <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
+                                            {currentVisibility !== null ? (
+                                              <div className="flex items-center gap-1.5 text-left">
+                                                <span className={`text-[14px] font-bold ${benchmarkedVisibility !== null && currentVisibility >= benchmarkedVisibility ? 'text-[#06c686]' : (benchmarkedVisibility === null ? 'text-[#1a1d29]' : 'text-[#ef4444]')}`}>
+                                                  {currentVisibility.toFixed(2)}
+                                                </span>
+                                                {benchmarkedVisibility !== null && (
+                                                  <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentVisibility >= benchmarkedVisibility ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
+                                                    {currentVisibility >= benchmarkedVisibility ? '+' : ''}{(currentVisibility - benchmarkedVisibility).toFixed(2)}
+                                                  </span>
+                                                )}
                                               </div>
+                                            ) : (
+                                              <span className="text-[13px] text-[#94a3b8] italic">Waiting...</span>
                                             )}
                                           </div>
                                         </div>
-                                      </div>
-                                    );
-                                  } else {
-                                    // Fallback: display raw content or JSON
-                                    const fallbackText = parsedContent?.raw || rawContent || JSON.stringify(parsedContent, null, 2);
-                                    return (
-                                      <div className="bg-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6">
-                                        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
-                                          <div className="w-1.5 h-1.5 rounded-full bg-[#64748b]"></div>
-                                          <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Generated Content</h4>
+                                      ) : (
+                                        <span className="text-[13px] text-[#94a3b8] italic">—</span>
+                                      )}
+                                    </td>
+
+                                    {/* SOA Metric Group */}
+                                    <td className="px-6 py-4">
+                                      {benchmarkedSOA !== null || currentSOA !== null ? (
+                                        <div className="space-y-1">
+                                          <div className="flex items-center text-[11px] text-[#64748b]">
+                                            <span className="w-16">Baseline:</span>
+                                            <span className="font-medium text-[#1a1d29]">{benchmarkedSOA !== null ? benchmarkedSOA.toFixed(2) : '—'}</span>
+                                          </div>
+                                          <div className="flex items-center">
+                                            <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
+                                            {currentSOA !== null ? (
+                                              <div className="flex items-center gap-1.5 text-left">
+                                                <span className={`text-[14px] font-bold ${benchmarkedSOA !== null && currentSOA >= benchmarkedSOA ? 'text-[#06c686]' : (benchmarkedSOA === null ? 'text-[#1a1d29]' : 'text-[#ef4444]')}`}>
+                                                  {currentSOA.toFixed(2)}
+                                                </span>
+                                                {benchmarkedSOA !== null && (
+                                                  <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentSOA >= benchmarkedSOA ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
+                                                    {currentSOA >= benchmarkedSOA ? '+' : ''}{(currentSOA - benchmarkedSOA).toFixed(2)}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <span className="text-[13px] text-[#94a3b8] italic">Waiting...</span>
+                                            )}
+                                          </div>
                                         </div>
-                                        <pre className="text-[13px] text-[#1a1d29] whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto max-h-96 overflow-y-auto">
-                                          {fallbackText}
-                                        </pre>
-                                      </div>
-                                    );
-                                  }
-                                })() : rec.isContentGenerated ? (
-                                  <div className="flex items-center justify-center py-12">
-                                    <div className="text-center">
-                                      <div className="h-10 w-10 rounded-full border-2 border-t-transparent border-[#00bcdc] animate-spin mx-auto mb-3" />
-                                      <p className="text-[13px] text-[#64748b]">Content is being generated...</p>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="text-center py-8">
-                                    <p className="text-[13px] text-[#64748b]">No content available for this recommendation.</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </motion.div>
-                        );
-                      })}
-                    </AnimatePresence>
+                                      ) : (
+                                        <span className="text-[13px] text-[#94a3b8] italic">—</span>
+                                      )}
+                                    </td>
+
+                                    {/* Sentiment Metric Group */}
+                                    <td className="px-6 py-4">
+                                      {benchmarkedSentiment !== null || currentSentiment !== null ? (
+                                        <div className="space-y-1">
+                                          <div className="flex items-center text-[11px] text-[#64748b]">
+                                            <span className="w-16">Baseline:</span>
+                                            <span className="font-medium text-[#1a1d29]">{benchmarkedSentiment !== null ? benchmarkedSentiment.toFixed(2) : '—'}</span>
+                                          </div>
+                                          <div className="flex items-center">
+                                            <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
+                                            {currentSentiment !== null ? (
+                                              <div className="flex items-center gap-1.5 text-left">
+                                                <span className={`text-[14px] font-bold ${benchmarkedSentiment !== null && currentSentiment >= benchmarkedSentiment ? 'text-[#06c686]' : (benchmarkedSentiment === null ? 'text-[#1a1d29]' : 'text-[#ef4444]')}`}>
+                                                  {currentSentiment.toFixed(2)}
+                                                </span>
+                                                {benchmarkedSentiment !== null && (
+                                                  <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentSentiment >= benchmarkedSentiment ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
+                                                    {currentSentiment >= benchmarkedSentiment ? '+' : ''}{(currentSentiment - benchmarkedSentiment).toFixed(2)}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <span className="text-[13px] text-[#94a3b8] italic">Waiting...</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <span className="text-[13px] text-[#13px] text-[#94a3b8] italic">—</span>
+                                      )}
+                                    </td>
+
+                                    {/* Delete Action */}
+                                    <td className="px-6 py-4 text-right">
+                                      {rec.id && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (confirm('Are you sure you want to remove this completed recommendation? This will hide it from view.')) {
+                                              handleStatusChange(rec.id!, 'removed');
+                                            }
+                                          }}
+                                          className="p-1.5 text-[#94a3b8] hover:text-[#ef4444] hover:bg-[#fef2f2] rounded-md transition-colors"
+                                          title="Stop Tracking"
+                                        >
+                                          <IconTrash size={16} />
+                                        </button>
+                                      )}
+                                    </td>
+                                  </motion.tr>
+                                );
+                              })}
+                            </AnimatePresence>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                )}
-              </motion.div>
-            )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          )}
+        </div>
 
-            {/* Step 4: Track Outcomes */}
-            {currentStep === 4 && (
-              <motion.div
-                key="step4"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <h2 className="text-[20px] font-bold text-[#0f172a] mb-6">Track Outcomes</h2>
-
-                {/* KPI cards removed as requested for more compact table view */}
-                <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed]">
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Recommendation Action
-                          </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Domain/Source
-                          </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[160px]">
-                            Visibility (Baseline / Current)
-                          </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[160px]">
-                            SOA % (Baseline / Current)
-                          </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[160px]">
-                            Sentiment (Baseline / Current)
-                          </th>
-                          <th className="px-6 py-4 text-right text-[12px] font-semibold text-[#64748b] uppercase tracking-wider w-[60px]">
-                            Action
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#e8e9ed]">
-                        {recommendations.length === 0 ? (
-                          <tr>
-                            <td colSpan={9} className="px-6 py-12 text-center text-[14px] text-[#64748b]">
-                              No completed recommendations found. Complete recommendations in Step 3 to see results here.
-                            </td>
-                          </tr>
-                        ) : (
-                          <AnimatePresence>
-                            {recommendations.map((rec) => {
-                              // Parse benchmarked values from recommendation snapshot - robust handling for 0/null
-                              const benchmarkedVisibility = (rec.visibilityScore !== null && rec.visibilityScore !== undefined && rec.visibilityScore !== "") ? parseFloat(String(rec.visibilityScore)) : null;
-                              const benchmarkedSOA = (rec.soa !== null && rec.soa !== undefined && rec.soa !== "") ? parseFloat(String(rec.soa)) : null;
-                              const benchmarkedSentiment = (rec.sentiment !== null && rec.sentiment !== undefined && rec.sentiment !== "") ? parseFloat(String(rec.sentiment)) : null;
-
-                              // Get LIVE Current values from the KPIs state
-                              // This ensures "Current" is actually current, not just "After"
-                              let currentVisibility: number | null = null;
-                              let currentSOA: number | null = null;
-                              let currentSentiment: number | null = null;
-
-                              // Helper to find KPI value by name pattern
-                              const getLiveValue = (pattern: string) =>
-                                kpis.find(k => k.kpiName.toLowerCase().includes(pattern))?.currentValue ?? null;
-
-                              // We can use rec.focusArea to determine which MAIN metric matters, 
-                              // but we should try to populate ALL columns if data is available in KPIs
-                              currentVisibility = getLiveValue('visibility');
-                              currentSOA = getLiveValue('share') || getLiveValue('soa');
-                              currentSentiment = getLiveValue('sentiment');
-
-                              // Format completion date
-                              const formatCompletionDate = (dateString?: string): string | null => {
-                                if (!dateString) return null;
-                                try {
-                                  const date = new Date(dateString);
-                                  return date.toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'short',
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  });
-                                } catch (e) {
-                                  return null;
-                                }
-                              };
-
-                              const formattedCompletionDate = formatCompletionDate(rec.completedAt);
-
-                              return (
-                                <motion.tr
-                                  key={rec.id}
-                                  layout
-                                  initial={{ opacity: 0, x: -20 }}
-                                  animate={{ opacity: 1, x: 0 }}
-                                  exit={{
-                                    opacity: 0,
-                                    x: 100, // Slide right ("dumped")
-                                    y: 20,  // Drop down slightly
-                                    scale: 0.9,
-                                    rotate: 5, // Tilted drop
-                                    transition: { duration: 0.4, ease: "backIn" }
-                                  }}
-                                  className="bg-white hover:bg-[#f8fafc] transition-colors group"
-                                >
-                                  {/* Recommendation Action */}
-                                  <td className="px-6 py-4">
-                                    <div className="text-[14px] font-medium text-[#1a1d29] leading-snug">
-                                      {rec.action || 'N/A'}
-                                    </div>
-                                    {formattedCompletionDate && (
-                                      <div className="text-[11px] text-[#64748b] mt-1.5">
-                                        {rec.reviewStatus === 'removed' ? (
-                                          <span className="text-red-500">Deleted</span>
-                                        ) : (
-                                          <span>Completed: {formattedCompletionDate}</span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </td>
-
-                                  {/* Domain/Source */}
-                                  <td className="px-6 py-4">
-                                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
-                                      <svg className="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                                      </svg>
-                                      {rec.citationSource || 'N/A'}
-                                    </span>
-                                  </td>
-
-                                  {/* Visibility Metric Group */}
-                                  <td className="px-6 py-4">
-                                    {benchmarkedVisibility !== null || currentVisibility !== null ? (
-                                      <div className="space-y-1">
-                                        <div className="flex items-center text-[11px] text-[#64748b]">
-                                          <span className="w-16">Baseline:</span>
-                                          <span className="font-medium text-[#1a1d29]">{benchmarkedVisibility !== null ? benchmarkedVisibility.toFixed(2) : '—'}</span>
-                                        </div>
-                                        <div className="flex items-center">
-                                          <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
-                                          {currentVisibility !== null ? (
-                                            <div className="flex items-center gap-1.5 text-left">
-                                              <span className={`text-[14px] font-bold ${benchmarkedVisibility !== null && currentVisibility >= benchmarkedVisibility ? 'text-[#06c686]' : (benchmarkedVisibility === null ? 'text-[#1a1d29]' : 'text-[#ef4444]')}`}>
-                                                {currentVisibility.toFixed(2)}
-                                              </span>
-                                              {benchmarkedVisibility !== null && (
-                                                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentVisibility >= benchmarkedVisibility ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
-                                                  {currentVisibility >= benchmarkedVisibility ? '+' : ''}{(currentVisibility - benchmarkedVisibility).toFixed(2)}
-                                                </span>
-                                              )}
-                                            </div>
-                                          ) : (
-                                            <span className="text-[13px] text-[#94a3b8] italic">Waiting...</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <span className="text-[13px] text-[#94a3b8] italic">—</span>
-                                    )}
-                                  </td>
-
-                                  {/* SOA Metric Group */}
-                                  <td className="px-6 py-4">
-                                    {benchmarkedSOA !== null || currentSOA !== null ? (
-                                      <div className="space-y-1">
-                                        <div className="flex items-center text-[11px] text-[#64748b]">
-                                          <span className="w-16">Baseline:</span>
-                                          <span className="font-medium text-[#1a1d29]">{benchmarkedSOA !== null ? benchmarkedSOA.toFixed(2) : '—'}</span>
-                                        </div>
-                                        <div className="flex items-center">
-                                          <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
-                                          {currentSOA !== null ? (
-                                            <div className="flex items-center gap-1.5 text-left">
-                                              <span className={`text-[14px] font-bold ${benchmarkedSOA !== null && currentSOA >= benchmarkedSOA ? 'text-[#06c686]' : (benchmarkedSOA === null ? 'text-[#1a1d29]' : 'text-[#ef4444]')}`}>
-                                                {currentSOA.toFixed(2)}
-                                              </span>
-                                              {benchmarkedSOA !== null && (
-                                                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentSOA >= benchmarkedSOA ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
-                                                  {currentSOA >= benchmarkedSOA ? '+' : ''}{(currentSOA - benchmarkedSOA).toFixed(2)}
-                                                </span>
-                                              )}
-                                            </div>
-                                          ) : (
-                                            <span className="text-[13px] text-[#94a3b8] italic">Waiting...</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <span className="text-[13px] text-[#94a3b8] italic">—</span>
-                                    )}
-                                  </td>
-
-                                  {/* Sentiment Metric Group */}
-                                  <td className="px-6 py-4">
-                                    {benchmarkedSentiment !== null || currentSentiment !== null ? (
-                                      <div className="space-y-1">
-                                        <div className="flex items-center text-[11px] text-[#64748b]">
-                                          <span className="w-16">Baseline:</span>
-                                          <span className="font-medium text-[#1a1d29]">{benchmarkedSentiment !== null ? benchmarkedSentiment.toFixed(2) : '—'}</span>
-                                        </div>
-                                        <div className="flex items-center">
-                                          <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
-                                          {currentSentiment !== null ? (
-                                            <div className="flex items-center gap-1.5 text-left">
-                                              <span className={`text-[14px] font-bold ${benchmarkedSentiment !== null && currentSentiment >= benchmarkedSentiment ? 'text-[#06c686]' : (benchmarkedSentiment === null ? 'text-[#1a1d29]' : 'text-[#ef4444]')}`}>
-                                                {currentSentiment.toFixed(2)}
-                                              </span>
-                                              {benchmarkedSentiment !== null && (
-                                                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentSentiment >= benchmarkedSentiment ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
-                                                  {currentSentiment >= benchmarkedSentiment ? '+' : ''}{(currentSentiment - benchmarkedSentiment).toFixed(2)}
-                                                </span>
-                                              )}
-                                            </div>
-                                          ) : (
-                                            <span className="text-[13px] text-[#94a3b8] italic">Waiting...</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <span className="text-[13px] text-[#13px] text-[#94a3b8] italic">—</span>
-                                    )}
-                                  </td>
-
-                                  {/* Delete Action */}
-                                  <td className="px-6 py-4 text-right">
-                                    {rec.id && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (confirm('Are you sure you want to remove this completed recommendation? This will hide it from view.')) {
-                                            handleStatusChange(rec.id!, 'removed');
-                                          }
-                                        }}
-                                        className="p-1.5 text-[#94a3b8] hover:text-[#ef4444] hover:bg-[#fef2f2] rounded-md transition-colors"
-                                        title="Stop Tracking"
-                                      >
-                                        <IconTrash size={16} />
-                                      </button>
-                                    )}
-                                  </td>
-                                </motion.tr>
-                              );
-                            })}
-                          </AnimatePresence>
-                        )}
-                      </tbody>
-                    </table>
+        <AnimatePresence>
+          {scorePanel?.isOpen && (
+            <motion.div
+              initial={{ x: "100%", opacity: 0.5 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: "100%", opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="fixed right-0 top-16 bottom-0 w-[450px] bg-white border-l border-[#e2e8f0] shadow-2xl z-40 flex flex-col"
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[#e2e8f0] bg-white shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-[#f0f9ff] flex items-center justify-center text-[#0ea5e9]">
+                    <IconSparkles size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-[#1e293b] text-[15px]">Content Analysis</h3>
+                    <p className="text-[11px] text-[#64748b]">AEO Score & Metrics</p>
                   </div>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        )}
+                <button
+                  onClick={() => setScorePanel(null)}
+                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                  title="Close Panel"
+                >
+                  <IconX size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto bg-[#f8fafc] p-5 custom-scrollbar">
+                <div className="mb-6">
+                  <SEOScoreCard
+                    content={scorePanel.content}
+                    brandName={scorePanel.brandName}
+                    contentType={scorePanel.contentType}
+                  />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
       {/* Feedback Modal for Regeneration */}
       {showFeedbackModal && (

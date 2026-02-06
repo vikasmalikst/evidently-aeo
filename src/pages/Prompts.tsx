@@ -13,9 +13,11 @@ import { getActiveCompetitors, ManagedCompetitor } from '../api/competitorManage
 import { KpiToggle } from '../components/Visibility/KpiToggle';
 import { KpiType } from '../components/EducationalDrawer/EducationalContentDrawer';
 import { EducationalContentDrawer } from '../components/EducationalDrawer/EducationalContentDrawer';
+import { FlagsModal } from '../features/opportunity-identifier/components/FlagsModal';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
 import { getLLMIcon } from '../components/Visibility/LLMIcons';
 import { motion } from 'framer-motion';
+import { Flag } from 'lucide-react';
 
 // Performance logging
 const perfLog = (label: string, startTime: number) => {
@@ -34,6 +36,7 @@ interface ApiResponse<T> {
 import { getDefaultDateRange } from './dashboard/utils';
 import { useDashboardStore } from '../store/dashboardStore';
 import { QueryTagFilter } from '../components/common/QueryTagFilter';
+import { apiClient } from '../lib/apiClient';
 
 export const Prompts = () => {
   const pageLoadStart = useRef(performance.now());
@@ -51,6 +54,28 @@ export const Prompts = () => {
   const [isResponsePinned, setIsResponsePinned] = useState(false);
   const [isResponseVisible, setIsResponseVisible] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(true);
+  const [recommendationMap, setRecommendationMap] = useState<Record<string, string>>({});
+  const [showFlagsModal, setShowFlagsModal] = useState(false);
+
+  // Fetch recommendation map for Red Flag
+  useEffect(() => {
+    if (!selectedBrandId) return;
+
+    const fetchMap = async () => {
+      try {
+        const response = await apiClient.get<ApiResponse<{ map: Record<string, string> }>>(
+          `/brands/${selectedBrandId}/recommendations/map`
+        );
+        if (response.success && response.data) {
+          setRecommendationMap(response.data.map || {});
+        }
+      } catch (err) {
+        console.error('Failed to fetch recommendation map:', err);
+      }
+    };
+
+    fetchMap();
+  }, [selectedBrandId]);
 
   const handlePromptSelect = (prompt: PromptEntry) => {
     setSelectedPrompt(prompt);
@@ -371,18 +396,28 @@ export const Prompts = () => {
             onHelpClick={handleHelpClick}
           />
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)]">
-            <span className="text-xs font-semibold text-[var(--text-caption)]">Heatmap</span>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowHeatmap(!showHeatmap)}
-              className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${showHeatmap ? 'bg-[var(--accent-primary)]' : 'bg-gray-200'
-                }`}
+              onClick={() => setShowFlagsModal(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-xs font-bold hover:bg-red-50 hover:border-red-300 transition-colors shadow-sm cursor-pointer"
             >
-              <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${showHeatmap ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-              />
+              <Flag size={14} fill="currentColor" className="text-red-500" />
+              View Flags
             </button>
+
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)]">
+              <span className="text-xs font-semibold text-[var(--text-caption)]">Heatmap</span>
+              <button
+                onClick={() => setShowHeatmap(!showHeatmap)}
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${showHeatmap ? 'bg-[var(--accent-primary)]' : 'bg-gray-200'
+                  }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${showHeatmap ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -421,6 +456,7 @@ export const Prompts = () => {
               brandLogo={selectedBrand?.metadata?.logo || selectedBrand?.metadata?.brand_logo}
               brandName={selectedBrand?.name}
               brandDomain={selectedBrand?.homepage_url || undefined}
+              recommendationMap={recommendationMap}
             />
           </div>
 
@@ -444,6 +480,12 @@ export const Prompts = () => {
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         kpiType={drawerKpiType}
+      />
+      <FlagsModal
+        isOpen={showFlagsModal}
+        onClose={() => setShowFlagsModal(false)}
+        brandId={selectedBrandId || undefined}
+        competitors={allCompetitors}
       />
     </Layout>
   );

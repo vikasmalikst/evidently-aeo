@@ -119,7 +119,10 @@ function classifyQuery(
     const queryLower = queryText.toLowerCase();
 
     // Build list of all brand terms (name + aliases)
-    const allBrandTerms = [brandName, ...brandAliases].map(a => a.toLowerCase());
+    // Filter out any null/undefined aliases and ensure they are strings
+    const allBrandTerms = [brandName, ...brandAliases]
+        .filter(a => typeof a === 'string' && a.length > 0)
+        .map(a => a.toLowerCase());
 
     // Check if brand is mentioned
     const hasBrand = allBrandTerms.some(alias => queryLower.includes(alias));
@@ -236,23 +239,24 @@ export class OpportunityIdentifierService {
                 queryCompetitorMetrics
             );
 
-            // Fetch top sources for queries with opportunities
-            if (queryOpportunities.length > 0) {
-                const topSources = await this.getTopCitationSources(
-                    brandId,
-                    customerId,
-                    query.queryId,
-                    startIso,
-                    endIso
-                );
-
-                // Attach sources to each opportunity
-                for (const opp of queryOpportunities) {
-                    opp.topSources = topSources;
-                }
-            }
-
             opportunities.push(...queryOpportunities);
+        }
+
+        // Fetch top sources for all opportunities in one batch (Fix N+1 query problem)
+        if (opportunities.length > 0) {
+            const queryIds = Array.from(new Set(opportunities.map(o => o.queryId)));
+            const allSources = await this.getAllTopCitationSources(
+                brandId,
+                customerId,
+                queryIds,
+                startIso,
+                endIso
+            );
+
+            // Attach sources to opportunities
+            for (const opp of opportunities) {
+                opp.topSources = allSources.get(opp.queryId) || [];
+            }
         }
 
         // Step 5: Sort by priority score
@@ -468,8 +472,13 @@ export class OpportunityIdentifierService {
             const brandMetrics = row.brand_metrics as any;
             if (brandMetrics) {
                 if (brandMetrics.visibility_index != null) {
-                    // Convert 0-1 to 0-100
-                    agg.visibilityValues.push(brandMetrics.visibility_index * 100);
+                    // Normalize Visibility Index:
+                    // If value <= 1 (and not 0), we assume it is a decimal (e.g. 0.45) that needs * 100.
+                    // If value > 1, we assume it is already a percentage (e.g. 45.0) or an integer scale.
+                    // We treat 1 as 100% if we are strictly in decimal mode, but to be safe we'll assume > 1 is percent.
+                    const val = brandMetrics.visibility_index;
+                    const normalizedVis = (val > 1) ? val : val * 100;
+                    agg.visibilityValues.push(normalizedVis);
                 }
                 if (brandMetrics.share_of_answers != null) {
                     agg.soaValues.push(brandMetrics.share_of_answers);
@@ -813,6 +822,70 @@ export class OpportunityIdentifierService {
             url: data.url,
             impactScore: data.totalCount
         }));
+    }
+
+    /**
+     * Get top 3 citation sources for multiple queries (Batch Fetch)
+     */
+    private async getAllTopCitationSources(
+        brandId: string,
+        customerId: string,
+        queryIds: string[],
+        startDate: string,
+        endDate: string
+    ): Promise<Map<string, Array<{ domain: string; url?: string; impactScore: number }>>> {
+        if (queryIds.length === 0) return new Map();
+
+        // Fetch citations for all queries
+        const { data, error } = await supabaseAdmin
+            .from('citations')
+            .select('query_id, domain, url, usage_count')
+            .eq('brand_id', brandId)
+            .eq('customer_id', customerId)
+            .in('query_id', queryIds)
+            .gte('created_at', startDate)
+            .lte('created_at', endDate)
+            .order('usage_count', { ascending: false });
+
+        if (error || !data) {
+            console.error('[OpportunityIdentifier] Error fetching batch citations:', error);
+            return new Map();
+        }
+
+        // Group by query_id -> domain
+        const queryGroups = new Map<string, Map<string, { url: string; totalCount: number }>>();
+
+        for (const citation of data) {
+            const qId = citation.query_id;
+            if (!queryGroups.has(qId)) {
+                queryGroups.set(qId, new Map());
+            }
+
+            const domainMap = queryGroups.get(qId)!;
+            const domain = citation.domain || 'unknown';
+
+            if (!domainMap.has(domain)) {
+                domainMap.set(domain, { url: citation.url || '', totalCount: 0 });
+            }
+            domainMap.get(domain)!.totalCount += citation.usage_count || 1;
+        }
+
+        // Format results: Top 3 per query
+        const results = new Map<string, Array<{ domain: string; url?: string; impactScore: number }>>();
+
+        for (const [qId, domainMap] of queryGroups) {
+            const sorted = Array.from(domainMap.entries())
+                .sort((a, b) => b[1].totalCount - a[1].totalCount)
+                .slice(0, 3)
+                .map(([domain, data]) => ({
+                    domain,
+                    url: data.url,
+                    impactScore: data.totalCount
+                }));
+            results.set(qId, sorted);
+        }
+
+        return results;
     }
 
     /**

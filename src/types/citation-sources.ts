@@ -40,4 +40,5 @@ export interface SourceAttributionResponse {
     overallMentionChange: number;
     avgSentiment: number;
     avgSentimentChange: number;
+    availableModels?: string[];
 }

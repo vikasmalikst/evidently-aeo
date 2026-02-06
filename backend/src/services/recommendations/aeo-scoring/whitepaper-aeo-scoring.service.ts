@@ -74,7 +74,7 @@ export class WhitepaperAEOScoringService implements IAEOScoringService {
             totalScore: Math.min(80, total),
             breakdown: {
                 primaryAnswer: answerScore,
-                // chunkability removed - structure depth now mapped to conceptClarity
+               
                 authority: dataScore,
                 explanationDepth: authorityScore,
                 conceptClarity: structureScore, // Changed from definitionScore - structure is key for whitepapers

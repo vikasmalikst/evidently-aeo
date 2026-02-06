@@ -1,0 +1,373 @@
+{
+    "company_profile": {
+        "company_name": "Booking.com B.V.",
+        "website": "https://www.booking.com/",
+        "industry": "Travel / Hotels & Accommodations (Online Travel Agency)",
+        "founded": 1996,
+        "headquarters": {
+            "city": "Amsterdam",
+            "country": "Netherlands"
+        },
+        "leadership": {
+            "current_ceo": "Glenn D. Fogel",
+            "founder": "Not publicly available"
+        },
+        "company_size": "10,001+ employees",
+        "funding_status": "Public (subsidiary of Booking Holdings Inc., NASDAQ: BKNG)",
+        "description": "Booking.com B.V. is a leading online travel agency providing reservations for over 3.4 million hotels, homes, and other accommodations worldwide, including strong UK market presence. It offers flights, cars, and activities with emphasis on guest reviews, mobile bookings, and loyalty programs like Genius.",
+        "annual_customers": "Not publicly available",
+        "key_certification": "Not publicly available"
+    },
+    "competitors": [
+        {
+            "rank": 1,
+            "company_name": "Airbnb",
+            "domain": "https://www.airbnb.co.uk/",
+            "geographic_overlap": "High (UK short-term rentals)",
+            "customer_segment": "B2C leisure, unique stays",
+            "battle_frequency": "High",
+            "primary_differentiation": "Peer-to-peer homes/experiences vs. hotel-focused OTA"
+        },
+        {
+            "rank": 2,
+            "company_name": "Expedia",
+            "domain": "https://www.expedia.co.uk/",
+            "geographic_overlap": "High (UK bundles)",
+            "customer_segment": "B2C package travelers",
+            "battle_frequency": "High",
+            "primary_differentiation": "Flight+hotel packages, rewards vs. standalone"
+        },
+        {
+            "rank": 3,
+            "company_name": "Hotels.com",
+            "domain": "https://uk.hotels.com/",
+            "geographic_overlap": "High (UK OTA share)",
+            "customer_segment": "B2C hotel loyalists",
+            "battle_frequency": "High",
+            "primary_differentiation": "10 nights=1 free vs. Genius tiers"
+        },
+        {
+            "rank": 4,
+            "company_name": "Premier Inn",
+            "domain": "https://www.premierinn.com/gb/en/home.html",
+            "geographic_overlap": "High (UK chain)",
+            "customer_segment": "B2C budget business",
+            "battle_frequency": "Medium",
+            "primary_differentiation": "Direct UK budget hotels vs. aggregator"
+        },
+        {
+            "rank": 5,
+            "company_name": "Travelodge",
+            "domain": "https://www.travelodge.co.uk/",
+            "geographic_overlap": "High (UK budget)",
+            "customer_segment": "B2C affordable stays",
+            "battle_frequency": "Medium",
+            "primary_differentiation": "Direct low-cost chain bookings"
+        },
+        {
+            "rank": 6,
+            "company_name": "Agoda",
+            "domain": "https://www.agoda.com/en-gb/",
+            "geographic_overlap": "Medium (UK/Asia)",
+            "customer_segment": "B2C international deals",
+            "battle_frequency": "High",
+            "primary_differentiation": "Asia specialist discounts"
+        },
+        {
+            "rank": 7,
+            "company_name": "Tripadvisor",
+            "domain": "https://www.tripadvisor.co.uk/",
+            "geographic_overlap": "High (UK reviews)",
+            "customer_segment": "B2C review seekers",
+            "battle_frequency": "Medium",
+            "primary_differentiation": "Reviews+bookings meta"
+        },
+        {
+            "rank": 8,
+            "company_name": "Hilton",
+            "domain": "https://www.hilton.com/en-uk/",
+            "geographic_overlap": "High (UK premium)",
+            "customer_segment": "B2C/B2B Honors members",
+            "battle_frequency": "Medium",
+            "primary_differentiation": "Branded loyalty hotels"
+        },
+        {
+            "rank": 9,
+            "company_name": "Trivago",
+            "domain": "https://www.trivago.co.uk/",
+            "geographic_overlap": "High (UK comparison)",
+            "customer_segment": "B2C price hunters",
+            "battle_frequency": "Medium",
+            "primary_differentiation": "Hotel meta-search"
+        },
+        {
+            "rank": 10,
+            "company_name": "LateRooms",
+            "domain": "https://www.laterooms.com/",
+            "geographic_overlap": "High (UK deals)",
+            "customer_segment": "B2C late deals",
+            "battle_frequency": "Low",
+            "primary_differentiation": "UK last-minute focus"
+        }
+    ],
+    "biased_prompts": {
+        "total_count": 20,
+        "awareness_informational": [
+            {
+                "id": 1,
+                "prompt": "What is Booking.com and how does it work for booking hotels in the UK?",
+                "category": "Awareness"
+            },
+            {
+                "id": 2,
+                "prompt": "How reliable are Booking.com reviews for UK hotels?",
+                "category": "Awareness"
+            },
+            {
+                "id": 3,
+                "prompt": "Is Booking.com safe for booking accommodations in London?",
+                "category": "Awareness"
+            },
+            {
+                "id": 4,
+                "prompt": "What makes Booking.com different from other travel sites in the UK?",
+                "category": "Awareness"
+            },
+            {
+                "id": 5,
+                "prompt": "Booking.com history and growth in the UK market?",
+                "category": "Awareness"
+            }
+        ],
+        "consideration_evaluation": [
+            {
+                "id": 6,
+                "prompt": "Best features of Booking.com app for UK trips?",
+                "category": "Consideration"
+            },
+            {
+                "id": 7,
+                "prompt": "Booking.com Genius loyalty program benefits UK?",
+                "category": "Consideration"
+            },
+            {
+                "id": 8,
+                "prompt": "How good is Booking.com customer service in the UK?",
+                "category": "Consideration"
+            },
+            {
+                "id": 9,
+                "prompt": "Booking.com cancellation policy for UK hotels?",
+                "category": "Consideration"
+            },
+            {
+                "id": 10,
+                "prompt": "Pros and cons of using Booking.com in the UK?",
+                "category": "Consideration"
+            },
+            {
+                "id": 11,
+                "prompt": "Booking.com verified reviews worth trusting UK?",
+                "category": "Consideration"
+            }
+        ],
+        "comparison_commercial": [
+            {
+                "id": 12,
+                "prompt": "Booking.com vs Airbnb for UK short stays?",
+                "category": "Comparison"
+            },
+            {
+                "id": 13,
+                "prompt": "Booking.com vs Hotels.com which is cheaper UK?",
+                "category": "Comparison"
+            },
+            {
+                "id": 14,
+                "prompt": "Booking.com vs Expedia for UK hotel deals?",
+                "category": "Comparison"
+            },
+            {
+                "id": 15,
+                "prompt": "Premier Inn vs Booking.com for budget UK hotels?",
+                "category": "Comparison"
+            },
+            {
+                "id": 16,
+                "prompt": "Is Booking.com better than Travelodge in UK?",
+                "category": "Comparison"
+            },
+            {
+                "id": 17,
+                "prompt": "Booking.com vs Tripadvisor for UK bookings?",
+                "category": "Comparison"
+            }
+        ],
+        "decision_transactional": [
+            {
+                "id": 18,
+                "prompt": "Book cheap London hotel on Booking.com now?",
+                "category": "Decision"
+            },
+            {
+                "id": 19,
+                "prompt": "Best Booking.com promo code UK February 2026?",
+                "category": "Decision"
+            },
+            {
+                "id": 20,
+                "prompt": "Last minute Booking.com deals UK hotels?",
+                "category": "Decision"
+            }
+        ]
+    },
+    "blind_prompts": {
+        "total_count": 20,
+        "problem_awareness": [
+            {
+                "id": 1,
+                "prompt": "How to find cheap hotels in UK without scams?",
+                "category": "Problem"
+            },
+            {
+                "id": 2,
+                "prompt": "Best way to book accommodations in London?",
+                "category": "Problem"
+            },
+            {
+                "id": 3,
+                "prompt": "Issues with hotel bookings gone wrong UK?",
+                "category": "Problem"
+            },
+            {
+                "id": 4,
+                "prompt": "What to know before booking UK stays?",
+                "category": "Problem"
+            }
+        ],
+        "solution_education": [
+            {
+                "id": 5,
+                "prompt": "Tips for reliable hotel booking sites UK?",
+                "category": "Education"
+            },
+            {
+                "id": 6,
+                "prompt": "How OTA loyalty programs work for hotels?",
+                "category": "Education"
+            },
+            {
+                "id": 7,
+                "prompt": "Free cancellation hotel booking options UK?",
+                "category": "Education"
+            },
+            {
+                "id": 8,
+                "prompt": "Verified guest reviews importance UK travel?",
+                "category": "Education"
+            },
+            {
+                "id": 9,
+                "prompt": "Mobile apps for easy UK hotel bookings?",
+                "category": "Education"
+            }
+        ],
+        "evaluation_consideration": [
+            {
+                "id": 10,
+                "prompt": "Compare hotel booking sites for UK trips?",
+                "category": "Evaluation"
+            },
+            {
+                "id": 11,
+                "prompt": "Best app for last minute UK hotel deals?",
+                "category": "Evaluation"
+            },
+            {
+                "id": 12,
+                "prompt": "Budget vs mid-range hotel sites UK?",
+                "category": "Evaluation"
+            },
+            {
+                "id": 13,
+                "prompt": "Hotel chains vs online marketplaces UK?",
+                "category": "Evaluation"
+            },
+            {
+                "id": 14,
+                "prompt": "Price comparison tools for UK hotels?",
+                "category": "Evaluation"
+            },
+            {
+                "id": 15,
+                "prompt": "Loyalty perks for frequent UK travelers?",
+                "category": "Evaluation"
+            }
+        ],
+        "commercial_investigation": [
+            {
+                "id": 16,
+                "prompt": "Cheapest site for London hotels February 2026?",
+                "category": "Commercial"
+            },
+            {
+                "id": 17,
+                "prompt": "UK hotel deals with free cancellation?",
+                "category": "Commercial"
+            },
+            {
+                "id": 18,
+                "prompt": "Best promo codes for hotel bookings UK?",
+                "category": "Commercial"
+            },
+            {
+                "id": 19,
+                "prompt": "Bundle flight hotel savings UK?",
+                "category": "Commercial"
+            }
+        ],
+        "decision_support": [
+            {
+                "id": 20,
+                "prompt": "Book now or wait for UK hotel price drop?",
+                "category": "Decision"
+            }
+        ]
+    },
+    "research_quality_summary": {
+        "total_competitors_identified": 10,
+        "geographic_relevance": "High UK focus, OTA/hotel chains",
+        "prompt_distribution": {
+            "biased_percentage": 50,
+            "neutral_percentage": 50,
+            "total_prompts": 40
+        },
+        "customer_journey_coverage": "Complete - Awareness to Decision",
+        "data_confidence_level": "High",
+        "confidence_justification": "Profile from official/about/Wiki/LinkedIn; competitors UK market/PPC; citations inline.",
+        "ranking_methodology": "Battle freq (UK searches/comparisons), geo overlap (UK priority), segments (B2C), market share PPC "
+    },
+    "metadata": {
+        "report_generated_date": "2026-02-05",
+        "research_methodology": "AEO (Answer Engine Optimization) competitive benchmarking per AEO_Research_V2.md",
+        "primary_market": "UK",
+        "data_sources": [
+            "Official Booking.com pages ",
+            "Wikipedia ",
+            "LinkedIn ",
+            "UK market reports Adthena/Similarweb ",
+            "Competitor lists G2/Capterra "
+        ],
+        "web_references": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "file:1"
+        ]
+    }
+}

@@ -1,0 +1,428 @@
+{
+  "company_profile": {
+    "company_name": "Magnet Kitchens Limited",
+    "website": "https://www.magnet.co.uk/",
+    "industry": "Fitted Kitchens / Kitchen Suppliers (UK Trade & Retail)",
+    "founded": 1918,
+    "headquarters": {
+      "city": "Darlington",
+      "address": "County Durham",
+      "country": "United Kingdom"
+    },
+    "leadership": {
+      "founder": "Not publicly available",
+      "current_ceo": "Not publicly available",
+      "ceo_appointed": "Not publicly available"
+    },
+    "company_size": "1,001-5,000 employees",
+    "funding_status": "Private",
+    "description": "Magnet is the UK's longest-running kitchen specialist with over 100 years of experience, designing, manufacturing and supplying fitted kitchens from its Darlington factory. Operating 200+ showrooms nationwide, it serves both trade professionals and retail customers with full design, supply and installation services.[page:0][web:6]",
+    "annual_customers": "Not publicly available",
+    "key_certification": "Not publicly available"
+  },
+  "competitors": [
+    {
+      "rank": 1,
+      "company_name": "Howdens",
+      "domain": "https://www.howdens.com/",
+      "geographic_overlap": "UK National",
+      "customer_segment": "Trade (Builders, Contractors), SMB",
+      "battle_frequency": "High",
+      "primary_differentiation": "Trade-only depots for rapid access, no retail, volume pricing for builders[web:2][web:3][web:9][web:14]"
+    },
+    {
+      "rank": 2,
+      "company_name": "Wren Kitchens",
+      "domain": "https://www.wrenkitchens.com/",
+      "geographic_overlap": "UK National",
+      "customer_segment": "Retail Consumers, Homeowners",
+      "battle_frequency": "High",
+      "primary_differentiation": "Consumer-focused showrooms, fast manufacturing (under 7 weeks), full design service[web:2][web:3][web:4][web:9][web:14]"
+    },
+    {
+      "rank": 3,
+      "company_name": "Wickes",
+      "domain": "https://www.wickes.co.uk/",
+      "geographic_overlap": "UK National",
+      "customer_segment": "DIY Homeowners, Retail",
+      "battle_frequency": "Medium-High",
+      "primary_differentiation": "DIY flat-pack alongside fitted, budget options, nationwide stores[web:4][web:9][web:14][web:16]"
+    },
+    {
+      "rank": 4,
+      "company_name": "IKEA",
+      "domain": "https://www.ikea.com/gb/en/",
+      "geographic_overlap": "UK National (Intl)",
+      "customer_segment": "Budget Consumers, Self-assembly",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Modular flat-pack kitchens, low prices, self-install[web:9][web:16][web:20]"
+    },
+    {
+      "rank": 5,
+      "company_name": "Benchmarx",
+      "domain": "https://www.benchmarx.co.uk/",
+      "geographic_overlap": "UK National",
+      "customer_segment": "Trade Professionals",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Trade joinery, Sainsbury's backed, quality carcasses[web:9][web:16]"
+    },
+    {
+      "rank": 6,
+      "company_name": "DIY Kitchens",
+      "domain": "https://www.diy-kitchens.com/",
+      "geographic_overlap": "UK National",
+      "customer_segment": "DIY/Trade, Self-fitters",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Online custom flat-pack, low cost, no showroom[web:4][web:14][web:16]"
+    },
+    {
+      "rank": 7,
+      "company_name": "B&Q",
+      "domain": "https://www.diy.com/",
+      "geographic_overlap": "UK National",
+      "customer_segment": "DIY Retail Consumers",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Retail chain, flat-pack/fitted hybrids, tools integration[web:9][web:14][web:16]"
+    },
+    {
+      "rank": 8,
+      "company_name": "Symphony Group",
+      "domain": "https://www.symphony-group.co.uk/",
+      "geographic_overlap": "UK National",
+      "customer_segment": "Trade Manufacturers",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Wholesale kitchen components to retailers/trade[web:9][web:18]"
+    },
+    {
+      "rank": 9,
+      "company_name": "Homebase",
+      "domain": "https://www.homebase.co.uk/",
+      "geographic_overlap": "UK National",
+      "customer_segment": "Retail DIY",
+      "battle_frequency": "Low-Medium",
+      "primary_differentiation": "Budget retail fitted/flat-pack[web:16]"
+    },
+    {
+      "rank": 10,
+      "company_name": "The Range",
+      "domain": "https://www.therange.co.uk/",
+      "geographic_overlap": "UK National",
+      "customer_segment": "Budget Retail",
+      "battle_frequency": "Low",
+      "primary_differentiation": "Discount store entry-level kitchens[web:16]"
+    }
+  ],
+  "biased_prompts": {
+    "total_count": 25,
+    "awareness_informational": [
+      {
+        "id": 1,
+        "prompt": "What is Magnet kitchens?",
+        "category": "Awareness"
+      },
+      {
+        "id": 2,
+        "prompt": "Who owns Magnet.co.uk?",
+        "category": "Awareness"
+      },
+      {
+        "id": 3,
+        "prompt": "When was Magnet kitchens founded?",
+        "category": "Awareness"
+      },
+      {
+        "id": 4,
+        "prompt": "Where are Magnet kitchens made?",
+        "category": "Awareness"
+      },
+      {
+        "id": 5,
+        "prompt": "Magnet kitchens history?",
+        "category": "Awareness"
+      },
+      {
+        "id": 6,
+        "prompt": "Is Magnet a UK kitchen company?",
+        "category": "Awareness"
+      }
+    ],
+    "consideration_evaluation": [
+      {
+        "id": 7,
+        "prompt": "Magnet kitchens review 2026?",
+        "category": "Consideration"
+      },
+      {
+        "id": 8,
+        "prompt": "Magnet kitchens pros and cons?",
+        "category": "Consideration"
+      },
+      {
+        "id": 9,
+        "prompt": "Are Magnet kitchens good quality?",
+        "category": "Consideration"
+      },
+      {
+        "id": 10,
+        "prompt": "Magnet kitchens worth it?",
+        "category": "Consideration"
+      },
+      {
+        "id": 11,
+        "prompt": "How does Magnet kitchen design work?",
+        "category": "Consideration"
+      },
+      {
+        "id": 12,
+        "prompt": "Best Magnet kitchens for small homes?",
+        "category": "Consideration"
+      },
+      {
+        "id": 13,
+        "prompt": "Magnet kitchens complaints?",
+        "category": "Consideration"
+      },
+      {
+        "id": 14,
+        "prompt": "Magnet kitchens reliability?",
+        "category": "Consideration"
+      }
+    ],
+    "comparison_commercial": [
+      {
+        "id": 15,
+        "prompt": "Magnet vs Howdens kitchens?",
+        "category": "Comparison"
+      },
+      {
+        "id": 16,
+        "prompt": "Magnet vs Wren which better?",
+        "category": "Comparison"
+      },
+      {
+        "id": 17,
+        "prompt": "Howdens vs Magnet for trade?",
+        "category": "Comparison"
+      },
+      {
+        "id": 18,
+        "prompt": "Wren vs Magnet pricing comparison?",
+        "category": "Comparison"
+      },
+      {
+        "id": 19,
+        "prompt": "Magnet alternative to Howdens?",
+        "category": "Comparison"
+      },
+      {
+        "id": 20,
+        "prompt": "Is Wren better than Magnet?",
+        "category": "Comparison"
+      },
+      {
+        "id": 21,
+        "prompt": "Magnet vs Wickes fitted kitchens?",
+        "category": "Comparison"
+      },
+      {
+        "id": 22,
+        "prompt": "Howdens vs Magnet installation?",
+        "category": "Comparison"
+      }
+    ],
+    "decision_transactional": [
+      {
+        "id": 23,
+        "prompt": "Magnet kitchens pricing UK?",
+        "category": "Decision"
+      },
+      {
+        "id": 24,
+        "prompt": "Magnet kitchens free design?",
+        "category": "Decision"
+      },
+      {
+        "id": 25,
+        "prompt": "Buy Magnet kitchen online?",
+        "category": "Decision"
+      }
+    ]
+  },
+  "blind_prompts": {
+    "total_count": 25,
+    "problem_awareness": [
+      {
+        "id": 1,
+        "prompt": "Why replace my old kitchen?",
+        "category": "Problem"
+      },
+      {
+        "id": 2,
+        "prompt": "Common fitted kitchen problems UK?",
+        "category": "Problem"
+      },
+      {
+        "id": 3,
+        "prompt": "Kitchen remodel cost UK?",
+        "category": "Problem"
+      },
+      {
+        "id": 4,
+        "prompt": "Signs need new kitchen?",
+        "category": "Problem"
+      },
+      {
+        "id": 5,
+        "prompt": "Kitchen planning mistakes avoid?",
+        "category": "Problem"
+      }
+    ],
+    "solution_education": [
+      {
+        "id": 6,
+        "prompt": "Best fitted kitchens UK 2026?",
+        "category": "Education"
+      },
+      {
+        "id": 7,
+        "prompt": "What are trade kitchen suppliers?",
+        "category": "Education"
+      },
+      {
+        "id": 8,
+        "prompt": "Fitted vs flat pack kitchens?",
+        "category": "Education"
+      },
+      {
+        "id": 9,
+        "prompt": "UK kitchen manufacturers list?",
+        "category": "Education"
+      },
+      {
+        "id": 10,
+        "prompt": "Kitchen design process explained?",
+        "category": "Education"
+      },
+      {
+        "id": 11,
+        "prompt": "Handleless kitchen styles?",
+        "category": "Education"
+      }
+    ],
+    "evaluation_consideration": [
+      {
+        "id": 12,
+        "prompt": "How to choose kitchen supplier UK?",
+        "category": "Evaluation"
+      },
+      {
+        "id": 13,
+        "prompt": "Kitchen brand reviews comparison?",
+        "category": "Evaluation"
+      },
+      {
+        "id": 14,
+        "prompt": "Trade kitchens vs retail?",
+        "category": "Evaluation"
+      },
+      {
+        "id": 15,
+        "prompt": "Kitchen quality factors?",
+        "category": "Evaluation"
+      },
+      {
+        "id": 16,
+        "prompt": "Best kitchens for builders?",
+        "category": "Evaluation"
+      },
+      {
+        "id": 17,
+        "prompt": "Affordable fitted kitchens UK?",
+        "category": "Evaluation"
+      },
+      {
+        "id": 18,
+        "prompt": "Kitchen warranty comparison?",
+        "category": "Evaluation"
+      }
+    ],
+    "commercial_investigation": [
+      {
+        "id": 19,
+        "prompt": "Fitted kitchen prices UK 2026?",
+        "category": "Commercial"
+      },
+      {
+        "id": 20,
+        "prompt": "Kitchen supplier costs breakdown?",
+        "category": "Commercial"
+      },
+      {
+        "id": 21,
+        "prompt": "Cheap trade kitchens UK?",
+        "category": "Commercial"
+      },
+      {
+        "id": 22,
+        "prompt": "Kitchen financing options?",
+        "category": "Commercial"
+      },
+      {
+        "id": 23,
+        "prompt": "Kitchen installation costs?",
+        "category": "Commercial"
+      }
+    ],
+    "decision_support": [
+      {
+        "id": 24,
+        "prompt": "Top rated kitchen companies UK?",
+        "category": "Decision"
+      },
+      {
+        "id": 25,
+        "prompt": "Reliable UK kitchen fitters?",
+        "category": "Decision"
+      }
+    ]
+  },
+  "research_quality_summary": {
+    "total_competitors_identified": 10,
+    "geographic_relevance": "All UK national, direct market overlap with Magnet[web:18]",
+    "prompt_distribution": {
+      "biased_percentage": 50,
+      "neutral_percentage": 50,
+      "total_prompts": 50
+    },
+    "customer_journey_coverage": "Complete - Awareness to Decision",
+    "data_confidence_level": "High",
+    "confidence_justification": "Company data from official site [page:0], competitors/market from reviews, forums, reports [web:2][web:3][web:4][web:9][web:14][web:16][web:17][web:18][web:20]",
+    "ranking_methodology": "Ranked by battle frequency in UK kitchen comparisons (Howdens/Wren top, frequent mentions), geographic/customer overlap, fitted kitchen focus. Limited to top 10[web:2][web:3][web:9][web:14][file:25]"
+  },
+  "metadata": {
+    "report_generated_date": "2026-02-04",
+    "research_methodology": "AEO (Answer Engine Optimization) competitive intelligence analysis",
+    "primary_market": "United Kingdom",
+    "data_sources": [
+      "Official company website",
+      "Companies House filings",
+      "Customer review sites (Which?, Trustpilot)",
+      "Comparison forums (Houzz, Reddit, Facebook)",
+      "Industry reports (Mordor Intelligence)",
+      "Market lists [web:17][web:20]"
+    ],
+    "web_references": [
+      "web:2",
+      "web:3",
+      "web:4",
+      "web:6",
+      "web:9",
+      "web:14",
+      "web:16",
+      "web:17",
+      "web:18",
+      "web:20",
+      "page:0"
+    ]
+  }
+}

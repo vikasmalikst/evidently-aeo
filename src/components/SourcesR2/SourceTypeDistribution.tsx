@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { SourceData } from '../../pages/SearchSourcesR2';
+import type { SourceData } from '../../types/citation-sources';
 import { HelpButton } from '../common/HelpButton';
 
 interface SourceTypeDistributionProps {
@@ -67,9 +67,16 @@ export const SourceTypeDistribution = ({ sources, isLoading = false, onHelpClick
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-[0_8px_18px_rgba(15,23,42,0.05)]">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-extrabold text-slate-900 m-0">Source Type Distribution</h3>
+    <div style={{
+      background: '#fff',
+      border: '1px solid #e5e7eb',
+      borderRadius: 12,
+      padding: 20,
+      boxShadow: '0 8px 18px rgba(15,23,42,0.06)',
+      transition: 'box-shadow 200ms ease'
+    }}>
+      <div className="flex items-center justify-between mb-5">
+        <h3 style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', margin: 0 }}>Source Type Distribution</h3>
         {onHelpClick && (
           <HelpButton
             onClick={onHelpClick}
@@ -80,39 +87,69 @@ export const SourceTypeDistribution = ({ sources, isLoading = false, onHelpClick
       </div>
 
       {/* Stacked Bar */}
-      <div className="h-8 w-full rounded flex overflow-hidden mb-6">
-        {distribution.map((item, index) => (
+      <div style={{ 
+        height: 48, 
+        width: '100%', 
+        borderRadius: 8, 
+        display: 'flex', 
+        overflow: 'hidden', 
+        marginBottom: 24,
+        boxShadow: '0 2px 8px rgba(15,23,42,0.04)'
+      }}>
+        {distribution.map((item) => (
           <div
             key={item.type}
-            style={{ width: `${item.percentage}%`, backgroundColor: item.color }}
-            className="h-full relative group first:rounded-l last:rounded-r transition-all hover:opacity-90"
+            style={{ 
+              width: `${item.percentage}%`, 
+              background: `linear-gradient(180deg, ${item.color} 0%, ${item.color}dd 100%)`,
+              position: 'relative',
+              transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)'
+            }}
+            className="h-full group/bar cursor-pointer"
             title={`${item.label}: ${item.count} sources (${item.percentage.toFixed(1)}%)`}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.filter = 'brightness(1.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.filter = 'brightness(1)';
+            }}
           >
-            {/* Small separator if needed, but flex handles it cleanly. */}
           </div>
         ))}
       </div>
 
       {/* Legend Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-y-4 gap-x-8">
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+        gap: '20px 24px'
+      }}>
         {distribution.map((item) => (
-          <div key={item.type} className="flex flex-col gap-1 group/legend-item">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-[2px]" style={{ backgroundColor: item.color }}></div>
-              <span className="text-xs font-medium text-slate-500">{item.label}</span>
+          <div key={item.type} className="flex flex-col gap-1.5 group/legend-item cursor-pointer">
+            <div className="flex items-center gap-2.5">
+              <div 
+                style={{ 
+                  width: 12, 
+                  height: 12, 
+                  borderRadius: 3,
+                  background: item.color,
+                  boxShadow: '0 1px 3px rgba(15,23,42,0.1)'
+                }}
+              ></div>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>{item.label}</span>
               {onHelpClick && (
                 <HelpButton
                   onClick={(e) => {
                     e?.stopPropagation();
                     onHelpClick();
                   }}
-                  className="opacity-0 group-hover/legend-item:opacity-100 p-0.5"
+                  className="opacity-0 group-hover/legend-item:opacity-100 p-0.5 transition-opacity"
                   label={`Learn about ${item.label}`}
                   size={12}
                 />
               )}
             </div>
-            <span className="text-sm font-extrabold text-slate-900 ml-5">
+            <span style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', marginLeft: 20 }}>
               {item.percentage.toFixed(1)}%
             </span>
           </div>

@@ -44,7 +44,7 @@ interface ScheduledJob {
   id: string;
   brand_id: string;
   customer_id: string;
-  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring';
+  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry';
   cron_expression: string;
   timezone: string;
   is_active: boolean;
@@ -554,7 +554,7 @@ export const ScheduledJobs = () => {
         params.append('brand_id', effectiveBrandId);
       }
       const response = await apiClient.get<ApiResponse<ScheduledJob[]>>(
-        `/admin/scheduled-jobs?${params.toString()}`
+        `/scheduled-jobs?${params.toString()}`
       );
       if (response.success && response.data) {
         setJobs(response.data);
@@ -568,7 +568,7 @@ export const ScheduledJobs = () => {
 
   const handleCreateJob = async (jobData: Partial<ScheduledJob>) => {
     try {
-      const response = await apiClient.post<ApiResponse<unknown>>('/admin/scheduled-jobs', {
+      const response = await apiClient.post<ApiResponse<unknown>>('/scheduled-jobs', {
         ...jobData,
         customer_id: effectiveCustomerId,
         brand_id: effectiveBrandId || brands[0]?.id,
@@ -586,7 +586,7 @@ export const ScheduledJobs = () => {
   const handleToggleActive = async (job: ScheduledJob) => {
     try {
       const response = await apiClient.put<ApiResponse<unknown>>(
-        `/admin/scheduled-jobs/${job.id}`,
+        `/scheduled-jobs/${job.id}`,
         {
           is_active: !job.is_active,
         }
@@ -602,7 +602,7 @@ export const ScheduledJobs = () => {
   const handleTriggerJob = async (jobId: string) => {
     try {
       const response = await apiClient.post<ApiResponse<unknown>>(
-        `/admin/scheduled-jobs/${jobId}/trigger`
+        `/scheduled-jobs/${jobId}/trigger`
       );
       if (response.success) {
         alert('Job triggered successfully');
@@ -978,8 +978,14 @@ export const ScheduledJobs = () => {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-6">
+      <div className="mb-6 flex justify-between items-center">
         <h1 className="text-2xl font-bold">Scheduled Jobs</h1>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-medium"
+        >
+          Create Job
+        </button>
       </div>
 
       {/* Admin Customer & Brand Selector */}
@@ -2041,10 +2047,11 @@ const CreateJobModal = ({
   defaultBrandId,
 }: {
   onClose: () => void;
-  onSubmit: (data: Partial<ScheduledJob>) => void;
+  onSubmit: (data: Partial<ScheduledJob>) => Promise<void>;
   brands: Array<{ id: string; name: string }>;
   defaultBrandId?: string;
 }) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<{
     brand_id: string;
     job_type: ScheduledJob['job_type'];
@@ -2059,9 +2066,19 @@ const CreateJobModal = ({
     is_active: true,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [time, setTime] = useState('09:00');
+  const [isAdvanced, setIsAdvanced] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
+    if (isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+      await onSubmit(formData);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -2076,6 +2093,7 @@ const CreateJobModal = ({
               onChange={(e) => setFormData({ ...formData, brand_id: e.target.value })}
               className="w-full border rounded px-3 py-2"
               required
+              disabled={isSubmitting}
             >
               {brands.map((brand) => (
                 <option key={brand.id} value={brand.id}>
@@ -2099,6 +2117,7 @@ const CreateJobModal = ({
                 }
               }}
               className="w-full border rounded px-3 py-2"
+              disabled={isSubmitting}
             >
               <option value="data_collection">Data Collection</option>
               <option value="scoring">Scoring</option>
@@ -2106,18 +2125,54 @@ const CreateJobModal = ({
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Cron Expression</label>
-            <input
-              type="text"
-              value={formData.cron_expression}
-              onChange={(e) => setFormData({ ...formData, cron_expression: e.target.value })}
-              placeholder="0 9 * * *"
-              className="w-full border rounded px-3 py-2 font-mono text-sm"
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Format: minute hour day month weekday (e.g., "0 9 * * *" = daily at 9 AM)
-            </p>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium">Schedule</label>
+              <button
+                type="button"
+                onClick={() => setIsAdvanced(!isAdvanced)}
+                className="text-xs text-blue-600 hover:text-blue-800 underline"
+              >
+                {isAdvanced ? 'Switch to Simple Time' : 'Advanced (Custom Cron)'}
+              </button>
+            </div>
+            
+            {!isAdvanced ? (
+              <div className="relative">
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => {
+                    const newTime = e.target.value;
+                    setTime(newTime);
+                    if (newTime) {
+                      const [hours, minutes] = newTime.split(':');
+                      setFormData({ ...formData, cron_expression: `${parseInt(minutes)} ${parseInt(hours)} * * *` });
+                    }
+                  }}
+                  className="w-full border rounded px-3 py-2"
+                  required={!isAdvanced}
+                  disabled={isSubmitting}
+                />
+                <div className="mt-1 text-xs text-gray-500">
+                  Runs daily at {time} ({formData.cron_expression})
+                </div>
+              </div>
+            ) : (
+              <div>
+                <input
+                  type="text"
+                  value={formData.cron_expression}
+                  onChange={(e) => setFormData({ ...formData, cron_expression: e.target.value })}
+                  placeholder="0 9 * * *"
+                  className="w-full border rounded px-3 py-2 font-mono text-sm"
+                  required={isAdvanced}
+                  disabled={isSubmitting}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Format: min hour day month weekday (e.g. "*/5 * * * *" = every 5 mins)
+                </p>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Timezone</label>
@@ -2127,6 +2182,7 @@ const CreateJobModal = ({
               onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
               placeholder="UTC"
               className="w-full border rounded px-3 py-2"
+              disabled={isSubmitting}
             />
           </div>
           <div className="flex items-center">
@@ -2135,6 +2191,7 @@ const CreateJobModal = ({
               checked={formData.is_active}
               onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
               className="mr-2"
+              disabled={isSubmitting}
             />
             <label className="text-sm">Active</label>
           </div>
@@ -2143,14 +2200,24 @@ const CreateJobModal = ({
               type="button"
               onClick={onClose}
               className="px-4 py-2 border rounded hover:bg-gray-50"
+              disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className={`px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
+              disabled={isSubmitting}
             >
-              Create
+              {isSubmitting ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Creating...
+                </>
+              ) : 'Create'}
             </button>
           </div>
         </form>

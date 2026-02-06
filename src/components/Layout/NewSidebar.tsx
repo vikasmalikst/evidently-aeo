@@ -19,6 +19,7 @@ import {
   IconRocket,
   IconTrendingUp,
   IconMessages,
+  IconActivity,
 } from '@tabler/icons-react';
 import { useAuthStore } from '../../store/authStore';
 import { authService } from '../../lib/auth';
@@ -35,6 +36,7 @@ interface NavItem {
   icon: React.ComponentType<{ size?: number | string; className?: string }>;
   path?: string;
   children?: NavChild[];
+  stepNumber?: number;
 }
 
 const navItems: NavItem[] = [
@@ -43,6 +45,7 @@ const navItems: NavItem[] = [
     label: 'Measure',
     icon: IconGauge,
     path: '/measure',
+    stepNumber: 1,
   },
   {
     id: 'analyze',
@@ -57,6 +60,7 @@ const navItems: NavItem[] = [
       // { label: 'Sentiment Graph', path: '/analyze/keywords-graph', icon: IconKey },
       { label: 'Domain Readiness', path: '/analyze/domain-readiness', icon: IconShieldCheck },
     ],
+    stepNumber: 2,
   },
   {
     id: 'improve',
@@ -68,6 +72,7 @@ const navItems: NavItem[] = [
       { label: 'Refine', path: '/improve/execute', icon: IconRocket },
       { label: 'Outcome Tracker', path: '/improve/impact', icon: IconTrendingUp },
     ],
+    stepNumber: 3,
   },
   {
     id: 'executive-reporting',
@@ -85,6 +90,7 @@ const adminNavItems: NavItem[] = [
     children: [
       { label: 'Entitlements', path: '/admin/entitlements', icon: IconChecklist },
       { label: 'Scheduled Jobs', path: '/admin/scheduled-jobs', icon: IconGauge },
+      { label: 'Operations', path: '/admin/operations', icon: IconActivity },
       { label: 'Data Collection Status', path: '/admin/data-collection-status', icon: IconAnalyze },
       { label: 'Collection Stats', path: '/admin/collection-stats', icon: IconChartBar },
     ],
@@ -261,16 +267,26 @@ export const NewSidebar = () => {
             </div>
 
             {/* Label with smooth slide animation */}
-            <span
-              className={`
-                flex-1 text-left whitespace-nowrap font-medium text-[13px] relative z-10
-                transition-all duration-300 ease-out
-                ${active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-headings)]'}
-                ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 w-0 pointer-events-none'}
-              `}
-            >
-              {item.label}
-            </span>
+            {/* Label and Number wrapper */}
+            <div className={`
+              flex-1 flex items-center gap-2 relative z-10 overflow-hidden
+              transition-all duration-300 ease-out
+              ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 w-0 pointer-events-none'}
+            `}>
+              {item.stepNumber && (
+                <span className="flex items-center justify-center min-w-[20px] h-5 rounded-full text-[10px] font-bold text-white bg-[var(--accent-primary)]">
+                  {item.stepNumber}
+                </span>
+              )}
+              <span
+                className={`
+                  text-left whitespace-nowrap font-medium text-[13px]
+                  ${active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-headings)]'}
+                `}
+              >
+                {item.label}
+              </span>
+            </div>
 
             {/* Chevron with rotation animation */}
             <span
@@ -407,17 +423,27 @@ export const NewSidebar = () => {
           <Icon size={18} className="transition-transform duration-300 group-hover:scale-110" />
         </div>
 
-        <span
-          className={`
-              whitespace-nowrap font-medium text-[13px] relative z-10
-              transition-all duration-300 ease-out
+        {/* Label and Number wrapper */}
+        <div className={`
+          flex-1 flex items-center gap-2 relative z-10 overflow-hidden
+          transition-all duration-300 ease-out
+          ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 w-0 pointer-events-none'}
+        `}>
+          {item.stepNumber && (
+            <span className="flex items-center justify-center min-w-[20px] h-5 rounded-full text-[10px] font-bold text-white bg-[var(--accent-primary)]">
+              {item.stepNumber}
+            </span>
+          )}
+          <span
+            className={`
+              whitespace-nowrap font-medium text-[13px]
               ${active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-headings)]'}
-              ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 w-0 pointer-events-none'}
               ${isLocked ? 'text-[var(--text-caption)]' : ''}
             `}
-        >
-          {item.label}
-        </span>
+          >
+            {item.label}
+          </span>
+        </div>
         {isLocked && (
           <span className={`
                 text-[9px] font-bold tracking-wider text-white 

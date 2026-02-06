@@ -23,7 +23,15 @@ router.use(requireAdminAccess);
  */
 router.get('/dashboard', async (req: Request, res: Response) => {
     try {
-        const { limit = '100', brand_id } = req.query;
+        const {
+            limit = '100',
+            brand_id,
+            start_date,
+            end_date,
+            collector_result_id,
+            snapshot_id,
+            collector_type
+        } = req.query;
 
         let query = supabase
             .from('collector_results')
@@ -48,6 +56,32 @@ router.get('/dashboard', async (req: Request, res: Response) => {
 
         if (brand_id) {
             query = query.eq('brand_id', brand_id);
+        }
+
+        if (collector_result_id) {
+            const id = Number(collector_result_id);
+            if (!isNaN(id)) {
+                query = query.eq('id', id);
+            }
+        }
+
+        if (snapshot_id) {
+            query = query.ilike('brightdata_snapshot_id', `%${String(snapshot_id)}%`);
+        }
+
+        if (collector_type && collector_type !== 'all') {
+            query = query.eq('collector_type', collector_type);
+        }
+
+        if (start_date) {
+            query = query.gte('created_at', start_date);
+        }
+
+        if (end_date) {
+            // Ensure we cover the full end date
+            const endDateTime = new Date(String(end_date));
+            endDateTime.setHours(23, 59, 59, 999);
+            query = query.lte('created_at', endDateTime.toISOString());
         }
 
         const { data, error } = await query;
@@ -75,9 +109,9 @@ router.get('/dashboard', async (req: Request, res: Response) => {
                 raw_answer: !!item.raw_answer,
                 openrouter_collection: hasConsolidatedAnalysis,
                 citation_processed: !!(hasConsolidatedAnalysis && item.citations && item.citations.length > 0),
-                sentiment_processed: !!(metricFact?.brand_sentiment?.length > 0 || metricFact?.brand_sentiment?.id),
-                brand_scored_process: !!(metricFact?.brand_sentiment?.length > 0 || metricFact?.brand_sentiment?.id),
-                competitor_scores_process: !!(metricFact?.competitor_sentiment?.length > 0 || metricFact?.competitor_sentiment?.id),
+                brand_sentiment_processed: !!(metricFact?.brand_sentiment?.length > 0 || metricFact?.brand_sentiment?.id),
+                competitor_sentiment_processed: !!(metricFact?.competitor_sentiment?.length > 0 || metricFact?.competitor_sentiment?.id),
+                metric_fact_created: !!metricFact?.id,
             };
         });
 

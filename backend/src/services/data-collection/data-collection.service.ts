@@ -72,7 +72,7 @@ export class DataCollectionService {
   private collectors: Map<string, CollectorConfig> = new Map();
   private supabase: any;
   private circuitBreakers: Map<string, { failures: number; lastFailure: number; isOpen: boolean }> = new Map();
-  
+
   // Retry configuration from environment variables
   private maxRetries: number = parseInt(process.env['DATA_COLLECTION_MAX_RETRIES'] || '3', 10);
   private retryBaseDelayMs: number = parseInt(process.env['DATA_COLLECTION_RETRY_BASE_DELAY_MS'] || '1000', 10);
@@ -92,7 +92,7 @@ export class DataCollectionService {
         schema: 'public'
       }
     });
-    
+
     this.initializeCollectors();
   }
 
@@ -157,10 +157,10 @@ export class DataCollectionService {
       priority: 4
     });
 
-   
+
     this.collectors.set('claude', {
       name: 'Claude Collector',
-      enabled: false, 
+      enabled: false,
       baseUrl: 'priority',
       timeout: 30000,
       retries: 2,
@@ -204,7 +204,7 @@ export class DataCollectionService {
    */
   async executeQueries(requests: QueryExecutionRequest[]): Promise<CollectorResult[]> {
     const results: CollectorResult[] = [];
-    
+
     // Validation: Check collectors at the beginning (assuming uniform collectors for the batch)
     if (requests.length > 0) {
       const firstRequest = requests[0];
@@ -213,7 +213,7 @@ export class DataCollectionService {
         throw new Error('No data collectors selected');
       }
 
-      const enabledCollectors = firstRequest.collectors.filter(collector => 
+      const enabledCollectors = firstRequest.collectors.filter(collector =>
         this.collectors.get(collector)?.enabled
       );
 
@@ -264,7 +264,7 @@ export class DataCollectionService {
 
       const batchResults = await Promise.all(batchPromises);
       results.push(...batchResults.flat());
-      
+
       // Small delay between batches to be nice to the API
       if (i + BATCH_SIZE < requests.length) {
         await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second pause
@@ -277,10 +277,10 @@ export class DataCollectionService {
     const totalExecutions = results.length;
     if (totalExecutions > 0) {
     }
-    
+
     if (failedCount > 0) {
     }
-    
+
     return results;
   }
 
@@ -338,7 +338,7 @@ export class DataCollectionService {
   ): Promise<CollectorResult[]> {
     let lastError: CollectorError | null = null;
     const collectorKeys = request.collectors.join(',');
-    
+
     // Check circuit breaker for this collector combination
     if (this.isCircuitBreakerOpen(collectorKeys)) {
       return await this.createFailedExecutionsForCollectors(
@@ -347,7 +347,7 @@ export class DataCollectionService {
         0
       );
     }
-    
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         if (attempt > 0) {
@@ -357,14 +357,14 @@ export class DataCollectionService {
           const delayMs = baseDelay + jitter;
           await new Promise(resolve => setTimeout(resolve, delayMs));
         }
-        
+
         const results = await this.executeQueryAcrossCollectors(request);
-        
+
         // Reset circuit breaker on success
         if (attempt > 0) {
           this.resetCircuitBreaker(collectorKeys);
         }
-        
+
         return results;
       } catch (error: any) {
         // Convert error to CollectorError
@@ -375,13 +375,13 @@ export class DataCollectionService {
           brandId: request.brandId,
           customerId: request.customerId
         }, attempt);
-        
+
         lastError = collectorError;
         // Don't retry on non-retryable errors
         if (!collectorError.retryable) {
           throw collectorError;
         }
-        
+
         // Check if we should continue retrying
         if (attempt >= maxRetries) {
           // Record failure in circuit breaker
@@ -390,13 +390,13 @@ export class DataCollectionService {
         }
       }
     }
-    
+
     // All retries exhausted
     console.error(`❌ All ${maxRetries + 1} attempts failed for query: "${request.queryText.substring(0, 60)}..."`);
-    
+
     // Record failure in circuit breaker
     this.recordCircuitBreakerFailure(collectorKeys);
-    
+
     throw lastError || new CollectorError(
       ErrorType.UNKNOWN_ERROR,
       'Query execution failed after retries',
@@ -421,7 +421,7 @@ export class DataCollectionService {
     if (!breaker) {
       return false;
     }
-    
+
     if (breaker.isOpen) {
       // Check if timeout has passed to try half-open state
       const timeSinceLastFailure = Date.now() - breaker.lastFailure;
@@ -431,7 +431,7 @@ export class DataCollectionService {
       }
       return true;
     }
-    
+
     return false;
   }
 
@@ -444,16 +444,16 @@ export class DataCollectionService {
       lastFailure: 0,
       isOpen: false
     };
-    
+
     breaker.failures += 1;
     breaker.lastFailure = Date.now();
-    
+
     if (breaker.failures >= this.circuitBreakerThreshold) {
       breaker.isOpen = true;
       console.error(`🔴 Circuit breaker OPENED for: ${collectorKey} (${breaker.failures} consecutive failures)`);
     } else {
     }
-    
+
     this.circuitBreakers.set(collectorKey, breaker);
   }
 
@@ -473,14 +473,14 @@ export class DataCollectionService {
    * Create query execution record in database for a specific collector
    */
   private async createQueryExecutionForCollector(
-    request: QueryExecutionRequest, 
-    collectorType: string, 
+    request: QueryExecutionRequest,
+    collectorType: string,
     status: string = 'pending',
     collectorError?: CollectorError,
     snapshotId?: string
   ): Promise<string> {
     const mappedCollectorType = this.mapCollectorTypeToDatabase(collectorType);
-    
+
     // Get brand name from database
     let brandName = null;
     if (request.brandId) {
@@ -490,7 +490,7 @@ export class DataCollectionService {
           .select('name')
           .eq('id', request.brandId)
           .single();
-        
+
         if (brandData) {
           brandName = brandData.name;
         }
@@ -528,7 +528,7 @@ export class DataCollectionService {
       } catch (error) {
       }
     }
-    
+
     const insertData: any = {
       query_id: request.queryId,
       brand_id: request.brandId,
@@ -555,7 +555,7 @@ export class DataCollectionService {
       const errorFormat = collectorError.toDatabaseFormat();
       insertData.error_message = errorFormat.error_message;
       insertData.error_metadata = errorFormat.error_metadata;
-      
+
       // Also add retry_count and retry_history if available
       if (collectorError.context.attemptNumber > 0) {
         insertData.retry_count = collectorError.context.attemptNumber;
@@ -696,18 +696,18 @@ export class DataCollectionService {
       const errorFormat = collectorError.toDatabaseFormat();
       updateData.error_message = errorFormat.error_message;
       updateData.error_metadata = errorFormat.error_metadata;
-      
+
       // Update retry_count and retry_history
       if (collectorError.context.attemptNumber > 0) {
         updateData.retry_count = collectorError.context.attemptNumber;
-        
+
         // Get existing retry_history and append
         const { data: existing } = await this.supabase
           .from('query_executions')
           .select('retry_history, retry_count')
           .eq('id', executionId)
           .single();
-        
+
         const existingHistory = existing?.retry_history || [];
         updateData.retry_history = [
           ...existingHistory,
@@ -780,7 +780,7 @@ export class DataCollectionService {
     request: QueryExecutionRequest
   ): Promise<CollectorResult[]> {
     const results: CollectorResult[] = [];
-    const enabledCollectors = request.collectors.filter(collector => 
+    const enabledCollectors = request.collectors.filter(collector =>
       this.collectors.get(collector)?.enabled
     );
 
@@ -801,8 +801,8 @@ export class DataCollectionService {
     });
 
     const collectorResults = await Promise.allSettled(promises); // benefits : even if
-                 // one collectors fails,others continue 
-    
+    // one collectors fails,others continue 
+
     collectorResults.forEach((result, index) => {
       if (result.status === 'fulfilled') {
         const priorityResult = result.value as PriorityExecutionResult;
@@ -838,10 +838,10 @@ export class DataCollectionService {
           brandId: request.brandId,
           customerId: request.customerId
         }, 0);
-        
+
         this.createQueryExecutionForCollector(request, collectorType, 'failed', collectorError)
           .catch(err => console.error(`Failed to create execution record for ${collectorType}:`, err));
-        
+
         results.push({
           queryId: request.queryId,
           executionId: '', // Will be populated by createQueryExecutionForCollector if needed
@@ -896,14 +896,14 @@ export class DataCollectionService {
         }
         // If execution is 'running' but result status is 'failed', update to 'failed'
         else if (execution.status === 'running' && result.status === 'failed') {
-          const collectorError = result.error 
+          const collectorError = result.error
             ? CollectorError.fromError(new Error(result.error), {
-                queryId: result.queryId,
-                queryText: '',
-                collectorType: result.collectorType,
-                brandId: result.brandId,
-                customerId: result.customerId
-              }, 0)
+              queryId: result.queryId,
+              queryText: '',
+              collectorType: result.collectorType,
+              brandId: result.brandId,
+              customerId: result.customerId
+            }, 0)
             : undefined;
           await this.updateExecutionStatus(result.executionId, result.collectorType, 'failed', collectorError);
         }
@@ -930,14 +930,14 @@ export class DataCollectionService {
     console.log(`🔄 [DataCollection] Executing query for brand ${request.brandId} using ${collectorType} (Country: ${request.country || 'US'})`);
     // Create execution record for this specific collector
     let executionId: string;
-    
+
     try {
       // Create execution record with 'pending' status
       executionId = await this.createQueryExecutionForCollector(request, collectorType, 'pending');
-      
+
       // Update to 'running'
       await this.updateExecutionStatus(executionId, collectorType, 'running');
-      
+
       // Use priority collector service for fallback logic
       const result = await priorityCollectorService.executeWithPriorityFallback(
         request.queryId,
@@ -954,10 +954,10 @@ export class DataCollectionService {
       if (result.status === 'completed') {
         // Extract raw_response_json from metadata if available (but don't store it back in metadata to avoid 413 errors)
         const rawResponseJson = result.metadata?.raw_response_json;
-        
+
         // Remove raw_response_json from metadata to avoid 413 Request Entity Too Large errors
         const { raw_response_json: _, ...metadataWithoutRawJson } = result.metadata || {};
-        
+
         await this.storeCollectorResult({
           queryId: result.queryId,
           executionId: result.executionId,
@@ -982,9 +982,9 @@ export class DataCollectionService {
         // Update execution status with snapshot_id if available
         // This is done AFTER storeCollectorResult so updateExecutionStatus can verify raw_answer
         await this.updateExecutionStatus(
-          executionId, 
-          collectorType, 
-          'completed', 
+          executionId,
+          collectorType,
+          'completed',
           undefined,
           result.snapshotId
         );
@@ -995,8 +995,8 @@ export class DataCollectionService {
         // Create CollectorError from result.error if it's a string
         let collectorError: CollectorError | undefined;
         if (result.error) {
-          const error = typeof result.error === 'string' 
-            ? new Error(result.error) 
+          const error = typeof result.error === 'string'
+            ? new Error(result.error)
             : result.error;
           collectorError = CollectorError.fromError(error, {
             queryId: request.queryId,
@@ -1020,14 +1020,14 @@ export class DataCollectionService {
         brandId: request.brandId,
         customerId: request.customerId
       }, 0);
-      
+
       console.error(`❌ Priority fallback failed for ${collectorType}:`, {
         errorType: collectorError.errorType,
         retryable: collectorError.retryable,
         message: collectorError.message,
         context: collectorError.context
       });
-      
+
       // Create execution record if it wasn't created yet, or update existing one
       try {
         if (!executionId) {
@@ -1038,7 +1038,7 @@ export class DataCollectionService {
       } catch (dbError) {
         console.error(`Failed to create/update execution record:`, dbError);
       }
-      
+
       return {
         queryId: request.queryId,
         executionId: executionId || '',
@@ -1066,25 +1066,25 @@ export class DataCollectionService {
     }
 
     const startTime = Date.now();
-    
+
     try {
       // console.log(`🔄 Executing with ${config.name}...`);
-      
+
       // Update execution status
       await this.updateExecutionStatus(executionId, collectorType, 'running');
-      
+
       // Call collector API
       const response = await this.callCollectorAPI(config, request, collectorType);
-      
+
       const executionTime = Date.now() - startTime;
-      
+
       // Store result with ALL required fields
       // Extract raw_response_json from metadata if available (but don't store it back in metadata to avoid 413 errors)
       const rawResponseJson = response.metadata?.raw_response_json;
-      
+
       // Remove raw_response_json from metadata to avoid 413 Request Entity Too Large errors
       const { raw_response_json: _, ...metadataWithoutRawJson } = response.metadata || {};
-      
+
       await this.storeCollectorResult({
         queryId: request.queryId,
         executionId,
@@ -1120,7 +1120,7 @@ export class DataCollectionService {
 
     } catch (error: any) {
       const executionTime = Date.now() - startTime;
-      
+
       // Create CollectorError from the exception
       const collectorError = CollectorError.fromError(error, {
         queryId: request.queryId,
@@ -1129,7 +1129,7 @@ export class DataCollectionService {
         brandId: request.brandId,
         customerId: request.customerId
       }, 0);
-      
+
       // Enhanced error logging with structured error
       console.error(`❌ ${config.name} failed for query "${request.queryText.substring(0, 60)}...":`, {
         collectorType,
@@ -1141,10 +1141,10 @@ export class DataCollectionService {
         context: collectorError.context,
         stack: collectorError.stack
       });
-      
+
       // Update execution status with CollectorError
       await this.updateExecutionStatus(executionId, collectorType, 'failed', collectorError);
-      
+
       return {
         queryId: request.queryId,
         executionId,
@@ -1193,7 +1193,7 @@ export class DataCollectionService {
     };
 
     const oxylabsSource = sourceMap[collectorType] || collectorType;
-    
+
     try {
       return await oxylabsCollectorService.executeQuery({
         prompt: request.queryText,
@@ -1223,7 +1223,7 @@ export class DataCollectionService {
           .select('name')
           .eq('id', result.brandId)
           .single();
-        
+
         if (brandData) {
           brandName = brandData.name;
         }
@@ -1241,14 +1241,14 @@ export class DataCollectionService {
           .select('query_text, topic, metadata')
           .eq('id', result.queryId)
           .single();
-        
+
         if (queryData) {
           queryText = queryData.query_text;
           // Priority: 1) topic column, 2) metadata->>'topic_name', 3) metadata->>'topic'
-          topicFromQuery = queryData.topic || 
-                          queryData.metadata?.topic_name || 
-                          queryData.metadata?.topic || 
-                          null;
+          topicFromQuery = queryData.topic ||
+            queryData.metadata?.topic_name ||
+            queryData.metadata?.topic ||
+            null;
           if (topicFromQuery) {
           }
         }
@@ -1264,14 +1264,14 @@ export class DataCollectionService {
           .from('brand_competitors')
           .select('competitor_name')
           .eq('brand_id', result.brandId);
-        
+
         if (competitorsData && competitorsData.length > 0) {
           competitorsList = competitorsData.map(c => c.competitor_name).filter(Boolean);
         }
       } catch (error) {
       }
     }
-    
+
     const insertData: any = {
       query_id: result.queryId,
       collector_type: mappedCollectorType,
@@ -1296,11 +1296,11 @@ export class DataCollectionService {
           suppress_scoring: result.suppressScoring === true,
           ...(topicFromQuery ? { topic: topicFromQuery } : {}), // Also store in metadata for backward compatibility
           ...(result.error ? { error: result.error } : {}), // Store error message for failed results
-         ...(result.status === 'failed' ? { failed: true, failed_at: new Date().toISOString() } : {})
+          ...(result.status === 'failed' ? { failed: true, failed_at: new Date().toISOString() } : {})
         };
       })()
     };
-    
+
     // Add error_message if status is failed
     if (result.status === 'failed' && result.error) {
       insertData.error_message = result.error;
@@ -1311,7 +1311,7 @@ export class DataCollectionService {
       insertData.brand_id = result.brandId;
     } else {
     }
-    
+
     if (result.customerId) {
       insertData.customer_id = result.customerId;
     } else {
@@ -1390,7 +1390,7 @@ export class DataCollectionService {
     if (error) {
       console.error('❌ Failed to store collector result:', error);
       console.error('❌ Insert data was:', JSON.stringify(insertData, null, 2));
-      
+
       // If execution_id column doesn't exist, try without it
       if (error.code === 'PGRST204' && result.executionId) {
         const { error: retryError } = await this.supabase
@@ -1445,14 +1445,14 @@ export class DataCollectionService {
               if (storedResult.raw_answer && result.status === 'completed') {
                 await this.updateExecutionStatus(result.executionId, result.collectorType, 'completed');
               } else if (result.status === 'failed') {
-                const collectorError = result.error 
+                const collectorError = result.error
                   ? CollectorError.fromError(new Error(result.error), {
-                      queryId: result.queryId,
-                      queryText: '',
-                      collectorType: result.collectorType,
-                      brandId: result.brandId,
-                      customerId: result.customerId
-                    }, 0)
+                    queryId: result.queryId,
+                    queryText: '',
+                    collectorType: result.collectorType,
+                    brandId: result.brandId,
+                    customerId: result.customerId
+                  }, 0)
                   : undefined;
                 await this.updateExecutionStatus(result.executionId, result.collectorType, 'failed', collectorError);
               }
@@ -1463,14 +1463,14 @@ export class DataCollectionService {
             }
             // If execution is still 'running' but result is 'failed', fix it
             else if (execution.status === 'running' && result.status === 'failed') {
-              const collectorError = result.error 
+              const collectorError = result.error
                 ? CollectorError.fromError(new Error(result.error), {
-                    queryId: result.queryId,
-                    queryText: '',
-                    collectorType: result.collectorType,
-                    brandId: result.brandId,
-                    customerId: result.customerId
-                  }, 0)
+                  queryId: result.queryId,
+                  queryText: '',
+                  collectorType: result.collectorType,
+                  brandId: result.brandId,
+                  customerId: result.customerId
+                }, 0)
                 : undefined;
               await this.updateExecutionStatus(result.executionId, result.collectorType, 'failed', collectorError);
             }
@@ -1479,7 +1479,7 @@ export class DataCollectionService {
           // Don't throw - result is already stored
         }
       }
-      
+
       // Generate keywords from the answer (async, non-blocking)
       if (insertedData && insertedData.length > 0 && result.response) {
         const collectorResultId = insertedData[0].id;
@@ -1508,8 +1508,7 @@ export class DataCollectionService {
           brandScoringService.scoreBrandAsync({
             brandId: result.brandId,
             customerId: result.customerId,
-            // Don't specify 'since' - process all unprocessed results for this brand
-            // The scoring services will only process results that haven't been scored yet
+
             parallel: false // Run sequentially for better reliability
           });
         } catch (scoringError) {
@@ -1616,7 +1615,7 @@ export class DataCollectionService {
    */
   async getAllCollectorHealth(): Promise<Record<string, boolean>> {
     const healthStatus: Record<string, boolean> = {};
-    
+
     for (const [collectorType] of this.collectors) {
       healthStatus[collectorType] = await this.checkCollectorHealth(collectorType);
     }

@@ -44,7 +44,7 @@ interface ScheduledJob {
   id: string;
   brand_id: string;
   customer_id: string;
-  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring';
+  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry';
   cron_expression: string;
   timezone: string;
   is_active: boolean;
@@ -554,7 +554,7 @@ export const ScheduledJobs = () => {
         params.append('brand_id', effectiveBrandId);
       }
       const response = await apiClient.get<ApiResponse<ScheduledJob[]>>(
-        `/admin/scheduled-jobs?${params.toString()}`
+        `/scheduled-jobs?${params.toString()}`
       );
       if (response.success && response.data) {
         setJobs(response.data);
@@ -568,7 +568,7 @@ export const ScheduledJobs = () => {
 
   const handleCreateJob = async (jobData: Partial<ScheduledJob>) => {
     try {
-      const response = await apiClient.post<ApiResponse<unknown>>('/admin/scheduled-jobs', {
+      const response = await apiClient.post<ApiResponse<unknown>>('/scheduled-jobs', {
         ...jobData,
         customer_id: effectiveCustomerId,
         brand_id: effectiveBrandId || brands[0]?.id,
@@ -586,7 +586,7 @@ export const ScheduledJobs = () => {
   const handleToggleActive = async (job: ScheduledJob) => {
     try {
       const response = await apiClient.put<ApiResponse<unknown>>(
-        `/admin/scheduled-jobs/${job.id}`,
+        `/scheduled-jobs/${job.id}`,
         {
           is_active: !job.is_active,
         }
@@ -602,7 +602,7 @@ export const ScheduledJobs = () => {
   const handleTriggerJob = async (jobId: string) => {
     try {
       const response = await apiClient.post<ApiResponse<unknown>>(
-        `/admin/scheduled-jobs/${jobId}/trigger`
+        `/scheduled-jobs/${jobId}/trigger`
       );
       if (response.success) {
         alert('Job triggered successfully');
@@ -978,8 +978,14 @@ export const ScheduledJobs = () => {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-6">
+      <div className="mb-6 flex justify-between items-center">
         <h1 className="text-2xl font-bold">Scheduled Jobs</h1>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-medium"
+        >
+          Create Job
+        </button>
       </div>
 
       {/* Admin Customer & Brand Selector */}

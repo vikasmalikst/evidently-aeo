@@ -19,6 +19,7 @@ import {
   IconRocket,
   IconTrendingUp,
   IconMessages,
+  IconActivity,
 } from '@tabler/icons-react';
 import { useAuthStore } from '../../store/authStore';
 import { authService } from '../../lib/auth';
@@ -89,6 +90,7 @@ const adminNavItems: NavItem[] = [
     children: [
       { label: 'Entitlements', path: '/admin/entitlements', icon: IconChecklist },
       { label: 'Scheduled Jobs', path: '/admin/scheduled-jobs', icon: IconGauge },
+      { label: 'Operations', path: '/admin/operations', icon: IconActivity },
       { label: 'Data Collection Status', path: '/admin/data-collection-status', icon: IconAnalyze },
       { label: 'Collection Stats', path: '/admin/collection-stats', icon: IconChartBar },
     ],

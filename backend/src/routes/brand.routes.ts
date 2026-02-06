@@ -849,6 +849,12 @@ router.get(
           ? queryTagsQuery.map(t => String(t).trim()).filter(Boolean)
           : undefined;
 
+      // Extract timezone offset from header (minutes difference between UTC and local)
+      // e.g. 300 for EST (UTC-5)
+      // Default to 0 (UTC) if not provided
+      const timezoneOffsetHeader = req.headers['x-timezone-offset'];
+      const timezoneOffset = timezoneOffsetHeader ? Number(timezoneOffsetHeader) : 0;
+
       console.log(`[SourceAttribution API] 📊 Params: brandId=${brandId}, customerId=${customerId}`);
       console.log(`[SourceAttribution API] 📅 Date Range: startDate=${startQuery || 'default'}, endDate=${endQuery || 'default'}`);
       if (collectors) console.log(`[SourceAttribution API] 🤖 Collectors: ${collectors.join(', ')}`);
@@ -882,16 +888,25 @@ router.get(
             throw new Error('Both startDate and endDate are required');
           }
 
-          startDate.setUTCHours(0, 0, 0, 0);
-          endDate.setUTCHours(23, 59, 59, 999);
+          // Apply timezone offset to convert local times to UTC
+          // Offset is (UTC - Local) in minutes
+          // To convert local midnight to UTC: UTC = Local + Offset
+          const offsetMs = timezoneOffset * 60 * 1000;
 
-          if (startDate.getTime() > endDate.getTime()) {
+          // Set to local midnight (currently UTC midnight) and then shift to actual UTC
+          startDate.setUTCHours(0, 0, 0, 0);
+          const startDateUtc = new Date(startDate.getTime() + offsetMs);
+
+          endDate.setUTCHours(23, 59, 59, 999);
+          const endDateUtc = new Date(endDate.getTime() + offsetMs);
+
+          if (startDateUtc.getTime() > endDateUtc.getTime()) {
             throw new Error('startDate must be before or equal to endDate');
           }
 
           dateRange = {
-            start: startDate.toISOString(),
-            end: endDate.toISOString()
+            start: startDateUtc.toISOString(),
+            end: endDateUtc.toISOString()
           };
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Invalid date range';

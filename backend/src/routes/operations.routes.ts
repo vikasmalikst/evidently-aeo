@@ -36,6 +36,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
         collector_type,
         citations,
         brands:brand_id (name),
+        consolidated_analysis_cache:consolidated_analysis_cache!left (collector_result_id),
         metric_facts:metric_facts (
             id,
             brand_sentiment:brand_sentiment (id),
@@ -55,14 +56,13 @@ router.get('/dashboard', async (req: Request, res: Response) => {
 
         // Transform data for dashboard
         const dashboardData = data.map((item: any) => {
-            // Determine OpenRouter collection
-            // Commonly stored as 'openrouter' or specific model names
-            const isOpenRouter =
-                item.collector_type?.toLowerCase().includes('gpt') ||
-                item.collector_type?.toLowerCase().includes('claude') ||
-                item.collector_type?.toLowerCase().includes('llama') ||
-                item.collector_type?.toLowerCase().includes('deepseek') ||
-                item.collector_type === 'openrouter';
+            // Check if consolidated analysis has run successfully (cache entry exists)
+            const hasConsolidatedAnalysis = !!(
+                item.consolidated_analysis_cache &&
+                (Array.isArray(item.consolidated_analysis_cache)
+                    ? item.consolidated_analysis_cache.length > 0
+                    : !!item.consolidated_analysis_cache)
+            );
 
             const metricFact = item.metric_facts?.[0] || item.metric_facts; // Handle array or object return
 
@@ -72,7 +72,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
                 date: item.created_at,
                 brightdata_snapshot_id: item.brightdata_snapshot_id,
                 raw_answer: !!item.raw_answer,
-                openrouter_collection: isOpenRouter,
+                openrouter_collection: hasConsolidatedAnalysis,
                 citation_processed: !!(item.citations && item.citations.length > 0),
                 sentiment_processed: !!(metricFact?.brand_sentiment?.length > 0 || metricFact?.brand_sentiment?.id),
                 brand_scored_process: !!(metricFact?.brand_sentiment?.length > 0 || metricFact?.brand_sentiment?.id),

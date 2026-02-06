@@ -44,29 +44,42 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const {
+            brand_id,
             brandId,
+            customer_id,
             customerId,
+            job_type,
             jobType,
+            cron_expression,
             cronExpression,
             timezone,
+            is_active,
             isActive,
             metadata,
+            created_by,
             createdBy
         } = req.body;
 
-        if (!brandId || !customerId || !jobType || !cronExpression) {
+        const effectiveBrandId = brand_id || brandId;
+        const effectiveCustomerId = customer_id || customerId;
+        const effectiveJobType = job_type || jobType;
+        const effectiveCronExpression = cron_expression || cronExpression;
+        const effectiveIsActive = is_active !== undefined ? is_active : isActive;
+        const effectiveCreatedBy = created_by || createdBy;
+
+        if (!effectiveBrandId || !effectiveCustomerId || !effectiveJobType || !effectiveCronExpression) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
         const job = await jobSchedulerService.createScheduledJob({
-            brand_id: brandId,
-            customer_id: customerId,
-            job_type: jobType as JobType,
-            cron_expression: cronExpression,
+            brand_id: effectiveBrandId,
+            customer_id: effectiveCustomerId,
+            job_type: effectiveJobType as JobType,
+            cron_expression: effectiveCronExpression,
             timezone,
-            is_active: isActive,
+            is_active: effectiveIsActive,
             metadata,
-            created_by: createdBy
+            created_by: effectiveCreatedBy
         });
 
         res.status(201).json(job);

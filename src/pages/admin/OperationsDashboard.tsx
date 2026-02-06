@@ -93,62 +93,62 @@ export const OperationsDashboard = () => {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Brand</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result ID</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Snapshot ID</th>
-                                <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Raw Answer</th>
-                                <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">OpenRouter</th>
-                                <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Citation</th>
-                                <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Sentiment</th>
-                                <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Brand Scored</th>
-                                <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Competitor Scored</th>
+                                <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Brand</th>
+                                <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result ID</th>
+                                <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Snapshot ID</th>
+                                <th scope="col" className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Raw Answer</th>
+                                <th scope="col" className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">OpenRouter</th>
+                                <th scope="col" className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Citation</th>
+                                <th scope="col" className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Sentiment</th>
+                                <th scope="col" className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Brand Scored</th>
+                                <th scope="col" className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Competitor Scored</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={10} className="px-6 py-10 text-center text-gray-500">
+                                    <td colSpan={10} className="px-3 py-10 text-center text-gray-500">
                                         Loading operations data...
                                     </td>
                                 </tr>
                             ) : data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="px-6 py-10 text-center text-gray-500">
+                                    <td colSpan={10} className="px-3 py-10 text-center text-gray-500">
                                         No recent operations found.
                                     </td>
                                 </tr>
                             ) : (
                                 data.map((row) => (
                                     <tr key={row.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <td className="px-3 py-4 text-xs text-gray-500 w-[140px]">
                                             {new Date(row.date).toLocaleString()}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        <td className="px-3 py-4 text-sm font-medium text-gray-900 w-[120px] whitespace-normal break-words">
                                             {row.brand_name}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                                        <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                                             {row.id}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                                        <td className="px-3 py-4 text-xs text-gray-500 font-mono w-[140px] whitespace-normal break-all">
                                             {row.brightdata_snapshot_id || '-'}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                                        <td className="px-3 py-4 whitespace-nowrap text-center">
                                             <StatusIcon status={row.raw_answer} />
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                                        <td className="px-3 py-4 whitespace-nowrap text-center">
                                             <StatusIcon status={row.openrouter_collection} />
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                                        <td className="px-3 py-4 whitespace-nowrap text-center">
                                             <StatusIcon status={row.citation_processed} />
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                                        <td className="px-3 py-4 whitespace-nowrap text-center">
                                             <StatusIcon status={row.sentiment_processed} />
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                                        <td className="px-3 py-4 whitespace-nowrap text-center">
                                             <StatusIcon status={row.brand_scored_process} />
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                                        <td className="px-3 py-4 whitespace-nowrap text-center">
                                             <StatusIcon status={row.competitor_scores_process} />
                                         </td>
                                     </tr>

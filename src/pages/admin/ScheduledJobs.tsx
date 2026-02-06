@@ -2047,10 +2047,11 @@ const CreateJobModal = ({
   defaultBrandId,
 }: {
   onClose: () => void;
-  onSubmit: (data: Partial<ScheduledJob>) => void;
+  onSubmit: (data: Partial<ScheduledJob>) => Promise<void>;
   brands: Array<{ id: string; name: string }>;
   defaultBrandId?: string;
 }) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<{
     brand_id: string;
     job_type: ScheduledJob['job_type'];
@@ -2065,9 +2066,16 @@ const CreateJobModal = ({
     is_active: true,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
+    if (isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+      await onSubmit(formData);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -2082,6 +2090,7 @@ const CreateJobModal = ({
               onChange={(e) => setFormData({ ...formData, brand_id: e.target.value })}
               className="w-full border rounded px-3 py-2"
               required
+              disabled={isSubmitting}
             >
               {brands.map((brand) => (
                 <option key={brand.id} value={brand.id}>
@@ -2105,6 +2114,7 @@ const CreateJobModal = ({
                 }
               }}
               className="w-full border rounded px-3 py-2"
+              disabled={isSubmitting}
             >
               <option value="data_collection">Data Collection</option>
               <option value="scoring">Scoring</option>
@@ -2120,6 +2130,7 @@ const CreateJobModal = ({
               placeholder="0 9 * * *"
               className="w-full border rounded px-3 py-2 font-mono text-sm"
               required
+              disabled={isSubmitting}
             />
             <p className="text-xs text-gray-500 mt-1">
               Format: minute hour day month weekday (e.g., "0 9 * * *" = daily at 9 AM)
@@ -2133,6 +2144,7 @@ const CreateJobModal = ({
               onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
               placeholder="UTC"
               className="w-full border rounded px-3 py-2"
+              disabled={isSubmitting}
             />
           </div>
           <div className="flex items-center">
@@ -2141,6 +2153,7 @@ const CreateJobModal = ({
               checked={formData.is_active}
               onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
               className="mr-2"
+              disabled={isSubmitting}
             />
             <label className="text-sm">Active</label>
           </div>
@@ -2149,14 +2162,24 @@ const CreateJobModal = ({
               type="button"
               onClick={onClose}
               className="px-4 py-2 border rounded hover:bg-gray-50"
+              disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className={`px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
+              disabled={isSubmitting}
             >
-              Create
+              {isSubmitting ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Creating...
+                </>
+              ) : 'Create'}
             </button>
           </div>
         </form>

@@ -35,6 +35,7 @@ export interface SourceAttributionResponse {
   avgSentimentChange: number
   totalSources: number
   dateRange: { start: string; end: string }
+  availableModels?: string[]
 }
 
 
@@ -162,7 +163,8 @@ export class SourceAttributionService {
               avgSentiment: 0,
               avgSentimentChange: 0,
               totalSources: 0,
-              dateRange: { start: startIso, end: endIso }
+              dateRange: { start: startIso, end: endIso },
+              availableModels: []
             }
           }
         }
@@ -1177,6 +1179,39 @@ export class SourceAttributionService {
         ? round(average(Array.from(previousSourceAggregates.values()).map(p => p.sentiment)), 2)
         : 0
 
+
+      // Step 12: Get available models for filter
+      // We want to show only models that have data for this brand in the current period
+      const availableModelsStartTime = Date.now();
+      let availableModels: string[] = [];
+      const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION !== 'false';
+
+      if (USE_OPTIMIZED_SOURCE_ATTRIBUTION) {
+        // Use optimized helper to get distinct types from metric_facts
+        availableModels = await optimizedMetricsHelper.getDistinctCollectorTypes(
+          brandId,
+          customerId,
+          startIso,
+          endIso
+        );
+      } else {
+        // Legacy fallback: distinct types from collector_results for this brand
+        // Fetching all might be heavy, so we limit to recent ones or accept query cost
+        // Or just return empty array if legacy mode is problematic
+        const { data: collectorTypes } = await supabaseAdmin
+          .from('collector_results')
+          .select('collector_type')
+          .eq('brand_id', brandId)
+          .gte('created_at', startIso)
+          .lte('created_at', endIso)
+          .not('collector_type', 'is', null);
+
+        if (collectorTypes) {
+          availableModels = [...new Set(collectorTypes.map(c => c.collector_type).filter(Boolean))];
+        }
+      }
+      stepTimings['available_models'] = Date.now() - availableModelsStartTime;
+
       const payload: SourceAttributionResponse = {
         sources,
         overallMentionRate,
@@ -1184,7 +1219,8 @@ export class SourceAttributionService {
         avgSentiment,
         avgSentimentChange: round(avgSentiment - previousAvgSentiment, 2),
         totalSources: sources.length,
-        dateRange: { start: startIso, end: endIso }
+        dateRange: { start: startIso, end: endIso },
+        availableModels
       }
 
       // Step 13: Cache the computed payload in Supabase (async, don't await to avoid blocking response)

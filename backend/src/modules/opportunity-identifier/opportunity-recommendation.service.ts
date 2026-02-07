@@ -10,6 +10,7 @@ import { opportunityPromptService, OpportunityRecommendationLLMResponse } from '
 import { recommendationLLMService } from '../../services/recommendations/recommendation-llm.service';
 import { RecommendationV3 } from '../../services/recommendations/recommendation.types';
 import { buildCompetitorExclusionList } from '../../services/recommendations/competitor-filter.service';
+import { domainAnalyzerService } from '../../services/domain-analyzer/domain-analyzer.service';
 
 export class OpportunityRecommendationService {
     /**
@@ -42,21 +43,45 @@ export class OpportunityRecommendationService {
         // 3. Identify Opportunities
         console.log('🔍 Identifying opportunities...');
         const response = await opportunityIdentifierService.identifyOpportunities({ brandId, customerId });
-        const opportunities = response.opportunities;
+        const allOpportunities = response.opportunities;
 
-        if (!opportunities || opportunities.length === 0) {
+        if (!allOpportunities || allOpportunities.length === 0) {
             console.log('📭 No opportunities found.');
             return { success: true, message: 'No opportunities identified.', recommendations: [] };
         }
 
-        // 4. Construct Single Prompt (Unified)
-        console.log(`📝 Processing ${opportunities.length} opportunities in a single batch...`);
+        // 4. Take TOP 10 opportunities (sorted by priority score)
+        const top10Opportunities = allOpportunities.slice(0, 10);
+        console.log(`📊 Selected top ${top10Opportunities.length} opportunities from ${allOpportunities.length} total`);
 
-        // 5. Execute LLM Call
+        // 5. Extract unique domains from top 10 opportunities
+        const uniqueDomains = this.extractUniqueDomains(top10Opportunities);
+        console.log(`🌐 Extracted ${uniqueDomains.length} unique domains from top opportunities`);
+
+        // 6. Analyze domains with LLM (with caching)
+        console.log('🔬 Analyzing domains...');
+        const domainClassifications = await domainAnalyzerService.analyzeDomains(
+            uniqueDomains,
+            brandDomain || '',
+            competitorDomains,
+            brandId
+        );
+        console.log(`✅ Successfully classified ${domainClassifications.size} domains`);
+
+        // 7. Construct Prompt with Rich Domain Context
+        console.log(`📝 Processing ${top10Opportunities.length} opportunities with enriched domain context...`);
+
+        // 8. Execute LLM Call
         const systemMessage = `Act like a world's best SEO + AEO (Answer Engine Optimization) Expert working for ${brand.name}. Respond ONLY with a valid JSON array.`;
 
-        console.log(`🚀 Calling LLM for ${opportunities.length} items...`);
-        const prompt = opportunityPromptService.constructBatchPrompt(brand.name, opportunities, competitorDomains);
+        console.log(`🚀 Calling LLM for ${top10Opportunities.length} items...`);
+        const prompt = opportunityPromptService.constructBatchPrompt(
+            brand.name,
+            top10Opportunities,
+            competitorDomains,
+            brandDomain,
+            domainClassifications
+        );
 
         let llmResults: OpportunityRecommendationLLMResponse[] = [];
         try {
@@ -77,15 +102,34 @@ export class OpportunityRecommendationService {
             return { success: false, message: 'LLM generation failed (empty response).' };
         }
 
-        // 6. Map to Database Schema and Save
+        // 9. Map to Database Schema and Save
         console.log(`💾 Saving ${llmResults.length} recommendations to database...`);
-        const recommendations = await this.saveRecommendationsToDb(brandId, customerId, llmResults, opportunities);
+        const recommendations = await this.saveRecommendationsToDb(brandId, customerId, llmResults, top10Opportunities);
 
         return {
             success: true,
             recommendationsCount: recommendations.length,
             recommendations
         };
+    }
+
+    /**
+     * Extract unique domains from opportunities' topSources
+     */
+    private extractUniqueDomains(opportunities: any[]): string[] {
+        const domainsSet = new Set<string>();
+
+        for (const opp of opportunities) {
+            if (opp.topSources && Array.isArray(opp.topSources)) {
+                for (const source of opp.topSources) {
+                    if (source.domain) {
+                        domainsSet.add(source.domain);
+                    }
+                }
+            }
+        }
+
+        return Array.from(domainsSet);
     }
 
     /**

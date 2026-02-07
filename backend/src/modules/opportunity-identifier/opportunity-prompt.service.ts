@@ -6,7 +6,7 @@
  */
 
 import { Opportunity } from './opportunity-identifier.service';
-import { DomainClassification } from '../../services/domain-analyzer/domain-analyzer.service';
+import { DomainClassification } from './domain-analyzer.service';
 
 export interface OpportunityRecommendationLLMResponse {
     Recommendation: string;
@@ -24,63 +24,9 @@ export interface OpportunityRecommendationLLMResponse {
 
 export class OpportunityPromptService {
     /**
-     * Construct a batched prompt for converting opportunities into recommendations
-     */
-    /**
-     * Format source context using LLM-analyzed domain classifications
-     */
-    private formatSourceContext(domain: string, domainClassifications?: Map<string, DomainClassification>): string {
-        if (!domainClassifications || !domainClassifications.has(domain)) {
-            return domain;
-        }
-
-        const classification = domainClassifications.get(domain)!;
-        const parts = [
-            domain,
-            this.formatDomainType(classification.type),
-            `Publishes: ${classification.acceptedContentTypes.join(', ')}`,
-            `Model: ${this.formatContributionModel(classification.contributionModel)}`,
-            `Actions: ${classification.recommendedActions.join(', ')}`
-        ];
-
-        if (classification.restrictions.length > 0) {
-            parts.push(`Restrictions: ${classification.restrictions.join(', ')}`);
-        }
-
-        return parts.join(' | ');
-    }
-
-    /**
-     * Format domain type for display
-     */
-    private formatDomainType(type: string): string {
-        const typeMap: Record<string, string> = {
-            'brand_owned': 'Brand Owned',
-            'competitor': 'Competitor',
-            'social_platform': 'Social Platform',
-            'industry_media': 'Industry Media',
-            'third_party': 'Third-Party Site'
-        };
-        return typeMap[type] || type;
-    }
-
-    /**
-     * Format contribution model for display
-     */
-    private formatContributionModel(model: string): string {
-        const modelMap: Record<string, string> = {
-            'direct_publish': 'Direct Publish',
-            'earned_media': 'Earned Media',
-            'paid_placement': 'Paid Placement',
-            'community': 'Community'
-        };
-        return modelMap[model] || model;
-    }
-
-    /**
-     * DEPRECATED: Old hardcoded classification (kept as fallback)
+     * DEPRECATED: Old hardcoded classification (kept as fallback reference only)
      * Classify source domain to determine valid actions
-     */
+    */
     private classifySource(domain: string, brandDomain?: string, competitorDomains: string[] = []): string {
         const d = domain.toLowerCase();
 
@@ -106,6 +52,45 @@ export class OpportunityPromptService {
     }
 
     /**
+     * Format source context using LLM-analyzed domain classifications
+     */
+    private formatSourceContext(
+        domain: string,
+        queryId: string,
+        domainClassifications?: Map<string, Map<string, DomainClassification>>
+    ): string {
+        if (!domainClassifications || !domainClassifications.has(queryId)) {
+            return domain;
+        }
+
+        const queryAnalysis = domainClassifications.get(queryId)!;
+        if (!queryAnalysis.has(domain)) {
+            return domain;
+        }
+
+        const classification = queryAnalysis.get(domain)!;
+
+        let context = `${domain}`;
+
+        // Add best content types if available
+        if (classification.bestContentTypes && classification.bestContentTypes.length > 0) {
+            context += ` | Best Fits: [${classification.bestContentTypes.join(', ')}]`;
+        }
+
+        // Add interaction model/verb
+        if (classification.recommendedActionVerb) {
+            context += ` | Interaction: ${classification.recommendedActionVerb} (${classification.contributionModel})`;
+        }
+
+        // Add reasoning context
+        if (classification.whyThisFit) {
+            context += ` | Context: ${classification.whyThisFit}`;
+        }
+
+        return context;
+    }
+
+    /**
      * Construct a batched prompt for converting opportunities into recommendations
      */
     constructBatchPrompt(
@@ -113,7 +98,7 @@ export class OpportunityPromptService {
         opportunities: Opportunity[],
         competitorDomains: string[],
         brandDomain?: string,
-        domainClassifications?: Map<string, DomainClassification>
+        domainClassifications?: Map<string, Map<string, DomainClassification>>
     ): string {
         // Group unique queries
         const queryMap = new Map<string, any>();
@@ -126,7 +111,7 @@ export class OpportunityPromptService {
                     metrics: [],
                     competitors: [],
                     sources: opp.topSources.map(s => {
-                        const enrichedContext = this.formatSourceContext(s.domain, domainClassifications);
+                        const enrichedContext = this.formatSourceContext(s.domain, opp.queryId, domainClassifications);
                         return enrichedContext;
                     })
                 });
@@ -147,7 +132,8 @@ Text: "${q.queryText}"
 Topic: ${q.topic || 'Not specified'}
 KPIs to Improve: ${q.metrics.join(', ')}
 Competitors to Target: ${q.competitors.length > 0 ? q.competitors.join(', ') : 'General (Brand Only)'}
-Available Sources: ${q.sources.join(', ') || 'No specific sources identified'}`;
+Available Sources:
+${q.sources.map((s: string) => `   - ${s}`).join('\n') || '   - No specific sources identified'}`;
         }).join('\n\n');
 
         const competitorList = competitorDomains.join(', ');
@@ -168,21 +154,35 @@ RULES:
 5. VARY YOUR CONTENT TYPES: Do not use the same content type for every recommendation. Mix Short-forms videos, Comparison tables, and Articles based on the specific query nuance.
 
 
-6. **SOURCE REALITY CHECK (CRITICAL):**
-   Each source listed above includes detailed information about:
-   - **Type**: Whether it's brand-owned, competitor, social platform, industry media, or third-party
-   - **Publishes**: What content formats they accept
-   - **Model**: How content gets published (direct, earned media, paid, community)
-   - **Actions**: Specific feasible actions for that platform
-   - **Restrictions**: What you CANNOT do on that platform
+
+6. **SOURCE ANALYSIS & CONTENT TYPE SELECTION:**
+   For EACH query, review the "Available Sources" list. Each source now includes specific analysis:
+   - **Best Fits**: The content types that actually work on that platform.
+   - **Interaction**: How you get content there (Publish vs Pitch vs Post).
    
-   **YOU MUST:**
-   - Only suggest actions that are listed in the "Actions" for each source
-   - Respect all "Restrictions" mentioned for each source
-   - Match your ContentType to what's listed in "Publishes" for the chosen Channel
-   - NEVER suggest editing or publishing directly on competitor sites or third-party sites unless "Direct Publish" is the model
-   - For "Earned Media" sources, focus on pitching, outreach, or buying placements
-   - For "Community" sources, focus on posting, engaging, and organic content
+   **Your Process:**
+   1. SELECT a source from the list (or your own site) that aligns with the query intent.
+   2. RESPECT the "Interaction" model provided. If it says "Pitch", you cannot "Publish".
+   3. CHOOSE a ContentType from the "Best Fits" list provided for that source.
+   
+   **Key Constraints:**
+   - **Competitor domains** (${competitorList}): NEVER use these. 
+   - **Your Site** (${brandDomain}): Always a valid option for "Direct Publishing".
+   
+   **Priority:**
+   1. High-authority "Best Fit" sources (e.g., Pitching a data study to TechCruch)
+   2. Your Own Site (Direct control)
+   3. Relevant Niche Communities (Reddit/Quora)
+
+7. **GAP-FOCUSED RECOMMENDATIONS:**
+   Each query represents a PERFORMANCE GAP where ${brandName} is underperforming on specific KPIs (Visibility, Share of Answers, Sentiment).
+   
+   Your recommendations MUST:
+   - EXPLICITLY address how the content will close the identified gap
+   - Reference the specific KPIs that need improvement
+   - Explain what competitive advantage this content will provide
+   - Describe the specific value/information the content will deliver
+
 
 CONTENT TYPE OPTIONS:
 - Short-form Video Script (Best for rapid answers, visual explanations, and increasing dwell time)
@@ -195,10 +195,10 @@ CONTENT TYPE OPTIONS:
 - Expert Articles (Highly authoritative thought leadership)
 
 For each recommendation, return a JSON object with these EXACT fields:
-- Recommendation: (The primary task/action - MUST be actionable based on source type)
+- Recommendation: (A detailed, comprehensive action statement describing: (1) the specific content piece to create, (2) the target platform where it will be published, and (3) the key components/elements it will include. Be thorough and specific about the content itself, but do NOT include reasoning about why it matters or how it closes gaps here)
 - Channel: (The target domain where content will be published)
 - ContentType: (One of the options above)
-- ThoughtProcess: (Reasoning for this choice, EXPLICITLY mentioning why this action fits the source type)
+- ThoughtProcess: (Comprehensive reasoning that explains: (1) why this action fits the source type and interaction model, (2) how this content will close the identified performance gap in the KPIs (Visibility, Share of Answers, Sentiment), (3) what competitive advantage it provides, and (4) why it matters for this specific query)
 - ContentTitle: (Optimized headline for LLM scraping)
 - Timeline: (Estimated time, e.g., "2-3 Weeks")
 - Effort: (Low, Medium, or High)

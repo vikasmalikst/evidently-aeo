@@ -10,7 +10,7 @@ import { opportunityPromptService, OpportunityRecommendationLLMResponse } from '
 import { recommendationLLMService } from '../../services/recommendations/recommendation-llm.service';
 import { RecommendationV3 } from '../../services/recommendations/recommendation.types';
 import { buildCompetitorExclusionList } from '../../services/recommendations/competitor-filter.service';
-import { domainAnalyzerService } from '../../services/domain-analyzer/domain-analyzer.service';
+import { domainAnalyzerService, QuerySourceContext } from './domain-analyzer.service';
 
 export class OpportunityRecommendationService {
     /**
@@ -40,6 +40,7 @@ export class OpportunityRecommendationService {
         const exclusionList = buildCompetitorExclusionList(competitors || [], brandDomain, brand.name);
         const competitorDomains = Array.from(exclusionList.domains);
 
+
         // 3. Identify Opportunities
         console.log('🔍 Identifying opportunities...');
         const response = await opportunityIdentifierService.identifyOpportunities({ brandId, customerId });
@@ -50,38 +51,55 @@ export class OpportunityRecommendationService {
             return { success: true, message: 'No opportunities identified.', recommendations: [] };
         }
 
-        // 4. Take TOP 10 opportunities (sorted by priority score)
-        const top10Opportunities = allOpportunities.slice(0, 10);
-        console.log(`📊 Selected top ${top10Opportunities.length} opportunities from ${allOpportunities.length} total`);
+        // 4. Select opportunities covering top N unique queries
+        // (We include ALL opportunities for each selected query so the prompt can aggregate all metrics/competitors)
+        const uniqueQueryCount = new Set(allOpportunities.map(o => o.queryId)).size;
+        const targetQueries = Math.min(10, uniqueQueryCount); // Max 10, or less if fewer queries exist
+        const topOpportunities = this.selectOpportunitiesForTopQueries(allOpportunities, targetQueries);
+        console.log(`📊 Selected ${topOpportunities.length} opportunities covering ${targetQueries} unique queries from ${allOpportunities.length} total (${uniqueQueryCount} unique queries available)`);
 
-        // 5. Extract unique domains from top 10 opportunities
-        const uniqueDomains = this.extractUniqueDomains(top10Opportunities);
-        console.log(`🌐 Extracted ${uniqueDomains.length} unique domains from top opportunities`);
+        // 5. Build Query Contexts from top opportunities (deduplicated by query)
+        console.log('📝 Building unique query contexts for analysis...');
+        const queryContextMap = new Map<string, QuerySourceContext>();
 
-        // 6. Analyze domains with LLM (with caching)
-        console.log('🔬 Analyzing domains...');
-        const domainClassifications = await domainAnalyzerService.analyzeDomains(
-            uniqueDomains,
+        topOpportunities.forEach(opp => {
+            if (!queryContextMap.has(opp.queryId)) {
+                queryContextMap.set(opp.queryId, {
+                    queryId: opp.queryId,
+                    queryText: opp.queryText,
+                    domains: opp.topSources?.map(s => s.domain).filter(d => d) || []
+                });
+            }
+        });
+
+        const queryContexts = Array.from(queryContextMap.values());
+        console.log(`📋 Created ${queryContexts.length} unique query contexts from ${topOpportunities.length} opportunities`);
+
+        // 6. Analyze queries with LLM (contextual analysis)
+        console.log(`🔬 Analyzing ${queryContexts.length} unique queries...`);
+        const domainClassifications = await domainAnalyzerService.analyzeQueries(
+            queryContexts,
             brandDomain || '',
             competitorDomains,
-            brandId
+            brand.name
         );
-        console.log(`✅ Successfully classified ${domainClassifications.size} domains`);
+        console.log(`✅ Successfully analyzed sources across queries`);
 
         // 7. Construct Prompt with Rich Domain Context
-        console.log(`📝 Processing ${top10Opportunities.length} opportunities with enriched domain context...`);
+        console.log(`📝 Processing ${topOpportunities.length} opportunities with enriched domain context...`);
 
         // 8. Execute LLM Call
         const systemMessage = `Act like a world's best SEO + AEO (Answer Engine Optimization) Expert working for ${brand.name}. Respond ONLY with a valid JSON array.`;
 
-        console.log(`🚀 Calling LLM for ${top10Opportunities.length} items...`);
+        console.log(`🚀 Calling LLM for ${topOpportunities.length} items...`);
         const prompt = opportunityPromptService.constructBatchPrompt(
             brand.name,
-            top10Opportunities,
+            topOpportunities,
             competitorDomains,
             brandDomain,
             domainClassifications
         );
+
 
         let llmResults: OpportunityRecommendationLLMResponse[] = [];
         try {
@@ -92,6 +110,14 @@ export class OpportunityRecommendationService {
                 32000 // Increased token limit for large batch
             );
             llmResults = result || [];
+
+            // Log the LLM response for debugging
+            console.log('[OpportunityRecommendation] ========================================');
+            console.log('[OpportunityRecommendation] LLM RESPONSE (Recommendations):');
+            console.log('[OpportunityRecommendation] ========================================');
+            console.log(JSON.stringify(llmResults, null, 2));
+            console.log('[OpportunityRecommendation] ========================================');
+
         } catch (err) {
             console.error(`❌ LLM transformation failed:`, err);
             return { success: false, message: 'LLM generation failed.' };
@@ -104,11 +130,13 @@ export class OpportunityRecommendationService {
 
         // 9. Map to Database Schema and Save
         console.log(`💾 Saving ${llmResults.length} recommendations to database...`);
-        const recommendations = await this.saveRecommendationsToDb(brandId, customerId, llmResults, top10Opportunities);
+        const recommendations = await this.saveRecommendationsToDb(brandId, customerId, llmResults, topOpportunities);
+
+        console.log(`✅ Successfully converted and saved ${recommendations.length} recommendations`);
 
         return {
             success: true,
-            recommendationsCount: recommendations.length,
+            message: `Generated ${recommendations.length} recommendations from ${topOpportunities.length} opportunities.`,
             recommendations
         };
     }
@@ -130,6 +158,29 @@ export class OpportunityRecommendationService {
         }
 
         return Array.from(domainsSet);
+    }
+
+    /**
+     * Select all opportunities for the top N unique queries
+     * (Keeps all opportunities per query so metrics/competitors can be aggregated in prompt)
+     */
+    private selectOpportunitiesForTopQueries(opportunities: any[], targetUniqueQueries: number): any[] {
+        const seenQueries = new Set<string>();
+        const selectedQueryIds = new Set<string>();
+
+        // First pass: identify which queries to include
+        for (const opp of opportunities) {
+            if (seenQueries.size >= targetUniqueQueries) {
+                break;
+            }
+            if (!seenQueries.has(opp.queryId)) {
+                seenQueries.add(opp.queryId);
+                selectedQueryIds.add(opp.queryId);
+            }
+        }
+
+        // Second pass: include ALL opportunities for selected queries
+        return opportunities.filter(opp => selectedQueryIds.has(opp.queryId));
     }
 
     /**

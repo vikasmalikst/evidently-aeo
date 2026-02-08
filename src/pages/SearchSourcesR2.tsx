@@ -9,7 +9,7 @@ import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useDashboardStore } from '../store/dashboardStore';
 import { getLLMIcon } from '../components/Visibility/LLMIcons';
-import { EnhancedSource, SourceData, ApiResponse, SourceAttributionResponse } from '../types/citation-sources';
+import { EnhancedSource, SourceData, ApiResponse, SourceAttributionResponse, NumericFilters } from '../types/citation-sources';
 import { computeEnhancedSources, normalizeDomain } from '../utils/citationAnalysisUtils';
 import { ValueScoreTable, type ValueScoreSource } from '../components/SourcesR2/ValueScoreTable';
 import { SummaryCards } from '../components/SourcesR2/SummaryCards';
@@ -17,10 +17,10 @@ import { ImpactScoreTrendsChart } from '../components/SourcesR2/ImpactScoreTrend
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
 import { QueryTagFilter } from '../components/common/QueryTagFilter';
 import { getDefaultDateRange } from './dashboard/utils';
-import { KeyTakeaways } from '../components/SourcesR2/KeyTakeaways';
-import { generateKeyTakeaways, type KeyTakeaway } from '../utils/SourcesTakeawayGenerator';
+
 import { SourceTypeDistribution } from '../components/SourcesR2/SourceTypeDistribution';
 import { EducationalContentDrawer, type KpiType } from '../components/EducationalDrawer/EducationalContentDrawer';
+import { NumericFilterPanel } from '../components/SourcesR2/NumericFilterPanel';
 
 
 
@@ -88,6 +88,16 @@ export const SearchSourcesR2 = () => {
   const [isHelpDrawerOpen, setIsHelpDrawerOpen] = useState(false);
   const [helpKpi, setHelpKpi] = useState<KpiType | null>(null);
   const [hoveredLlmIndex, setHoveredLlmIndex] = useState<number | null>(null);
+
+  // Numeric filter state
+  const [numericFilters, setNumericFilters] = useState<NumericFilters>({
+    valueScore: { operator: null },
+    mentionRate: { operator: null },
+    soa: { operator: null },
+    sentiment: { operator: null },
+    citations: { operator: null }
+  });
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
 
   const handleHelpClick = (kpi: KpiType) => {
     setHelpKpi(kpi);
@@ -223,30 +233,7 @@ export const SearchSourcesR2 = () => {
   const sourcesForFilters = isProcessedReady ? processedTableSources : rawTableSources;
 
 
-  const keyTakeaways = useMemo(() => {
-    // Generate takeaways from the most complete data available
-    // We combine sourceData (metrics+changes) with processedSources (quadrant+valueScore)
-    if (!sourceData.length) return [];
 
-    // Create a map of quadrant/value by name from processed sources
-    const enrichmentMap = new Map();
-    if (processedSources) {
-      processedSources.forEach(p => {
-        enrichmentMap.set(p.name, { quadrant: p.quadrant, valueScore: p.valueScore });
-      });
-    }
-
-    const combinedSources = sourceData.map(s => {
-      const enriched = enrichmentMap.get(s.name);
-      return {
-        ...s,
-        quadrant: enriched?.quadrant || '—',
-        valueScore: enriched?.valueScore || 0
-      };
-    });
-
-    return generateKeyTakeaways(combinedSources);
-  }, [processedSources, sourceData]);
 
   const quadrantCounts = useMemo(() => {
     if (!processedSources) {
@@ -296,7 +283,43 @@ export const SearchSourcesR2 = () => {
     return filtered;
   }, [quadrantFilteredSources, sourceSearchQuery, urlByName, highlightSource]);
 
-  const displayedSources = searchFilteredSources;
+  // Apply numeric filters
+  const numericFilteredSources = useMemo(() => {
+    const base = searchFilteredSources;
+
+    const filtered = base.filter((source) => {
+      // Check each numeric filter
+      for (const [key, filter] of Object.entries(numericFilters)) {
+        if (!filter.operator) continue;
+
+        const value = source[key as keyof ValueScoreSource] as number;
+
+        switch (filter.operator) {
+          case 'gt':
+            if (value <= (filter.value ?? 0)) return false;
+            break;
+          case 'lt':
+            if (value >= (filter.value ?? 0)) return false;
+            break;
+          case 'eq':
+            if (Math.abs(value - (filter.value ?? 0)) > 0.001) return false; // Use epsilon for float comparison
+            break;
+          case 'range':
+            if (value < (filter.min ?? -Infinity) || value > (filter.max ?? Infinity)) return false;
+            break;
+        }
+      }
+
+      return true;
+    });
+
+    return filtered;
+  }, [searchFilteredSources, numericFilters]);
+
+  const displayedSources = numericFilteredSources;
+
+  // Calculate active numeric filter count
+  const activeNumericFilterCount = Object.values(numericFilters).filter((f) => f.operator !== null).length;
 
   // Initialize default trends selection (top 10 by Impact score) when sources load / brand changes
   useEffect(() => {
@@ -394,6 +417,11 @@ export const SearchSourcesR2 = () => {
   };
   const deselectAllTrendSources = () => {
     setSelectedTrendSources([]);
+    setHasInitializedTrendSelection(true); // Mark as initialized so useEffect doesn't re-select
+  };
+
+  const selectMultipleTrendSources = (names: string[]) => {
+    setSelectedTrendSources(names);
     setHasInitializedTrendSelection(true); // Mark as initialized so useEffect doesn't re-select
   };
 
@@ -568,7 +596,7 @@ export const SearchSourcesR2 = () => {
           </div>
         )}
 
-        <KeyTakeaways takeaways={keyTakeaways} isLoading={isLoading && !sourcesForFilters.length} />
+
 
         <SourceTypeDistribution
           sources={sourceData}
@@ -654,7 +682,10 @@ export const SearchSourcesR2 = () => {
                       e.target.style.boxShadow = 'none';
                     }}
                   />
+
+                  {/* Removed filter panel from here - now positioned above table */}
                 </div>
+
                 {sourceSearchQuery && (
                   <button
                     onClick={() => setSourceSearchQuery('')}
@@ -694,6 +725,71 @@ export const SearchSourcesR2 = () => {
                 </div>
               )}
             </div>
+
+            {/* Numeric Filter Panel - Positioned above table */}
+            <div style={{ position: 'relative', marginBottom: 12 }}>
+              <button
+                onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: 8,
+                  border: `2px solid ${activeNumericFilterCount > 0 ? '#6366f1' : '#e5e7eb'}`,
+                  background: activeNumericFilterCount > 0 ? '#eef2ff' : '#fff',
+                  color: activeNumericFilterCount > 0 ? '#4f46e5' : '#64748b',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+                  whiteSpace: 'nowrap',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+                onMouseEnter={(e) => {
+                  if (activeNumericFilterCount === 0) {
+                    e.currentTarget.style.background = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#cbd5e1';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (activeNumericFilterCount === 0) {
+                    e.currentTarget.style.background = '#fff';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                Numeric Filters
+                {activeNumericFilterCount > 0 && (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minWidth: 20,
+                    height: 20,
+                    padding: '0 6px',
+                    borderRadius: 10,
+                    background: '#6366f1',
+                    color: '#fff',
+                    fontSize: 11,
+                    fontWeight: 700
+                  }}>
+                    {activeNumericFilterCount}
+                  </span>
+                )}
+              </button>
+
+              {isFilterPanelOpen && (
+                <NumericFilterPanel
+                  filters={numericFilters}
+                  onFiltersChange={setNumericFilters}
+                  onClose={() => setIsFilterPanelOpen(false)}
+                />
+              )}
+            </div>
+
             <ValueScoreTable
               sources={displayedSources}
               maxHeight="520px"
@@ -703,7 +799,8 @@ export const SearchSourcesR2 = () => {
                 selectedNames: trendSelectedSet,
                 maxSelected: 10,
                 onToggle: toggleTrendSource,
-                onDeselectAll: deselectAllTrendSources
+                onDeselectAll: deselectAllTrendSources,
+                onSelectMultiple: selectMultipleTrendSources
               }}
               highlightedSourceName={highlightSource}
               onHelpClick={(key) => handleHelpClick(key as any)}

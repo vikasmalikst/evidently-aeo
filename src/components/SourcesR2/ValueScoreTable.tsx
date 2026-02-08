@@ -11,23 +11,24 @@ interface ValueScoreTableProps {
   sources: ValueScoreSource[];
 
   maxRows?: number;
- 
+
   maxHeight?: number | string;
- 
+
   trendSelection?: {
     selectedNames: Set<string>;
     maxSelected: number;
     onToggle: (name: string) => void;
     onDeselectAll?: () => void;
+    onSelectMultiple?: (names: string[]) => void;
   };
-  
+
   highlightedSourceName?: string | null;
   disableSorting?: boolean;
   pagination?: {
     pageSize: number;
   };
   onHelpClick?: (key: string) => void;
-  
+
   totalCitations?: number;
 }
 
@@ -88,10 +89,10 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
     // Determine color based on score (Red -> Yellow -> Green)
     let color = '#334155'; // default slate-700
     if (metric === 'valueScore') {
-       // Value score gets special treatment - bold and colored
-       if (ratio > 0.8) color = '#15803d'; // green-700
-       else if (ratio > 0.4) color = '#b45309'; // amber-700
-       else color = '#b91c1c'; // red-700
+      // Value score gets special treatment - bold and colored
+      if (ratio > 0.8) color = '#15803d'; // green-700
+      else if (ratio > 0.4) color = '#b45309'; // amber-700
+      else color = '#b91c1c'; // red-700
     }
 
     return {
@@ -229,40 +230,11 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           {trendSelection && (
-            <>
-              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
-                Trends: {selectedCount}/{trendSelection.maxSelected}
-              </span>
-              {selectedCount > 0 && trendSelection.onDeselectAll && (
-                <button
-                  onClick={trendSelection.onDeselectAll}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: 8,
-                    border: '2px solid #e5e7eb',
-                    background: '#fff',
-                    color: '#64748b',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
-                    whiteSpace: 'nowrap'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#f8fafc';
-                    e.currentTarget.style.borderColor = '#cbd5e1';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#fff';
-                    e.currentTarget.style.borderColor = '#e5e7eb';
-                  }}
-                >
-                  Deselect All
-                </button>
-              )}
-            </>
+            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+              Trends: {selectedCount}/{trendSelection.maxSelected}
+            </span>
           )}
-          
+
         </div>
       </div>
       {isPaging && (
@@ -393,10 +365,35 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                     ...headerCellBase,
                     textAlign: 'center',
                     width: 44,
-                    cursor: 'default'
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => {
+                    const { selectedNames, maxSelected, onDeselectAll, onSelectMultiple } = trendSelection;
+                    const isSelected = selectedNames.size > 0;
+
+                    if (isSelected && onDeselectAll) {
+                      onDeselectAll();
+                    } else if (!isSelected && onSelectMultiple) {
+                      // Select top 10 (or maxallowed) from sorted sources
+                      const candidates = sortedSources.slice(0, maxSelected).map(s => s.name);
+                      onSelectMultiple(candidates);
+                    }
                   }}
                 >
-                  {/* Checkbox column */}
+                  <input
+                    type="checkbox"
+                    checked={trendSelection.selectedNames.size === trendSelection.maxSelected}
+                    ref={(input) => {
+                      if (input) {
+                        input.indeterminate = trendSelection.selectedNames.size > 0 && trendSelection.selectedNames.size < trendSelection.maxSelected;
+                      }
+                    }}
+                    onChange={() => {
+                      // Handling via parent th click for larger touch target
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    aria-label={trendSelection.selectedNames.size > 0 ? "Deselect all rows" : "Select top 10 rows"}
+                  />
                 </th>
               )}
               <th style={{ ...headerCellBase, textAlign: 'left' }} onClick={() => toggleSort('name')}>

@@ -42,3 +42,18 @@ export interface SourceAttributionResponse {
     avgSentimentChange: number;
     availableModels?: string[];
 }
+
+export interface NumericFilter {
+    operator: 'gt' | 'lt' | 'eq' | 'range' | null;
+    value?: number;
+    min?: number;
+    max?: number;
+}
+
+export interface NumericFilters {
+    valueScore: NumericFilter;    // Impact
+    mentionRate: NumericFilter;   // Mention
+    soa: NumericFilter;           // SOA
+    sentiment: NumericFilter;     // Sentiment
+    citations: NumericFilter;     // Citations
+}

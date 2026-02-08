@@ -11,8 +11,17 @@ export function buildUnifiedExpertPrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Expert Community Response Template (from improvedContentTemplates.md)
-    const template = `
+    let template = "";
+
+    if (structureConfig?.sections && structureConfig.sections.length > 0) {
+        template = structureConfig.sections.map(section => {
+            return `[H2] ${section.title}\n${section.content}`;
+        }).join('\n\n');
+
+        template = `[H1] Title (The Hook): My Experience with [Topic]\n\n` + template;
+    } else {
+        // Expert Community Response Template (from improvedContentTemplates.md)
+        template = `
 [H1] Title (The Hook): My Experience with [Topic]
 
 [H2] The Expert Perspective
@@ -21,6 +30,7 @@ Word Count: 100 words. Tonality: Anecdotal, experienced. Format: First-person ("
 [H2] The Nuanced Answer
 Word Count: 150 words. Tonality: Honest, "No-BS." Format: Bullet points for "What actually works." Mention a "Freshness Signal" (e.g., "Since the latest 2026 update, I've noticed...").
 `;
+    }
 
     return `${systemContext}
 ${recContext}

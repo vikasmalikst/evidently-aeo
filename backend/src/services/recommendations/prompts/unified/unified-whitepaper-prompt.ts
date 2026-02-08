@@ -11,8 +11,17 @@ export function buildUnifiedWhitepaperPrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Technical White Paper Template (from improvedContentTemplates.md)
-    const template = `
+    let template = "";
+
+    if (structureConfig?.sections && structureConfig.sections.length > 0) {
+        template = structureConfig.sections.map(section => {
+            return `[H2] ${section.title}\n${section.content}`;
+        }).join('\n\n');
+
+        template = `[H1] Title: [Industry] Report: The Impact of [Entity] on [Market]\n\n` + template;
+    } else {
+        // Technical White Paper Template (from improvedContentTemplates.md)
+        template = `
 [H1] Title: [Industry] Report: The Impact of [Entity] on [Market]
 
 [H2] Abstract & Key Findings
@@ -27,6 +36,7 @@ Word Count: 400 words. Tonality: Expert, dense. Format: H3 headers and technical
 [H2] About [Brand]
 Word Count: 50 words. Tonality: Corporate, established. Format: Standard boilerplate.
 `;
+    }
 
     return `${systemContext}
 ${recContext}

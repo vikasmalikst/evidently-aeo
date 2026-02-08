@@ -11,21 +11,35 @@ export function buildUnifiedSocialPrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Social Media Thread Template (from improvedContentTemplates.md)
-    const template = `
-[Section: Post 1 (The Hook)]
+    let template = "";
+
+    if (structureConfig?.sections && structureConfig.sections.length > 0) {
+        template = structureConfig.sections.map(section => {
+            return `[H2] ${section.title}\n${section.content}`;
+        }).join('\n\n');
+
+        // Social threads usually don't have a main H1 Title in the content body as they are a series of posts, 
+        // but the unified renderer expects H2 splits. The H1 below is for the "Content Title" meta-field or just context.
+        // Actually, the prompt says "Output a single, cohesive Markdown document". 
+        // We'll add a generic H1 hook instruction.
+        template = `[H1] Title: Thread Hook / Main Topic\n\n` + template;
+    } else {
+        // Social Media Thread Template (from improvedContentTemplates.md)
+        template = `
+[H2] Post 1 (The Hook)
 Word Count: 25 words. Tonality: Contrarian or provocative.
 Format: One sentence + "A thread 🧵".
 
-[Section: Posts 2-5 (The Value)]
+[H2] Posts 2-5 (The Value)
 Word Count: 40 words per post. Tonality: Fast-paced.
 Format: 1 Insight per post. Bold the Key Entity in every post.
 Number the posts (2/x, 3/x, etc.).
 
-[Section: Post 6 (The Brand Tie-in)]
+[H2] Post 6 (The Brand Tie-in)
 Word Count: 30 words. Tonality: Consultative.
 Format: CTA. "We just solved this at [Brand]. Here’s the data: [Link]."
 `;
+    }
 
     return `${systemContext}
 ${recContext}

@@ -32,7 +32,7 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
             },
             {
                 id: "current_landscape",
-                title: "The Current Landscape",
+                title: "The Current Landscape of [Industry]",
                 content: "150 words. Analytical. Short paragraphs. Mention 3-5 'Freshness Signals' (e.g., 'Recent shifts in Feb 2026 show...').",
                 sectionType: "context"
             },
@@ -44,7 +44,7 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
             },
             {
                 id: "future_outlook",
-                title: "Conclusion: The Future Outlook",
+                title: "Conclusion: The Future of [Topic]",
                 content: "75 words. Visionary. Bullets for 'Key Predictions' for the future of this topic.",
                 sectionType: "conclusion"
             }
@@ -117,28 +117,16 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
         ],
         comparison_table: [
             {
-                id: "overview",
-                title: "Overview",
-                content: "A neutral, high-level summary of the comparison landscape (300-400 words). Define the criteria used for evaluation.",
-                sectionType: "context"
-            },
-            {
-                id: "table",
-                title: "Comparison Table",
-                content: `| Feature | ${brandName} | ${competitorHeader} |\n|---|---|${competitors.length > 0 ? competitors.map(() => '---').join('|') : '---'}|\n| [Feature 1] | [Value] | ${competitorColumns} |`,
+                id: "comparison_matrix",
+                title: "Comparison Matrix",
+                content: `| Feature | ${brandName} | ${competitorHeader} |\n|---|---|${competitors.length > 0 ? competitors.map(() => '---').join('|') : '---'}|\n| Key Feature 1 | ✅ Included | ❌ Missing |\n| Key Feature 2 | ✅ Full Support | ⚠️ Limited |`,
                 sectionType: "comparison_table"
             },
             {
-                id: "detailed_analysis",
-                title: "Deep Dive Analysis",
-                content: "Prose analysis explaining the 'why' behind the table ratings. Focus on nuances that don't fit in the grid. 400-600 words. Use Short Paragraphs, Subheaders, and Bullet Points.",
+                id: "brand_advantage",
+                title: `The ${brandName} Advantage`,
+                content: "100 words. Tonality: Competitive, assertive. 3 Bullets highlighting 'Unique Selling Propositions' (USPs). Explicitly state: 'Unlike [Competitors], [Brand] offers [Feature].'",
                 sectionType: "strategies"
-            },
-            {
-                id: "verdict",
-                title: "Final Verdict",
-                content: "A 'Who is this for?' conclusion. Define the ideal user profile for each option rather than declaring a universal winner.",
-                sectionType: "cta"
             }
         ],
         social_media_thread: [

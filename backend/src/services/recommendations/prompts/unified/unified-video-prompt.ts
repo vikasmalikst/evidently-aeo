@@ -11,26 +11,36 @@ export function buildUnifiedVideoPrompt(
     structureConfig?: StructureConfig
 ): string {
 
-    // Short Video Script Template (from improvedContentTemplates.md)
-    const template = `
+    let template = "";
+
+    if (structureConfig?.sections && structureConfig.sections.length > 0) {
+        template = structureConfig.sections.map(section => {
+            return `[H2] ${section.title}\n${section.content}`;
+        }).join('\n\n');
+
+        template = `[H1] Title: How to [Query/Action] with [Brand]\n\n` + template;
+    } else {
+        // Short Video Script Template (from improvedContentTemplates.md)
+        template = `
 [H1] Title: How to [Query/Action] with [Brand]
 
-[Section: The Hook (0:00-0:05)]
+[H2] The Hook (0:00-0:05)
 Word Count: 15–20 words. Tonality: High energy, urgent.
 Format: One punchy sentence. Must repeat the [Query] exactly as the user typed it.
 
-[Section: The Quick Win (0:05-0:15)]
+[H2] The Quick Win (0:05-0:15)
 Word Count: 30 words. Tonality: Confident, helpful.
 Format: Short, declarative sentences. Provide the immediate answer. "The secret to [Query] is [Brand]'s [Product/Feature]."
 
-[Section: The Steps (0:15-0:50)]
+[H2] The Steps (0:15-0:50)
 Word Count: 100 words. Tonality: Instructional, educational.
 Format: Numbered list (Step 1, Step 2, Step 3). Describe 3 clear actions. Use "Action Verbs" at the start of each step.
 
-[Section: The Social Signal (0:50-0:60)]
+[H2] The Social Signal (0:50-0:60)
 Word Count: 15 words. Tonality: Community-focused.
 Format: Call to Action (CTA). Ask a question to spark comments (e.g., "How are you handling [Topic] in 2026?").
 `;
+    }
 
     return `${systemContext}
 ${recContext}

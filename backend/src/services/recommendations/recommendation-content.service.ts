@@ -1515,23 +1515,15 @@ ${contentStyleGuide}
   private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4 | GeneratedGuideJsonV1 | any>): GeneratedAnyJson {
     const version = parsed.version || '1.0';
 
-    // Handle v5.0 (Unified Canvas - Normalized to v3.0 for Frontend)
+    // Handle v5.0 (Unified Content - New System)
     if (version === '5.0') {
       const p5 = parsed as any;
       return {
-        version: '3.0', // Normalize to 3.0 so frontend renders it as a single markdown block
+        version: '5.0',
         recommendationId: String(p5.recommendationId || ''),
         brandName: String(p5.brandName || ''),
-        targetSource: {
-          domain: String(p5.targetSource?.domain || ''),
-          sourceType: (p5.targetSource?.sourceType as any) || 'other'
-        },
-        publishableContent: {
-          type: 'article', // Generic type for unified canvas
-          title: String(p5.contentTitle || ''),
-          content: String(p5.content || ''),
-          callToAction: ''
-        },
+        contentTitle: String(p5.contentTitle || ''),
+        content: String(p5.content || ''),
         requiredInputs: Array.isArray(p5.requiredInputs) ? p5.requiredInputs : []
       };
     }

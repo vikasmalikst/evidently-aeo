@@ -12,8 +12,19 @@ export function buildUnifiedArticlePrompt(
     isDeepDive: boolean = false
 ): string {
 
-    // Default Templates (from improvedContentTemplates.md)
-    const professionalArticleTemplate = `
+    let templateToUse = "";
+
+    if (structureConfig?.sections && structureConfig.sections.length > 0) {
+        // Construct template from user-defined structure
+        templateToUse = structureConfig.sections.map(section => {
+            return `[H2] ${section.title}: ${section.content}`;
+        }).join('\n\n');
+
+        // Prepend H1 instruction as it is usually not editable in the section list
+        templateToUse = `[H1] Title (The Entity): Must include the Primary Entity and the current year (e.g., “Kitchen Installation Costs in 2026”).\n\n` + templateToUse;
+    } else {
+        // Default Templates (from improvedContentTemplates.md)
+        const professionalArticleTemplate = `
 [H1] Title (The Entity): Must include the Primary Entity and the current year (e.g., “Kitchen Installation Costs in 2026”).
 [H2] The Direct Answer: The first H2 should be a question that matches the query. The paragraph following it must be a 40-60 word definitive statement starting with the Primary Entity name.
 [H2] Executive Abstract (The Snippet): 50-60 words. Objective, authoritative. Blockquote or bolded paragraph. Define the [Primary Entity] and its relationship to the [Query].
@@ -22,14 +33,15 @@ export function buildUnifiedArticlePrompt(
 [H2] Conclusion: The Future of [Topic]: 75 words. Visionary. Bullets for "Key Predictions."
 `;
 
-    const deepDiveBlogTemplate = `
+        const deepDiveBlogTemplate = `
 [H1] Title: Everything You Need to Know About [Topic] in 2026
 [H2] What is [Topic]? (The Direct Answer): 45 words. Simple, direct. A single, bolded paragraph. This is for the "Featured Snippet." No fluff.
 [H2] 5 Reasons Why [Topic] is Trending: 250 words. Engaging, enthusiastic. Numbered list with bolded headers. Connect each reason back to a modern consumer need.
 [H2] Step-by-Step Guide to [Action]: 200 words. Helpful, peer-to-peer. Checklist style (- [ ]). Mention [Brand] as the tool used in Step 3.
 `;
 
-    const templateToUse = isDeepDive ? deepDiveBlogTemplate : professionalArticleTemplate;
+        templateToUse = isDeepDive ? deepDiveBlogTemplate : professionalArticleTemplate;
+    }
 
     return `${systemContext}
 ${recContext}

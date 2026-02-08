@@ -6,17 +6,17 @@ import { useAdminStore } from '../../store/adminStore';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 
 interface OperationsData {
-  id: number;
-  brand_name: string;
-  date: string;
-  brightdata_snapshot_id: string | null;
-  collector_type: string;
-  raw_answer: boolean;
-  openrouter_collection: boolean;
-  citation_processed: boolean;
-  metric_fact_created: boolean;
-  brand_sentiment_processed: boolean;
-  competitor_sentiment_processed: boolean;
+    id: number;
+    brand_name: string;
+    date: string;
+    brightdata_snapshot_id: string | null;
+    collector_type: string;
+    raw_answer: boolean;
+    openrouter_collection: boolean;
+    citation_processed: boolean;
+    metric_fact_created: boolean;
+    brand_sentiment_processed: boolean;
+    competitor_sentiment_processed: boolean;
 }
 
 const COLLECTOR_TYPES = [
@@ -40,7 +40,7 @@ export const OperationsDashboard = () => {
     const [loading, setLoading] = useState(false);
     const [limit, setLimit] = useState(100);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-    
+
     // Filter State
     const [filters, setFilters] = useState({
         startDate: '',
@@ -53,11 +53,38 @@ export const OperationsDashboard = () => {
 
     const activeFilterCount = Object.values(filters).filter(v => v !== '' && v !== 'all').length;
 
+    // QBR Engine State
+    const [isGeneratingQBR, setIsGeneratingQBR] = useState(false);
+
+    const handleGenerateQBR = async () => {
+        if (!effectiveBrandId) {
+            alert('⚠️ Please select a brand first');
+            return;
+        }
+
+        setIsGeneratingQBR(true);
+        try {
+            console.log(`🚀 [OperationsDashboard] Generating QBR recommendations for brand: ${effectiveBrandId}`);
+            const result = await apiClient.post<any>(`/brands/${effectiveBrandId}/recommendations`, {}, { timeout: 180000 });
+
+            if (result.success) {
+                alert(`✅ Successfully generated ${result.recommendationsCount} recommendations! You can view them on the Improve -> Recommendations page.`);
+            } else {
+                alert(`❌ Failed to generate recommendations: ${result.message || 'Unknown error'}`);
+            }
+        } catch (err) {
+            console.error('[OperationsDashboard] Error generating QBR recommendations:', err);
+            alert(`❌ Error: ${err instanceof Error ? err.message : 'An unexpected error occurred'}`);
+        } finally {
+            setIsGeneratingQBR(false);
+        }
+    };
+
     const loadData = async () => {
         setLoading(true);
         try {
             const params = new URLSearchParams({ limit: limit.toString() });
-            
+
             // Prioritize local filter brand, fallback to global context
             const brandIdToUse = filters.brandId || effectiveBrandId;
             if (brandIdToUse) params.append('brand_id', brandIdToUse);
@@ -107,7 +134,7 @@ export const OperationsDashboard = () => {
         setTimeout(() => {
             const params = new URLSearchParams({ limit: limit.toString() });
             if (effectiveBrandId) params.append('brand_id', effectiveBrandId);
-            
+
             setLoading(true);
             apiClient.get(`/operations/dashboard?${params.toString()}`)
                 .then((res: any) => setData(res.data))
@@ -117,17 +144,17 @@ export const OperationsDashboard = () => {
     };
 
     const StatusIcon = ({ status }: { status: boolean }) => (
-        status ? 
-        <span className="inline-flex items-center justify-center w-6 h-6 bg-green-100 rounded-full">
-            <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-        </span> : 
-        <span className="inline-flex items-center justify-center w-6 h-6 bg-red-100 rounded-full">
-            <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-        </span>
+        status ?
+            <span className="inline-flex items-center justify-center w-6 h-6 bg-green-100 rounded-full">
+                <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+            </span> :
+            <span className="inline-flex items-center justify-center w-6 h-6 bg-red-100 rounded-full">
+                <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+            </span>
     );
 
     const CollectorTypeBadge = ({ type }: { type: string }) => {
@@ -140,10 +167,10 @@ export const OperationsDashboard = () => {
             'grok': 'bg-orange-100 text-orange-800 border-orange-200',
             'default': 'bg-gray-100 text-gray-800 border-gray-200'
         };
-        
+
         const colorClass = colors[type.toLowerCase()] || colors['default'];
         const displayName = type.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        
+
         return (
             <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${colorClass}`}>
                 {displayName}
@@ -159,8 +186,31 @@ export const OperationsDashboard = () => {
                     <h1 className="text-3xl font-bold text-gray-900">Operations Dashboard</h1>
                     <p className="mt-1 text-sm text-gray-500">Monitor data collection and analysis pipelines</p>
                 </div>
-                
+
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleGenerateQBR}
+                        disabled={isGeneratingQBR || !effectiveBrandId}
+                        className={`inline-flex items-center px-4 py-2 border text-sm font-medium rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 ${isGeneratingQBR || !effectiveBrandId
+                                ? 'border-gray-300 text-gray-400 bg-gray-100 cursor-not-allowed'
+                                : 'border-purple-600 text-white bg-purple-600 hover:bg-purple-700 focus:ring-purple-500'
+                            }`}
+                    >
+                        {isGeneratingQBR ? (
+                            <>
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                                Generating...
+                            </>
+                        ) : (
+                            <>
+                                <svg className="-ml-1 mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                                </svg>
+                                QBR Engine
+                            </>
+                        )}
+                    </button>
+
                     <button
                         onClick={() => setIsFilterOpen(true)}
                         className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -176,7 +226,7 @@ export const OperationsDashboard = () => {
                         )}
                     </button>
 
-                    <button 
+                    <button
                         onClick={() => loadData()}
                         disabled={loading}
                         className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
@@ -211,15 +261,15 @@ export const OperationsDashboard = () => {
                             <tr>
                                 <th scope="col" className="px-2 py-3 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[100px]">Date</th>
                                 <th scope="col" className="px-2 py-3 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[90px]">Brand</th>
-                                <th scope="col" className="px-2 py-3 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[70px]">Collector<br/>Result ID</th>
-                                <th scope="col" className="px-2 py-3 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[110px]">Snapshot<br/>ID</th>
+                                <th scope="col" className="px-2 py-3 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[70px]">Collector<br />Result ID</th>
+                                <th scope="col" className="px-2 py-3 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[110px]">Snapshot<br />ID</th>
                                 <th scope="col" className="px-2 py-3 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[100px]">LLM</th>
-                                <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[80px]">Raw<br/>Answer</th>
+                                <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[80px]">Raw<br />Answer</th>
                                 <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[70px]">Analysis</th>
-                                <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[80px]">Citation<br/>Category</th>
-                                <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[80px]">Metric<br/>Fact</th>
-                                <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[90px]">Brand<br/>Sentiment</th>
-                                <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[90px]">Competitor<br/>Sentiment</th>
+                                <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[80px]">Citation<br />Category</th>
+                                <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[80px]">Metric<br />Fact</th>
+                                <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[90px]">Brand<br />Sentiment</th>
+                                <th scope="col" className="px-2 py-3 text-center text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[90px]">Competitor<br />Sentiment</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-100">
@@ -248,11 +298,11 @@ export const OperationsDashboard = () => {
                                 data.map((row, idx) => (
                                     <tr key={row.id} className={`hover:bg-indigo-50 transition-colors duration-150 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                                         <td className="px-2 py-3 text-[11px] text-gray-600 w-[100px]">
-                                            {new Date(row.date).toLocaleString('en-US', { 
-                                                month: '2-digit', 
-                                                day: '2-digit', 
-                                                hour: '2-digit', 
-                                                minute: '2-digit' 
+                                            {new Date(row.date).toLocaleString('en-US', {
+                                                month: '2-digit',
+                                                day: '2-digit',
+                                                hour: '2-digit',
+                                                minute: '2-digit'
                                             })}
                                         </td>
                                         <td className="px-2 py-3 text-xs font-medium text-gray-900 w-[90px] whitespace-normal break-words">
@@ -328,7 +378,7 @@ export const OperationsDashboard = () => {
                                             </svg>
                                         </button>
                                     </Dialog.Title>
-                                    
+
                                     <div className="space-y-4">
                                         {/* Date Range */}
                                         <div className="grid grid-cols-2 gap-4">
@@ -337,7 +387,7 @@ export const OperationsDashboard = () => {
                                                 <input
                                                     type="date"
                                                     value={filters.startDate}
-                                                    onChange={(e) => setFilters({...filters, startDate: e.target.value})}
+                                                    onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
                                                     className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                                 />
                                             </div>
@@ -346,7 +396,7 @@ export const OperationsDashboard = () => {
                                                 <input
                                                     type="date"
                                                     value={filters.endDate}
-                                                    onChange={(e) => setFilters({...filters, endDate: e.target.value})}
+                                                    onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
                                                     className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                                 />
                                             </div>
@@ -358,7 +408,7 @@ export const OperationsDashboard = () => {
                                                 <label className="block text-xs font-medium text-gray-700 mb-1">Brand</label>
                                                 <select
                                                     value={filters.brandId}
-                                                    onChange={(e) => setFilters({...filters, brandId: e.target.value})}
+                                                    onChange={(e) => setFilters({ ...filters, brandId: e.target.value })}
                                                     className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                                 >
                                                     <option value="">All Brands</option>
@@ -371,7 +421,7 @@ export const OperationsDashboard = () => {
                                                 <label className="block text-xs font-medium text-gray-700 mb-1">LLM / Collector</label>
                                                 <select
                                                     value={filters.collectorType}
-                                                    onChange={(e) => setFilters({...filters, collectorType: e.target.value})}
+                                                    onChange={(e) => setFilters({ ...filters, collectorType: e.target.value })}
                                                     className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                                 >
                                                     {COLLECTOR_TYPES.map(type => (
@@ -388,7 +438,7 @@ export const OperationsDashboard = () => {
                                                 type="text"
                                                 placeholder="e.g. 15246"
                                                 value={filters.collectorResultId}
-                                                onChange={(e) => setFilters({...filters, collectorResultId: e.target.value})}
+                                                onChange={(e) => setFilters({ ...filters, collectorResultId: e.target.value })}
                                                 className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                             />
                                         </div>
@@ -399,11 +449,11 @@ export const OperationsDashboard = () => {
                                                 type="text"
                                                 placeholder="Contains..."
                                                 value={filters.snapshotId}
-                                                onChange={(e) => setFilters({...filters, snapshotId: e.target.value})}
+                                                onChange={(e) => setFilters({ ...filters, snapshotId: e.target.value })}
                                                 className="w-full h-10 px-3 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                                             />
                                         </div>
-                                        
+
                                         <div>
                                             <label className="block text-xs font-medium text-gray-700 mb-1">Limit Results</label>
                                             <select

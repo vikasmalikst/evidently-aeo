@@ -50,7 +50,6 @@ export const OpportunitiesQBRES = () => {
     const [selectedMetric, setSelectedMetric] = useState<string>('All');
     const [sortField, setSortField] = useState<'priorityScore' | 'gap'>('priorityScore');
     const [sortAsc, setSortAsc] = useState<boolean>(false);
-    const [isGenerating, setIsGenerating] = useState<boolean>(false);
 
     // View Mode State
     const [viewMode, setViewMode] = useState<'grouped' | 'flags'>('grouped');
@@ -171,27 +170,6 @@ export const OpportunitiesQBRES = () => {
         }
     };
 
-    const handleGenerateRecommendations = async () => {
-        if (!selectedBrandId) return;
-
-        setIsGenerating(true);
-        try {
-            console.log(`🚀 [OpportunitiesPage] Generating recommendations for brand: ${selectedBrandId}`);
-            const result = await apiClient.post<any>(`/brands/${selectedBrandId}/recommendations`, {}, { timeout: 180000 });
-
-            if (result.success) {
-                alert(`✅ Successfully generated ${result.recommendationsCount} recommendations! You can view them on the Improve -> Recommendations page.`);
-            } else {
-                alert(`❌ Failed to generate recommendations: ${result.message || 'Unknown error'}`);
-            }
-        } catch (err) {
-            console.error('[OpportunitiesPage] Error generating recommendations:', err);
-            alert(`❌ Error: ${err instanceof Error ? err.message : 'An unexpected error occurred'}`);
-        } finally {
-            setIsGenerating(false);
-        }
-    };
-
     if (loading && !response) {
         return (
             <Layout>
@@ -247,29 +225,6 @@ export const OpportunitiesQBRES = () => {
                                 onEndDateChange={setEndDate}
                                 showComparisonInfo={false}
                             />
-                            <button
-                                onClick={handleGenerateRecommendations}
-                                disabled={isGenerating || (response?.opportunities?.length === 0)}
-                                className={`mt-4 w-full h-11 flex items-center justify-center gap-2 rounded-lg font-bold text-sm transition-all shadow-sm ${isGenerating || (response?.opportunities?.length === 0)
-                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                    : 'bg-indigo-600 text-white hover:bg-indigo-700 active:transform active:scale-[0.98] border border-indigo-700'
-                                    }`}
-                                style={{ fontFamily: 'Sora, sans-serif' }}
-                            >
-                                {isGenerating ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                        <span>Generating Strategy...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor" />
-                                        </svg>
-                                        <span>Generate AI Recommendations</span>
-                                    </>
-                                )}
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -365,8 +320,8 @@ export const OpportunitiesQBRES = () => {
                         <button
                             onClick={() => setViewMode('grouped')}
                             className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'grouped'
-                                    ? 'bg-white text-slate-800 shadow-sm'
-                                    : 'text-slate-500 hover:text-slate-700'
+                                ? 'bg-white text-slate-800 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-700'
                                 }`}
                         >
                             Grouped
@@ -374,8 +329,8 @@ export const OpportunitiesQBRES = () => {
                         <button
                             onClick={() => setViewMode('flags')}
                             className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'flags'
-                                    ? 'bg-white text-slate-800 shadow-sm'
-                                    : 'text-slate-500 hover:text-slate-700'
+                                ? 'bg-white text-slate-800 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-700'
                                 }`}
                         >
                             Detailed Flags

@@ -61,22 +61,14 @@ You must return a VALID JSON object with the following structure.
   "version": "5.0",
   "brandName": "${brandName}",
   "contentTitle": "<Descriptive comparison title>",
-      "content": {
-        "title": "<The H1 Title>",
-        "hook": "<The 100-word H2 Hook/Intro>",
-        "comparison_intro": "<Context before the table>",
-        "comparison_table": "<The Markdown Table string>",
-        "brand_advantage_title": "<Title for the advantage section>",
-        "brand_advantage_points": ["<Bullet 1>", "<Bullet 2>", "<Bullet 3>"],
-        "analysis_summary": "<Closing thoughts>"
-      },
-      "requiredInputs": ["[FILL_IN: pricing]", "[FILL_IN: competitor features]"]
-    }
-    
-    WRITING RULES:
-    - METRICS FIRST: The table MUST include specific data points (uptime, cost, speed).
-    - NO FLUFF: The 'hook' must be punchy and direct.
-    - TABLE FORMAT: The 'comparison_table' field must be a valid Markdown table string (with | separators).
-    - JSON ONLY: Return valid JSON.
-    `;
+  "content": "<THE FULL MARKDOWN CONTENT HERE - escape newlines as \\\\n>",
+  "requiredInputs": ["[FILL_IN: pricing]", "[FILL_IN: competitor features]"]
+}
+
+WRITING RULES:
+- Output the FULL content in the 'content' field as a single markdown string.
+- Use H1 (#), H2 (##) for headers in the markdown.
+- Ensure the table is properly formatted in markdown.
+- JSON only.
+`;
 }

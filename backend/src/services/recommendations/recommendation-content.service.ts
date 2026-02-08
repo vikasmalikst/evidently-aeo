@@ -1529,45 +1529,12 @@ ${contentStyleGuide}
     // Handle v5.0 (Unified Content - New System)
     if (version === '5.0') {
       const p5 = parsed as any;
-
-      let finalContent = typeof p5.content === 'string' ? p5.content : '';
-
-      // STITCHER LOGIC: If content is an object (Structured Generation), stitch it into Markdown
-      if (typeof p5.content === 'object' && p5.content !== null) {
-        const c = p5.content;
-
-        // Comparison Table Stitcher
-        if (c.comparison_table) {
-          finalContent = `
-# ${c.title || p5.contentTitle}
-
-${c.hook || '_No hook provided_'}
-
-## The Comparison Context
-${c.comparison_intro || ''}
-
-## Technical Comparison Matrix
-${c.comparison_table}
-
-## ${c.brand_advantage_title || 'The Advantage'}
-${Array.isArray(c.brand_advantage_points) ? c.brand_advantage_points.map((p: string) => `- ${p}`).join('\n') : ''}
-
-## Analysis & Conclusion
-${c.analysis_summary || ''}
-`;
-        }
-        // Fallback for other potential structured types
-        else {
-          finalContent = JSON.stringify(c, null, 2);
-        }
-      }
-
       return {
         version: '5.0',
         recommendationId: String(p5.recommendationId || ''),
         brandName: String(p5.brandName || ''),
         contentTitle: String(p5.contentTitle || ''),
-        content: finalContent, // The stitched markdown
+        content: String(p5.content || ''),
         requiredInputs: Array.isArray(p5.requiredInputs) ? p5.requiredInputs : []
       };
     }

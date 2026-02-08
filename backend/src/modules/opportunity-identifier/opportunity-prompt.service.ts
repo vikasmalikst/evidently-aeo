@@ -192,7 +192,7 @@ CONTENT TYPE OPTIONS:
 - Data-Driven White Paper (In-depth research)
 - Article (Standard SEO/AEO long-form content)
 - Podcast (Conversational audio)
-- Expert Articles (Highly authoritative thought leadership)
+
 
 For each recommendation, return a JSON object with these EXACT fields:
 - Recommendation: (A detailed, comprehensive action statement describing: (1) the specific content piece to create, (2) the target platform where it will be published, and (3) the key components/elements it will include. Be thorough and specific about the content itself, but do NOT include reasoning about why it matters or how it closes gaps here)

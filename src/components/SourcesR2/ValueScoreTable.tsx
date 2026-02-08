@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { HelpButton } from '../common/HelpButton';
 import { normalizeDomain } from '../../utils/citationAnalysisUtils';
-import { EnhancedSource } from '../../types/citation-sources';
+import { EnhancedSource, SourceData } from '../../types/citation-sources';
+import { List } from 'lucide-react';
+import { TopPagesModal } from './TopPagesModal';
 
 export type ValueScoreSource = Omit<EnhancedSource, 'quadrant'> & {
   quadrant: EnhancedSource['quadrant'] | string;
@@ -50,6 +52,7 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
   const [sortKey, setSortKey] = useState<SortKey>('valueScore');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
+  const [selectedSourceForDetails, setSelectedSourceForDetails] = useState<SourceData | null>(null);
 
   const pageSize = pagination?.pageSize ?? 0;
   const isPaging = !!pagination && pageSize > 0;
@@ -483,16 +486,16 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
             </tr>
           </thead>
           <tbody>
-            {displayedSources.map((s) => {
+            {displayedSources.map((s, i) => {
               const isHighlighted = highlightedSourceName && (
                 normalizeDomain(s.name) === normalizeDomain(highlightedSourceName) ||
                 s.name.toLowerCase().includes(highlightedSourceName.toLowerCase()) ||
                 highlightedSourceName.toLowerCase().includes(s.name.toLowerCase())
               );
-
               return (
                 <tr
                   key={s.name}
+                  onClick={() => handleRowClick(s)}
                   style={{
                     borderBottom: '1px solid #f1f5f9',
                     backgroundColor: isHighlighted ? '#fef3c7' : undefined,
@@ -504,20 +507,35 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                   {trendSelection && (() => {
                     const isChecked = trendSelection.selectedNames.has(s.name);
                     const isAtLimit = !isChecked && trendSelection.selectedNames.size >= trendSelection.maxSelected;
-                    return (
-                      <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          disabled={isAtLimit}
-                          onChange={() => trendSelection.onToggle(s.name)}
-                          aria-label={`Toggle ${s.name} in Impact Score Trends`}
-                          style={{ cursor: isAtLimit ? 'not-allowed' : 'pointer' }}
-                        />
-                      </td>
-                    );
+                    return <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        disabled={isAtLimit}
+                        onChange={() => trendSelection.onToggle(s.name)}
+                        aria-label={`Toggle ${s.name} in Impact Score Trends`}
+                        style={{ cursor: isAtLimit ? 'not-allowed' : 'pointer' }}
+                      />
+                    </td>
                   })()}
-                  <td style={{ padding: '12px 16px', color: '#0f172a', fontWeight: 600, fontSize: 13 }}>{s.name}</td>
+
+                  <td style={{ padding: '12px 16px', color: '#0f172a', fontWeight: 600, fontSize: 13 }}>
+                    <div className="flex items-center gap-2">
+                      {s.name}
+                      {s.topPages && s.topPages.length > 0 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedSourceForDetails(s as unknown as SourceData);
+                          }}
+                          className="text-slate-400 hover:text-slate-600 transition-colors p-1 -m-1 rounded-sm"
+                          title={`View top pages for ${s.name}`}
+                        >
+                          <List size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   <td style={{ padding: '12px 16px', color: '#64748b', fontSize: 13 }}>{s.type}</td>
                   {(() => {
                     const { style, textColor } = heatmapStyle('valueScore', s.valueScore);
@@ -625,6 +643,11 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
           </tbody>
         </table>
       </div>
+      <TopPagesModal
+        isOpen={!!selectedSourceForDetails}
+        onClose={() => setSelectedSourceForDetails(null)}
+        source={selectedSourceForDetails}
+      />
     </div>
   );
 };

@@ -12,12 +12,14 @@ export interface SourceData {
     topics: string[];
     prompts: string[];
     pages: string[];
+    topPages?: Array<{ url: string, count: number }>;
     value?: number;
     visibility?: number;
 }
 
 export interface EnhancedSource {
     name: string;
+    topPages?: Array<{ url: string, count: number }>;
     type: string;
     mentionRate: number; // %
     soa: number; // %

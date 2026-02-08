@@ -133,7 +133,7 @@ export const SearchSourcesR2 = () => {
       params.append('queryTags', queryTags.join(','));
     }
 
-    return `/brands/${selectedBrandId}/sources?${params.toString()}`;
+    return `/brands/${selectedBrandId}/sources?${params.toString()}&v=topPages10`;
   }, [selectedBrandId, startDate, endDate, llmFilters, queryTags]);
 
   const { data: response, loading, error } = useCachedData<ApiResponse<SourceAttributionResponse>>(
@@ -144,6 +144,8 @@ export const SearchSourcesR2 = () => {
   );
 
   const sourceData: SourceData[] = response?.success && response.data ? response.data.sources : [];
+
+
 
   // Dynamically filter LLM options based on available data from API
   // This old logic is now superseded by availableLlmOptions
@@ -198,6 +200,8 @@ export const SearchSourcesR2 = () => {
 
   const isProcessedReady = !!processedSources;
 
+
+
   const urlByName = useMemo(() => {
     return new Map(sourceData.map((s) => [s.name, s.url] as const));
   }, [sourceData]);
@@ -211,7 +215,8 @@ export const SearchSourcesR2 = () => {
       sentiment: s.sentiment,
       citations: s.citations,
       valueScore: typeof s.value === 'number' && Number.isFinite(s.value) ? s.value : 0,
-      quadrant: '—'
+      quadrant: '—',
+      topPages: s.topPages
     }));
   }, [sourceData]);
 
@@ -225,7 +230,8 @@ export const SearchSourcesR2 = () => {
       sentiment: s.sentiment,
       citations: s.citations,
       valueScore: s.valueScore,
-      quadrant: s.quadrant
+      quadrant: s.quadrant,
+      topPages: s.topPages
     }));
   }, [processedSources]);
 

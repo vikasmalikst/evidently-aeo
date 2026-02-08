@@ -18,6 +18,7 @@ export interface SourceAttributionData {
   topics: string[]
   prompts: string[]
   pages: string[]
+  topPages?: Array<{ url: string, count: number }>
   visibility?: number // Visibility index (0-100)
   visibilityChange?: number // Change in visibility index
   averagePosition?: number // Average position (1-10)
@@ -233,6 +234,7 @@ export class SourceAttributionService {
 
       const { data: citationsData, error: citationsError } = await citationsQuery;
       stepTimings['citations_query'] = Date.now() - citationsStartTime;
+
 
       if (citationsError) {
         console.error('[SourceAttribution] Citations query error:', citationsError)
@@ -586,7 +588,7 @@ export class SourceAttributionService {
           mentionCounts: number[]
           topics: Set<string>
           queryIds: Set<string>
-          pages: Set<string>
+          pages: Map<string, { url: string, count: number }>
           prompts: Set<string> // Questions from collector_results
           processedCollectorResultIds: Set<number> // Track which collector_result_ids we've already processed for sentiment
         }
@@ -629,7 +631,7 @@ export class SourceAttributionService {
             mentionCounts: [],
             topics: new Set<string>(),
             queryIds: new Set<string>(),
-            pages: new Set<string>(),
+            pages: new Map<string, { url: string, count: number }>(),
             prompts: new Set<string>(),
             processedCollectorResultIds: new Set<number>() // Track which collector_result_ids we've already processed for sentiment
           })
@@ -735,8 +737,14 @@ export class SourceAttributionService {
           }
         }
 
-        if (citation.page_name) {
-          aggregate.pages.add(citation.page_name)
+        if (citation.url || citation.page_name) {
+          const pageUrl = citation.url || `https://${domain}/${citation.page_name || ''}`;
+          if (!aggregate.pages.has(pageUrl)) {
+            aggregate.pages.set(pageUrl, { url: pageUrl, count: 0 });
+          }
+          aggregate.pages.get(pageUrl)!.count += (citation.usage_count || 1);
+
+
         }
       }
 
@@ -1152,7 +1160,10 @@ export class SourceAttributionService {
             }
             return []
           })(),
-          pages: Array.from(aggregate.pages)
+          pages: Array.from(aggregate.pages.keys()),
+          topPages: Array.from(aggregate.pages.values())
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10)
         })
       }
 

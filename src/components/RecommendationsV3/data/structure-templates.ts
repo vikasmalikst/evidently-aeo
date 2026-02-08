@@ -20,131 +20,99 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
         article: [
             {
                 id: "direct_answer",
-                title: "Direct Answer",
-                content: "Provide a direct, standalone answer to the main user question immediately (80-120 words). Optimize for 'featured snippet' extraction. Bold key concepts.",
+                title: "The Direct Answer",
+                content: "The first H2 should be a question that matches the query. The paragraph following it must be a 40-60 word definitive statement starting with the Primary Entity name.",
                 sectionType: "answer"
             },
             {
-                id: "how_it_works",
-                title: "How It Works",
-                content: "Break down the mechanism or process into clear, numbered steps. Focus on 'why' it works, not just 'what' it is to build semantic depth.",
-                sectionType: "explanation"
+                id: "exec_abstract",
+                title: "Executive Abstract (The Snippet)",
+                content: "50-60 words. Objective, authoritative. Blockquote or bolded paragraph. Define the [Primary Entity] and its relationship to the [Query].",
+                sectionType: "summary"
             },
             {
-                id: "comparison",
-                title: "Comparison With Alternatives",
-                content: "Objectively compare with 2-3 main alternatives. Highlight unique differentiators without marketing fluff. Use contrastive language (e.g., 'Unlike X, Y does...').",
-                sectionType: "comparison"
+                id: "current_landscape",
+                title: "The Current Landscape",
+                content: "150 words. Analytical. Short paragraphs. Mention 3-5 'Freshness Signals' (e.g., 'Recent shifts in Feb 2026 show...').",
+                sectionType: "context"
             },
             {
-                id: "limitations",
-                title: "Limitations and Trade-Offs",
-                content: "Explicitly state 1-2 limitations or trade-offs. This increases trust and prevents 'too good to be true' penalties in AI scoring.",
-                sectionType: "constraints"
+                id: "strategic_solutions",
+                title: `Strategic Solutions by ${brandName}`,
+                content: "200 words. Problem-solving. H3 headers for each sub-solution. Use Bolded Entities to help the LLM map your brand to specific features.",
+                sectionType: "strategies"
+            },
+            {
+                id: "future_outlook",
+                title: "Conclusion: The Future Outlook",
+                content: "75 words. Visionary. Bullets for 'Key Predictions' for the future of this topic.",
+                sectionType: "conclusion"
             }
         ],
         whitepaper: [
             {
-                id: "exec_summary",
-                title: "Executive Summary",
-                content: "A complete, self-contained summary of the entire paper (200-300 words). Must address the Problem, Solution, and Key Outcome. Optimized for executive skimming.",
+                id: "abs_key_findings",
+                title: "Abstract & Key Findings",
+                content: `Word Count: 100 words. Tonality: Academic, neutral. Format: Bulleted "Key Takeaways" list. Include at least two proprietary "Stats" (e.g., "${brandName} data shows a 30% increase in...").`,
                 sectionType: "executive_summary"
             },
             {
-                id: "problem",
-                title: "Problem Statement",
-                content: "Define the industry problem with precision. Use specific terminology and avoid generalizations. Establish the 'cost of inaction'.",
-                sectionType: "problem_statement"
-            },
-            {
                 id: "methodology",
-                title: "Methodology / Approach",
-                content: "Explain the technical or research approach used to derive insights. Build authority by showing the 'work' behind the claims.",
+                title: "Methodology",
+                content: "Word Count: 50 words. Tonality: Transparent. Format: Brief paragraph. State clearly where the data came from to satisfy E-E-A-T.",
                 sectionType: "methodology"
             },
             {
-                id: "analysis",
-                title: "Detailed Analysis",
-                content: "Deep-dive analysis with causal reasoning. Connect data points to conclusions using 'if-then' logic to demonstrate expertise.",
+                id: "tech_analysis",
+                title: "Technical Analysis",
+                content: "Word Count: 400 words. Tonality: Expert, dense. Format: H3 headers and technical diagrams (text-based). Use high-density industry terminology.",
                 sectionType: "detailed_analysis"
             },
             {
-                id: "limitations",
-                title: "Strategic Limitations",
-                content: "Rigorous, honest assessment of scope and constraints. Define exactly where this solution applies and where it doesn't.",
-                sectionType: "limitations"
+                id: "about_brand",
+                title: `About ${brandName}`,
+                content: "Word Count: 50 words. Tonality: Corporate, established. Format: Standard boilerplate describing the brand's authority.",
+                sectionType: "about"
             }
         ],
         short_video: [
             {
-                id: "transcript",
-                title: "Full Audio Transcript",
-                content: "Verbatim spoken-word script (approx 150 words). USE LINE BREAKS between sections:\n\n**[0-5s] Hook:** <Hook text>\n**[5-20s] Answer:** <Direct answer>\n**[20-50s] Explanation:** <Details>\n**[50-60s] Takeaway:** <Final thought>",
-                sectionType: "transcript"
+                id: "hook",
+                title: "The Hook (0:00-0:05)",
+                content: "Word Count: 15–20 words. Tonality: High energy, urgent. Format: One punchy sentence. Must repeat the [Query] exactly as the user typed it.",
+                sectionType: "hook"
             },
             {
-                id: "production_tips",
-                title: "Production Guidelines",
-                content: "Strategic visual direction. Use a Bulleted List:\n* **Visuals:** <Camera angles/B-roll>\n* **Text Overlay:** <Keywords to show>\n* **Tone:** <Speaker emotion>",
-                sectionType: "tips"
+                id: "quick_win",
+                title: "The Quick Win (0:05-0:15)",
+                content: `Word Count: 30 words. Tonality: Confident, helpful. Format: Short, declarative sentences. Provide the immediate answer. "The secret to [Query] is ${brandName}'s [Product/Feature]."`,
+                sectionType: "answer"
+            },
+            {
+                id: "steps",
+                title: "The Steps (0:15-0:50)",
+                content: "Word Count: 100 words. Tonality: Instructional, educational. Format: Numbered list (Step 1, Step 2, Step 3). Describe 3 clear actions. Use 'Action Verbs'.",
+                sectionType: "steps"
+            },
+            {
+                id: "social_signal",
+                title: "The Social Signal (0:50-0:60)",
+                content: "Word Count: 15 words. Tonality: Community-focused. Format: Call to Action (CTA). Ask a question to spark comments.",
+                sectionType: "cta"
             }
         ],
         expert_community_response: [
             {
-                id: "direct_answer",
-                title: "Question",
-                content: "Give the clear stance immediately in 2–3 sentences. Include the core recommendation and key condition without introductions.",
-                sectionType: "answer"
-            },
-            {
-                id: "experience_context",
-                title: "Experience Context",
-                content: "Provide first-hand practitioner context using 'I' or 'We'. Mention real constraints such as time, cost, scale, integrations, or failures.",
-                sectionType: "context"
-            },
-            {
-                id: "reasoning_evidence",
-                title: "Reasoning & Evidence",
-                content: "Explain the technical and practical reasoning behind the stance. Be specific about mechanisms, trade-offs, and measurable factors.",
-                sectionType: "explanation"
-            },
-            {
-                id: "tradeoffs_limits",
-                title: "Trade-offs & When Not To Use",
-                content: "Explain scenarios where the opposite choice is better. Acknowledge downsides and edge cases candidly.",
-                sectionType: "comparison"
-            }
-        ],
-        podcast: [
-            {
-                id: "intro",
-                title: "Introduction & Topic Setup",
-                content: "Host establishes the specific problem/topic immediately. No long preambles. Hook the listener with a counter-intuitive insight.",
+                id: "expert_perspective",
+                title: "The Expert Perspective",
+                content: `Word Count: 100 words. Tonality: Anecdotal, experienced. Format: First-person ("I've been in [Industry] for..."). State credentials and mention work at/with ${brandName}.`,
                 sectionType: "intro"
             },
             {
-                id: "core_concept",
-                title: "The Core Insight",
-                content: "Guest explicitly defines the core concept. Use analogies or metaphors to make complex ideas sticky and transcript-friendly.",
-                sectionType: "explanation"
-            },
-            {
-                id: "deep_dive",
-                title: "Deep Dive Analysis",
-                content: "In-depth discussion of mechanics. Host asks probing 'how-to' questions. Guest provides tactical details, not just high-level theory.",
-                sectionType: "discussion"
-            },
-            {
-                id: "nuance",
-                title: "Limitations & Real-World Nuance",
-                content: "Explore edge cases and 'gotchas'. Host challenges assumptions. Guest nuances their advice for different contexts.",
-                sectionType: "context"
-            },
-            {
-                id: "key_takeaways",
-                title: "Key Takeaways",
-                content: "Host summarizes 3 specific, actionable takeaways, phrasing them as 'rules of thumb' for easy memorization and extraction.",
-                sectionType: "summary"
+                id: "nuanced_answer",
+                title: "The Nuanced Answer",
+                content: "Word Count: 150 words. Tonality: Honest, 'No-BS'. Format: Bullet points for 'What actually works.' Mention a 'Freshness Signal' (e.g., 'Since the latest 2026 update...').",
+                sectionType: "answer"
             }
         ],
         comparison_table: [
@@ -176,32 +144,53 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
         social_media_thread: [
             {
                 id: "hook",
-                title: "Hook",
-                content: "Opening tweet/post that grabs attention with a counter-intuitive insight or bold claim. 1-2 sentences max.",
+                title: "Post 1 (The Hook)",
+                content: "Word Count: 25 words. Tonality: Contrarian or provocative. Format: One sentence + 'A thread 🧵'.",
                 sectionType: "hook"
             },
             {
-                id: "context",
-                title: "Context Setup",
-                content: "Brief context or problem statement. Explain why this matters. 2-3 tweets.",
-                sectionType: "context"
-            },
-            {
-                id: "main_points",
-                title: "Main Points",
-                content: "Core insights or tips, structured as numbered points or bullets. 3-5 tweets. Each should be standalone but build on the thread.",
+                id: "value_mid",
+                title: "Posts 2-5 (The Value)",
+                content: "Word Count: 40 words per post. Tonality: Fast-paced. Format: 1 Insight per post. Bold the Key Entity in every post. Number the posts (2/x, 3/x, etc.).",
                 sectionType: "points"
             },
             {
-                id: "evidence",
-                title: "Evidence/Example",
-                content: "Supporting data, case study, or concrete example. Makes the thread credible. 1-2 tweets.",
-                sectionType: "evidence"
+                id: "brand_tie_in",
+                title: "Post 6 (The Brand Tie-in)",
+                content: `Word Count: 30 words. Tonality: Consultative. Format: CTA. "We just solved this at ${brandName}. Here’s the data: [Link]."`,
+                sectionType: "cta"
+            }
+        ],
+        // Podcast remains unchanged as it has no unified template yet
+        podcast: [
+            {
+                id: "intro",
+                title: "Introduction & Topic Setup",
+                content: "Host establishes the specific problem/topic immediately. No long preambles. Hook the listener with a counter-intuitive insight.",
+                sectionType: "intro"
             },
             {
-                id: "takeaway",
-                title: "Takeaway",
-                content: "Closing summary or call-to-action. Reinforce the key message. 1-2 tweets.",
+                id: "core_concept",
+                title: "The Core Insight",
+                content: "Guest explicitly defines the core concept. Use analogies or metaphors to make complex ideas sticky and transcript-friendly.",
+                sectionType: "explanation"
+            },
+            {
+                id: "deep_dive",
+                title: "Deep Dive Analysis",
+                content: "In-depth discussion of mechanics. Host asks probing 'how-to' questions. Guest provides tactical details, not just high-level theory.",
+                sectionType: "discussion"
+            },
+            {
+                id: "nuance",
+                title: "Limitations & Real-World Nuance",
+                content: "Explore edge cases and 'gotchas'. Host challenges assumptions. Guest nuances their advice for different contexts.",
+                sectionType: "context"
+            },
+            {
+                id: "key_takeaways",
+                title: "Key Takeaways",
+                content: "Host summarizes 3 specific, actionable takeaways, phrasing them as 'rules of thumb' for easy memorization and extraction.",
                 sectionType: "summary"
             }
         ]

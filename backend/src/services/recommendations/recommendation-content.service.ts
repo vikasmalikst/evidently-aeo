@@ -1434,7 +1434,7 @@ ${contentStyleGuide}
 
     // Check version
     const version = parsed.version;
-    if (version !== '1.0' && version !== '2.0' && version !== '3.0' && version !== '4.0' && version !== 'guide_v1') {
+    if (version !== '1.0' && version !== '2.0' && version !== '3.0' && version !== '4.0' && version !== '5.0' && version !== 'guide_v1') {
       console.warn(`[VALIDATION FAIL] Invalid version: ${version}`);
       return false;
     }
@@ -1503,13 +1503,38 @@ ${contentStyleGuide}
       const hasPlan = Array.isArray(parsed.implementationPlan) && parsed.implementationPlan.length > 0;
       const hasSuccess = !!parsed.successCriteria;
       return hasPlan || hasSuccess;
+    } else if (version === '5.0') {
+      // v5.0 Unified Canvas: requires content and contentTitle
+      if (!parsed.content || !parsed.contentTitle) return false;
+      return true;
     }
 
     return false;
   }
 
-  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4 | GeneratedGuideJsonV1>): GeneratedAnyJson {
+  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4 | GeneratedGuideJsonV1 | any>): GeneratedAnyJson {
     const version = parsed.version || '1.0';
+
+    // Handle v5.0 (Unified Canvas - Normalized to v3.0 for Frontend)
+    if (version === '5.0') {
+      const p5 = parsed as any;
+      return {
+        version: '3.0', // Normalize to 3.0 so frontend renders it as a single markdown block
+        recommendationId: String(p5.recommendationId || ''),
+        brandName: String(p5.brandName || ''),
+        targetSource: {
+          domain: String(p5.targetSource?.domain || ''),
+          sourceType: (p5.targetSource?.sourceType as any) || 'other'
+        },
+        publishableContent: {
+          type: 'article', // Generic type for unified canvas
+          title: String(p5.contentTitle || ''),
+          content: String(p5.content || ''),
+          callToAction: ''
+        },
+        requiredInputs: Array.isArray(p5.requiredInputs) ? p5.requiredInputs : []
+      };
+    }
 
     // Handle v4.0 (sectioned content for interactive refinement AND FSA strategic assets)
     if (version === '4.0') {

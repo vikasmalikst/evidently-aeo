@@ -212,6 +212,12 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
   const startItem = (safePage - 1) * pageSize + 1;
   const endItem = Math.min(safePage * pageSize, totalCount);
 
+  const handleRowClick = (source: ValueScoreSource) => {
+    if (source.topPages && source.topPages.length > 0) {
+      setSelectedSourceForDetails(source as unknown as SourceData);
+    }
+  };
+
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20, height: '100%', boxShadow: '0 8px 18px rgba(15,23,42,0.06)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>

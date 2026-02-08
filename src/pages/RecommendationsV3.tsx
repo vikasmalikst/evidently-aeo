@@ -44,7 +44,7 @@ import { StatusFilter } from '../components/RecommendationsV3/components/StatusF
 import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
 import { EffortFilter } from '../components/RecommendationsV3/components/EffortFilter';
 import { ContentTypeFilter } from '../components/RecommendationsV3/components/ContentTypeFilter';
-import { ContentSectionRenderer, SectionTypeBadge } from '../components/RecommendationsV3/components/ContentSectionRenderer';
+import { ContentSectionRenderer, SectionTypeBadge, UnifiedContentRenderer } from '../components/RecommendationsV3/components/ContentSectionRenderer';
 import { SEOScoreCard, ExportModal } from '../components/RecommendationsV3/components/SEOScoreCard';
 import { AEOScoreBadge } from '../components/RecommendationsV3/components/ContentAnalysisTools';
 import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle, IconPlus, IconMinus, IconDownload, IconRobot } from '@tabler/icons-react';
@@ -225,7 +225,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   // For display/copy we want real line breaks.
   const unescapeNewlines = useCallback((value: any): any => {
     if (typeof value !== 'string') return value;
-    return value.replace(/\\n/g, '\n');
+    return value
+      .replace(/\\\\n/g, '\n')
+      .replace(/\\n/g, '\n');
   }, []);
 
   // Helper: Extract visible text content from structured content (V3/V4) for scoring
@@ -2230,6 +2232,139 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       }
                                     }
 
+                                    // Handle v5.0 format (Unified Content - New System)
+                                    if (parsedContent && parsedContent.version === '5.0') {
+                                      const v5Content = parsedContent as any;
+                                      const content = v5Content.content || '';
+                                      const contentTitle = v5Content.contentTitle || 'Generated Content';
+                                      const requiredInputs = v5Content.requiredInputs || [];
+                                      const recId = rec.id || '';
+
+                                      // Highlight [FILL_IN: ...] markers
+                                      const highlightFillIns = (text: string) => {
+                                        if (!text) return text;
+                                        const cleanText = text.replace(/<span class="fill-in-placeholder">/g, '').replace(/<\/span>/g, '');
+                                        return cleanText.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
+                                      };
+
+                                      return (
+                                        <div className="space-y-4">
+                                          {/* Content Section */}
+                                          <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+                                            {/* Header */}
+                                            <div className="flex items-center justify-between p-4 border-b border-[#e2e8f0]">
+                                              <div className="flex items-center gap-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-[#06c686]"></div>
+                                                <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">
+                                                  📝 {contentTitle}
+                                                </h4>
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#06c686] text-white capitalize">
+                                                  Unified
+                                                </span>
+                                                <span className="text-[10px] text-[#94a3b8] italic ml-2 hidden lg:inline">
+                                                  AI Generated. Review before publishing.
+                                                </span>
+                                              </div>
+                                              <div className="flex items-center gap-2">
+                                                {editingId === rec.id ? (
+                                                  <>
+                                                    <button
+                                                      onClick={() => handleSaveEdit(rec.id!)}
+                                                      className="px-3 py-1.5 bg-[#06c686] text-white rounded text-[11px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
+                                                    >
+                                                      <IconDeviceFloppy size={14} />
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      onClick={() => setEditingId(null)}
+                                                      className="px-3 py-1.5 bg-[#ef4444] text-white rounded text-[11px] font-medium hover:bg-[#dc2626] transition-colors flex items-center gap-1.5"
+                                                    >
+                                                      <IconX size={14} />
+                                                      Cancel
+                                                    </button>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <button
+                                                      onClick={() => {
+                                                        setEditingId(rec.id!);
+                                                        setEditBuffer(unescapeNewlines(content));
+                                                      }}
+                                                      className="px-3 py-1.5 bg-white border border-[#e2e8f0] text-[#475569] rounded text-[11px] font-medium hover:bg-[#f8fafc] transition-colors flex items-center gap-1.5"
+                                                    >
+                                                      <IconPencil size={14} />
+                                                      Edit
+                                                    </button>
+                                                    <button
+                                                      onClick={() => navigator.clipboard.writeText(unescapeNewlines(content))}
+                                                      className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
+                                                    >
+                                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                      </svg>
+                                                      Copy
+                                                    </button>
+                                                    {/* Regenerate Button Logic - Reused for v5.0 */}
+                                                    {regeneratingId === rec.id ? (
+                                                      <span className="inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium border bg-[#fef3c7] text-[#92400e] border-[#fde68a]">
+                                                        <div className="w-3 h-3 border-2 border-[#92400e] border-t-transparent rounded-full animate-spin mr-1.5" />
+                                                        Regenerating...
+                                                      </span>
+                                                    ) : (rec.regenRetry || 0) >= 1 ? (
+                                                      <span className="inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium border bg-[#f3f4f6] text-[#6b7280] border-[#d1d5db] cursor-not-allowed">
+                                                        Regenerated
+                                                      </span>
+                                                    ) : (
+                                                      <button
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          setSelectedRecommendationForRegen(rec);
+                                                          setShowFeedbackModal(true);
+                                                        }}
+                                                        className="px-3 py-1.5 bg-[#8b5cf6] text-white rounded text-[11px] font-medium hover:bg-[#7c3aed] transition-colors flex items-center gap-1.5"
+                                                      >
+                                                        <IconSparkles size={14} />
+                                                        Regenerate
+                                                      </button>
+                                                    )}
+                                                  </>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            {/* Main Content */}
+                                            <div className="p-6">
+                                              {editingId === rec.id ? (
+                                                <textarea
+                                                  className="w-full h-[400px] p-4 bg-white border border-[#00bcdc] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00bcdc] text-[14px] text-[#1a1d29] leading-relaxed font-sans shadow-inner"
+                                                  value={editBuffer}
+                                                  onChange={(e) => setEditBuffer(e.target.value)}
+                                                  autoFocus
+                                                />
+                                              ) : (
+                                                <UnifiedContentRenderer 
+                                                  content={unescapeNewlines(content)} 
+                                                  highlightFillIns={highlightFillIns} 
+                                                />
+                                              )}
+
+                                              {/* Required Inputs */}
+                                              {requiredInputs.length > 0 && (
+                                                <div className="mt-4 p-3 bg-[#fef3c7] border border-[#fcd34d] rounded-lg">
+                                                  <p className="text-[12px] font-semibold text-[#92400e] mb-2">⚠️ Fill in before publishing:</p>
+                                                  <ul className="list-disc pl-5 space-y-1">
+                                                    {requiredInputs.map((input: string, idx: number) => (
+                                                      <li key={idx} className="text-[12px] text-[#92400e]">{input}</li>
+                                                    ))}
+                                                  </ul>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
                                     // Handle v4.0 format (sectioned content with interactive refinement)
                                     if (parsedContent && parsedContent.version === '4.0') {
                                       const v4Content = refinedContent.get(rec.id || '') || parsedContent;
@@ -2723,9 +2858,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                     autoFocus
                                                   />
                                                 ) : (
-                                                  <div
-                                                    className="prose prose-sm max-w-none text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans"
-                                                    dangerouslySetInnerHTML={{ __html: highlightFillIns(unescapeNewlines(publishableContent.content)) }}
+                                                  <UnifiedContentRenderer 
+                                                    content={unescapeNewlines(publishableContent.content)} 
+                                                    highlightFillIns={highlightFillIns} 
                                                   />
                                                 )}
 

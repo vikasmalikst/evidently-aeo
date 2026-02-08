@@ -586,4 +586,101 @@ export function SectionTypeBadge({ sectionType }: { sectionType: ContentSectionT
   );
 }
 
+/**
+ * Unified Content Renderer
+ * Splits a single markdown string into visual sections based on H2 headers.
+ */
+export function UnifiedContentRenderer({ 
+  content, 
+  highlightFillIns 
+}: { 
+  content: string;
+  highlightFillIns?: (text: string) => string;
+}) {
+  // Normalize content: ensure real newlines (handle escaped \n from JSON)
+  const normalizedContent = React.useMemo(() => {
+    if (!content) return '';
+    let processed = content;
+    
+    // Safety check: if content is double-stringified (starts and ends with quote), try to parse it
+    if (processed.startsWith('"') && processed.endsWith('"')) {
+      try {
+        processed = JSON.parse(processed);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Replace literal backslash-n sequences with real newlines
+    // We do this aggressively to handle double/triple escaping if present
+    return processed
+      .replace(/\\\\n/g, '\n') // Replace \\n with \n
+      .replace(/\\n/g, '\n');  // Replace \n with \n
+  }, [content]);
+
+  // Split content by H2 headers logic
+  const sections = React.useMemo(() => {
+    const lines = normalizedContent.split('\n');
+    const sections: Array<{ title: string; content: string }> = [];
+    
+    // Initial section (before any H2)
+    let currentBuffer: string[] = [];
+    let currentTitle = 'Introduction';
+    let hasFoundFirstHeader = false;
+    
+    // Helper to push section
+    const pushSection = (title: string, buffer: string[]) => {
+      if (buffer.length > 0 && buffer.some(l => l.trim())) {
+        sections.push({ title, content: buffer.join('\n') });
+      }
+    };
+
+    for (const line of lines) {
+      const h2Match = line.match(/^##\s+(.+)$/);
+      if (h2Match) {
+        // Found a new header
+        pushSection(currentTitle, currentBuffer);
+        currentTitle = h2Match[1].trim();
+        currentBuffer = [];
+        hasFoundFirstHeader = true;
+      } else if (!hasFoundFirstHeader && line.match(/^#\s+(.+)$/)) {
+        // Skip H1 title if present in body (usually handled by metadata)
+        // or treat it as intro title? 
+        // For now, let's ignore H1 as it's usually the document title
+      } else {
+        currentBuffer.push(line);
+      }
+    }
+    // Push last section
+    pushSection(currentTitle, currentBuffer);
+
+    return sections;
+  }, [content]);
+
+  if (sections.length === 0) return null;
+
+  if (sections.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-[#e2e8f0] rounded-xl shadow-sm p-8 md:p-10">
+      {sections.map((section, idx) => (
+        <div key={idx} className={idx > 0 ? 'mt-12' : ''}>
+          {/* Section Header - Big and Bold as requested */}
+          <h2 className="text-[24px] md:text-[28px] font-bold text-[#1e293b] mb-6 leading-tight">
+            {section.title}
+          </h2>
+
+          {/* Section Content */}
+          <div className="text-[16px] text-[#334155] leading-relaxed">
+            <MarkdownRenderer 
+              content={section.content} 
+              highlightFillIns={Boolean(highlightFillIns)} 
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default ContentSectionRenderer;

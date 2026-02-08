@@ -21,8 +21,18 @@ import { brandDashboardService } from '../services/brand-dashboard';
 import { regenerateContentService } from '../services/recommendations/regenerate-content.service';
 import { graphRecommendationService } from '../services/recommendations/graph-recommendation.service';
 import { competitorCrudService } from '../services/competitor-management/competitor-crud.service';
+import { templateGenerationService } from '../services/recommendations/template-generation.service';
+import multer from 'multer';
 
 const router = express.Router();
+
+// Configuration for file uploads
+const uploadMiddleware = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
 
 function normalizeDomain(input?: string | null): string | null {
   if (!input) return null;
@@ -785,6 +795,134 @@ router.patch('/:recommendationId/status', authenticateToken, requireFeatureEntit
       success: false,
       error: 'Failed to update review status'
     });
+  }
+});
+
+/**
+ * POST /api/recommendations-v3/:recommendationId/generate-plan
+ * 
+ * Step 1: Generate a Content Plan (Template) for a recommendation.
+ */
+router.post('/:recommendationId/generate-plan', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) return res.status(401).json({ success: false, error: 'User not authenticated' });
+
+    const { recommendationId } = req.params;
+    const { channel, customInstructions } = req.body;
+
+    console.log(`🏗️ [RecommendationsV3] Generating Plan for ${recommendationId}`);
+    const result = await templateGenerationService.generateTemplatePlan({
+      recommendationId,
+      customerId,
+      channel,
+      customInstructions
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error('❌ [Generate Plan] Error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to generate plan' });
+  }
+});
+
+/**
+ * PUT /:recommendationId/template-plan
+ * Update an existing template plan
+ */
+router.put(
+  '/:recommendationId/template-plan',
+  authenticateToken,
+  requireFeatureEntitlement('recommendations'),
+  async (req, res) => {
+    try {
+      const { recommendationId } = req.params;
+      const { plan } = req.body;
+      const customerId = req.headers['x-impersonate-customer'] as string || req.user.customer_id;
+
+      console.log(`📝 [API] Updating template plan for ${recommendationId}`);
+
+      const result = await templateGenerationService.updateTemplatePlan(recommendationId, customerId, plan);
+      res.json(result);
+    } catch (error: any) {
+      console.error('❌ [API] Error updating template plan:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+   */
+router.post('/:recommendationId/upload-context', authenticateToken, requireFeatureEntitlement('recommendations'), uploadMiddleware.single('file'), async (req, res) => {
+  try {
+    const { recommendationId } = req.params;
+    const customerId = req.user?.customer_id;
+
+    // Handle file upload
+    let contextText = '';
+    if (req.file) {
+      console.log(`📂 [API] Processing uploaded file: ${req.file.originalname} (${req.file.mimetype})`);
+      contextText = await templateGenerationService.parseContextFile(req.file.buffer, req.file.mimetype);
+    } else if (req.body.text) {
+      contextText = req.body.text;
+    } else {
+      return res.status(400).json({ success: false, error: 'No file or text provided' });
+    }
+
+    if (!contextText.trim()) {
+      return res.status(400).json({ success: false, error: 'Extracted text is empty' });
+    }
+
+    console.log(`📝 [API] Updating context for ${recommendationId} (Length: ${contextText.length})`);
+    const result = await templateGenerationService.updatePlanContext(recommendationId, customerId, contextText);
+
+    if (result.success) {
+      return res.json({ success: true, data: { context: contextText } });
+    } else {
+      return res.status(400).json(result);
+    }
+
+  } catch (error: any) {
+    console.error('❌ [API] Error uploading context:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/recommendations-v3/:recommendationId/generate-content/step2
+ * 
+ * Step 2: Generate Final Content from an APPROVED Plan.
+ * Expects the approved Plan JSON in the body.
+ */
+router.post('/:recommendationId/generate-content/step2', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) return res.status(401).json({ success: false, error: 'User not authenticated' });
+
+    const { recommendationId } = req.params;
+    const { plan } = req.body; // The approved TemplatePlan
+
+    if (!plan || !plan.structure) {
+      return res.status(400).json({ success: false, error: 'Invalid plan provided' });
+    }
+
+    console.log(`✍️ [RecommendationsV3] Generating Step 2 Content for ${recommendationId}`);
+    const content = await recommendationContentService.generateStep2Content(recommendationId, customerId, plan);
+
+    if (!content) {
+      return res.status(500).json({ success: false, error: 'Failed to generate content' });
+    }
+
+    // Also update recommendation status to 'content_generated' logic
+    // (This might happen inside service, but let's ensure we return success)
+    return res.json({ success: true, data: content });
+
+  } catch (error) {
+    console.error('❌ [Generate Step 2] Error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to generate content' });
   }
 });
 

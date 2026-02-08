@@ -1946,6 +1946,164 @@ RULES:
       return null;
     }
   }
+  /**
+   * Step 2: Generate Final Content from Approved Template Plan
+   * Exceutes the "Drafter" phase where the LLM writes the content following the strict architectural plan.
+   */
+  async generateStep2Content(
+    recommendationId: string,
+    customerId: string,
+    plan: any // Typed as TemplatePlan but using any to avoid import cycles if strict typing fails
+  ): Promise<RecommendationContentRecord | null> {
+    try {
+      // 1. Fetch Context
+      const { data: rec, error: recError } = await supabaseAdmin
+        .from('recommendations')
+        .select('*')
+        .eq('id', recommendationId)
+        .eq('customer_id', customerId)
+        .single();
+
+      if (recError || !rec) throw new Error('Recommendation not found');
+
+      const { data: brand } = await supabaseAdmin
+        .from('brands')
+        .select('*')
+        .eq('id', rec.brand_id)
+        .single();
+
+      // 2. Build "Drafter" Prompt
+      const sectionsList = plan.structure.map((s: any) =>
+        `- SECTION ID: ${s.id}\n  TYPE: ${s.type}\n  HEADING: "${s.text_template}"\n  INSTRUCTIONS: ${s.instructions.join(', ')}`
+      ).join('\n\n');
+
+      let additionalContextBlock = '';
+      if (plan.additional_context) {
+        additionalContextBlock = `
+      === ADDITIONAL CONTEXT (User Provided) ===
+      """
+      ${plan.additional_context}
+      """
+      `;
+      }
+
+      const prompt = `You are the Lead Editor for ${brand.name}.
+      
+      TASK: Write the final content based on this APPROVED PLAN.
+      
+      BRAND: ${brand.name} (${brand.industry})
+      CONTEXT: ${brand.summary}
+      ACTION: ${rec.action}
+      KPI: ${rec.kpi}
+      ${additionalContextBlock}
+      
+      === THE PLAN (Follow Strictly) ===
+      ${sectionsList}
+      
+      === OUTPUT FORMAT ===
+      Return VALID JSON (v4.0) matching this schema:
+      {
+        "version": "4.0",
+        "recommendationId": "${recommendationId}",
+        "brandName": "${brand.name}",
+        "targetSource": { "domain": "${rec.citation_source}", "sourceType": "${plan.targetChannel || 'article_site'}" },
+        "contentTitle": "<Write a compelling H1 based on the plan>",
+        "sections": [
+           { 
+             "id": "<must match plan section id>", 
+             "title": "<must match plan heading>", 
+             "content": "<THE FULL WRITTEN CONTENT FOR THIS SECTION (Markdown supported)>", 
+             "sectionType": "<custom|summary|faq|cta>" 
+           }
+        ],
+        "callToAction": "<Write the CTA>",
+        "requiredInputs": ["<Any missing data points>"]
+      }
+      
+      RULES:
+      1. Write authoritative, AEO-optimized text for each section.
+      2. Follow the specific instructions for each section in the PLAN.
+      3. Do NOT change the section IDs.
+      `;
+
+      // 3. Call LLM (Cerebras for speed/quality text generation)
+      // Using Cerebras because it's the primary "Writer" engine
+      /* 
+         NOTE: We might use OpenRouter/GPT-OSS-20B if we want consistency with the planner, 
+         but Cerebras Llama 3.1 70B is likely better at "writing prose".
+         Let's stick to the service default (Cerebras) or OpenRouter fallback.
+      */
+
+      let responseContent = '';
+      let provider: RecommendationContentProvider = 'cerebras';
+      let model = this.cerebrasModel;
+
+      if (this.cerebrasApiKey) {
+        try {
+          // ... Call Cerebras (using existing patterns if we had a direct helper, 
+          // but we can reuse the openRouter collector if we want 20B, 
+          // or just use OpenRouter for everything to be safe with the 20B strategy user requested).
+
+          // User requested "Strategy feasibility... with GPT-OSS:20B". 
+          // So we should probably use OpenRouter/GPT-OSS-20B for this step too?
+          // Actually, the Blueprint says "Step 2: Final Content Generation... (Drafter)". 
+          // Let's use OpenRouter 20B as requested to prove the strategy.
+          provider = 'openrouter';
+          model = 'meta-llama/llama-3.3-70b-instruct';
+
+          const orResponse = await openRouterCollectorService.executeQuery({
+            collectorType: 'content',
+            prompt: prompt,
+            maxTokens: 3000,
+            temperature: 0.5,
+            model: 'meta-llama/llama-3.3-70b-instruct'
+          });
+          responseContent = orResponse.response || '';
+        } catch (e) {
+          console.error('Step 2 generation failed', e);
+        }
+      }
+
+      if (!responseContent) throw new Error('Failed to generate content');
+
+      // 4. Parse & Save
+      const parsed = this.parseGeneratedContentJson(responseContent);
+      if (parsed && this.isValidGeneratedContent(parsed)) {
+        const normalized = this.normalizeGeneratedContent(parsed);
+
+        // Save to DB
+        const { data: saved, error: saveError } = await supabaseAdmin
+          .from('recommendation_generated_contents')
+          .insert({
+            recommendation_id: recommendationId,
+            generation_id: rec.generation_id,
+            brand_id: rec.brand_id,
+            customer_id: customerId,
+            status: 'generated',
+            content_type: 'article', // Default to article/v4
+            content: JSON.stringify(normalized),
+            model_provider: provider,
+            model_name: model,
+            metadata: {
+              from_plan: true,
+              plan_version: plan.version
+            }
+          })
+          .select('*')
+          .single();
+
+        if (saveError) throw saveError;
+        return saved as any;
+      }
+
+      return null;
+
+    } catch (error) {
+      console.error('❌ [Step2] Error:', error);
+      return null;
+    }
+  }
+
 }
 
 export const recommendationContentService = new RecommendationContentService();

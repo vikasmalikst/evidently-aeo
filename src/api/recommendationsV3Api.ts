@@ -688,4 +688,158 @@ export async function saveSectionEditsV3(
     };
   }
 }
+/**
+ * Generate a Content Plan (Template) - Step 1
+ */
+export async function generateTemplatePlan(
+  recommendationId: string,
+  data?: { channel?: string; customInstructions?: string; force?: boolean }
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    // Increased timeout for plan generation (can be slow with 20B/thinking models)
+    const timeoutMs = 60000;
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      timeoutController.abort();
+    }, timeoutMs);
+
+    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/generate-plan`;
+    const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+          ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
+        },
+        body: JSON.stringify(data || {}),
+        signal: timeoutController.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Request failed with status ${response.status}`);
+      }
+      return await response.json();
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (timeoutController.signal.aborted || fetchError.name === 'AbortError') {
+        return { success: false, error: 'Plan generation timed out.' };
+      }
+      throw fetchError;
+    }
+  } catch (error: any) {
+    console.error('Error generating plan:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to generate plan'
+    };
+  }
+}
+
+/**
+ * Update an existing template plan
+ */
+export async function updateTemplatePlan(recommendationId: string, plan: any) {
+  return apiClient.put(`/recommendations-v3/${recommendationId}/template-plan`, { plan });
+}
+
+/**
+ * Generate Final Content from Approved Plan - Step 2
+ */
+export async function generateContentFromPlan(
+  recommendationId: string,
+  plan: any
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const timeoutMs = 180000; // 3 mins for long content generation
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      timeoutController.abort();
+    }, timeoutMs);
+
+    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/generate-content/step2`;
+    const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+          ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
+        },
+        body: JSON.stringify({ plan }),
+        signal: timeoutController.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Request failed with status ${response.status}`);
+      }
+      return await response.json();
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (timeoutController.signal.aborted || fetchError.name === 'AbortError') {
+        return { success: false, error: 'Content generation timed out.' };
+      }
+      throw fetchError;
+    }
+  } catch (error: any) {
+    console.error('Error generating content from plan:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to generate content'
+    };
+  }
+}
+
+/**
+ * Upload context (file or text) for a recommendation plan
+ */
+export async function uploadContextV3(
+  recommendationId: string,
+  data: { file?: File; text?: string }
+): Promise<{ success: boolean; data?: { context: string }; error?: string }> {
+  try {
+    const formData = new FormData();
+    if (data.file) {
+      formData.append('file', data.file);
+    } else if (data.text) {
+      formData.append('text', data.text);
+    }
+
+    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/upload-context`;
+    const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Request failed with status ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error: any) {
+    console.error('Error uploading context:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to upload context'
+    };
+  }
+}
 

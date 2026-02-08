@@ -18,6 +18,7 @@ export interface NewContentPromptContext {
     recommendation: RecommendationV3;
     brandContext: BrandContextV3;
     structureConfig?: StructureConfig;
+    additionalContext?: string;
 }
 
 export interface StructureConfig {
@@ -35,7 +36,7 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
     const currentYear = new Date().getFullYear();
 
     const systemContext = buildSystemContext(brandName, currentYear);
-    const recContext = buildRecommendationContext(ctx.recommendation, ctx.brandContext);
+    const recContext = buildRecommendationContext(ctx.recommendation, ctx.brandContext, ctx.additionalContext);
 
     switch (assetType) {
         case 'article':
@@ -108,14 +109,25 @@ CONTEXT:
 }
 
 
-function buildRecommendationContext(rec: RecommendationV3, brand: BrandContextV3): string {
-    return `
+function buildRecommendationContext(rec: RecommendationV3, brand: BrandContextV3, additionalContext?: string): string {
+    let context = `
 TASK CONTEXT:
 - Brand: ${brand.brandName} (${brand.industry || 'General'})
 - Goal: Execute recommendation "${rec.action}"
 - Target Keyword/Topic: ${rec.contentFocus || rec.action}
 - Target Platform: ${rec.citationSource || 'Owned Blog'}
 `;
+
+    if (additionalContext) {
+        context += `
+ADDITIONAL CONTEXT (User Provided):
+"""
+${additionalContext}
+"""
+`;
+    }
+
+    return context;
 }
 
 // Blog / Standard Article Prompt

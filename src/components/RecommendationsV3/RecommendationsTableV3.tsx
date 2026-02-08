@@ -25,7 +25,7 @@ interface RecommendationsTableV3Props {
   showCheckboxes?: boolean;
   showActions?: boolean;
   onAction?: (recommendation: RecommendationV3, action: string) => void;
-  actionLabel?: string; // Customize the action button label (e.g., "Generate Guide")
+  actionLabel?: string | ((rec: RecommendationV3) => string); // Customize the action button label
   actionType?: string; // Customize the action identifier sent to onAction (default: "generate-content")
   generatedLabel?: string; // Customize the generated badge label (default: "Generated")
   showStatusDropdown?: boolean;
@@ -522,7 +522,9 @@ export const RecommendationsTableV3 = ({
                                     >
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                     </motion.svg>
-                                    <span className="relative">{actionLabel}</span>
+                                    <span className="relative">
+                                      {typeof actionLabel === 'function' ? actionLabel(rec) : actionLabel}
+                                    </span>
                                   </motion.button>
                                 );
                               })()}

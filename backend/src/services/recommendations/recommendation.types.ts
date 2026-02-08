@@ -245,3 +245,38 @@ export interface WhitepaperMetadata {
     targetAudience: string;
     estimatedReadTime: string;
 }
+
+// ============================================================================
+// TEMPLATE PLAN TYPES (Step 1 of 2-Step Workflow)
+// ============================================================================
+
+export interface TemplateSection {
+    id: string;
+    type: 'heading' | 'section' | 'faq' | 'cta';
+    heading_level?: 1 | 2 | 3 | 4;
+    text_template: string; // The heading text with placeholders (e.g. "Best {PRIMARY_KEYWORD} Tools")
+    instructions: string[]; // Specific instructions for the drafter
+    word_count_target?: string;
+    keywords_to_include?: string[];
+}
+
+export interface TemplatePlan {
+    version: '1.0';
+    recommendationId: string;
+    targetChannel: string; // 'blog', 'youtube', 'linkedin', etc.
+    primary_entity: string;
+    structure: TemplateSection[];
+    aeo_extraction_targets: {
+        snippet: { required: boolean; instruction: string };
+        list: { required: boolean; instruction: string };
+        table: { required: boolean; instruction: string };
+    };
+    embedded_placeholders: {
+        fact_pack_slot: boolean;
+        sources_slot: boolean;
+        voice_rules_slot: boolean;
+        banned_claims_slot: boolean;
+    };
+    additional_context?: string; // User-uploaded context/files (parsed text)
+}
+

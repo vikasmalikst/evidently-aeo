@@ -68,8 +68,8 @@ const navItems: NavItem[] = [
     icon: IconSparkles,
     children: [
       { label: 'Opportunities', path: '/improve/discover', icon: IconBulb },
-      { label: 'Content Generation', path: '/improve/action-plan', icon: IconChecklist },
-      { label: 'Refine', path: '/improve/execute', icon: IconRocket },
+      { label: 'Plan', path: '/improve/action-plan', icon: IconChecklist },
+      { label: 'Generation and Refine', path: '/improve/execute', icon: IconRocket },
       { label: 'Outcome Tracker', path: '/improve/impact', icon: IconTrendingUp },
     ],
     stepNumber: 3,

@@ -39,6 +39,8 @@ import { RecommendationsTableV3 } from '../components/RecommendationsV3/Recommen
 import { OpportunityStrategyCard } from '../components/RecommendationsV3/components/OpportunityStrategyCard';
 import { StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
 import { ContentStructureInlineEditor } from '../components/RecommendationsV3/components/ContentStructureInlineEditor';
+import { PlanReviewModal } from '../components/RecommendationsV3/components/PlanReviewModal';
+
 import { getTemplateForAction } from '../components/RecommendationsV3/data/structure-templates';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
@@ -161,6 +163,13 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   // Custom Structure State (Lifted from Inline Editor)
   const [customizedStructures, setCustomizedStructures] = useState<Map<string, StructureSection[]>>(new Map());
+
+  // Plan Review State
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [currentPlan, setCurrentPlan] = useState<any>(null); // TemplatePlan
+  const [isProcessingPlan, setIsProcessingPlan] = useState(false); // Generating plan or content
+
+
 
   const [stepCounts, setStepCounts] = useState<Record<number, number>>({});
   const [brandName, setBrandName] = useState<string>(''); // For template customization
@@ -768,6 +777,87 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   // Note: Approval now happens automatically when user changes status to "approved" via dropdown
   // The handleStatusChange function handles updating the status, which automatically sets is_approved = true
+
+
+  // The handleStatusChange function handles updating the status, which automatically sets is_approved = true
+
+  /**
+   * Handle "Generate Strategy" Action (Step 2 Entry)
+   * 1. Generates a Plan (Step 1 of Generation) - OR fetches existing unless forced
+   * 2. Opens Review Modal
+   */
+  const handleGenerateStrategy = async (rec: RecommendationV3, force = false) => {
+    if (!rec.id) return;
+
+    setIsLoading(true);
+    setIsProcessingPlan(true);
+
+    try {
+      // Import dynamically 
+      const { generateTemplatePlan } = await import('../api/recommendationsV3Api');
+
+      console.log(`🧠 [RecommendationsV3] Generating Plan for ${rec.id} (Force: ${force})`);
+      const response = await generateTemplatePlan(rec.id, {
+        force
+        // Optional: pass overrides if we had UI for them
+      });
+
+      if (response.success && response.data) {
+        setCurrentPlan(response.data);
+        setIsPlanModalOpen(true);
+      } else {
+        setError(response.error || 'Failed to generate plan');
+      }
+    } catch (err: any) {
+      console.error('Plan generation error:', err);
+      setError(err.message || 'Failed to generate plan');
+    } finally {
+      setIsLoading(false);
+      setIsProcessingPlan(false);
+    }
+  };
+
+  /**
+   * Handle "Approve & Write" Action (Step 2 -> Step 3)
+   * Called from Modal
+   */
+  const handleApprovePlan = async () => {
+    if (!currentPlan) return;
+
+    setIsProcessingPlan(true); // Modal loading state
+
+    try {
+      const { generateContentFromPlan } = await import('../api/recommendationsV3Api');
+      console.log(`✍️ [RecommendationsV3] Generating Content from Plan for ${currentPlan.recommendationId}`);
+
+      const response = await generateContentFromPlan(currentPlan.recommendationId, currentPlan);
+
+      if (response.success) {
+        console.log(`✅ [RecommendationsV3] Content generated successfully!`);
+        setIsPlanModalOpen(false);
+        setCurrentPlan(null);
+
+        // Optimistic update
+        setRecommendations(prev => prev.map(r =>
+          r.id === currentPlan.recommendationId
+            ? { ...r, isContentGenerated: true }
+            : r
+        ));
+
+        setTimeout(() => {
+          // Trigger reload of current step by re-fetching latest generation logic or just let the user navigate
+        }, 500);
+
+      } else {
+        alert(`Error: ${response.error}`);
+      }
+    } catch (err: any) {
+      console.error('Content generation error:', err);
+      alert('Failed to generate content');
+    } finally {
+      setIsProcessingPlan(false);
+    }
+  };
 
   // Handle generate content for all approved recommendations (Step 2 → Step 3)
   const handleGenerateContentBulk = async () => {
@@ -1732,9 +1822,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                     <RecommendationsTableV3
                       recommendations={recommendations}
                       showActions={true}
-                      onAction={isColdStart ? handleGenerateGuide : handleGenerateContent}
-                      actionLabel={isColdStart ? 'Generate Guide' : 'Generate'}
-                      actionType={isColdStart ? 'generate-guide' : 'generate-content'}
+                      onAction={isColdStart ? handleGenerateGuide : (rec) => handleGenerateStrategy(rec)}
+                      actionLabel={isColdStart ? 'Generate Guide' : (rec) => 'Generate Strategy'}
+                      actionType={isColdStart ? 'generate-guide' : 'generate-strategy'}
                       generatedLabel={isColdStart ? 'Guide Ready' : 'Generated'}
                       generatingContentIds={generatingContentIds}
                       onStopTracking={(id) => {
@@ -3518,6 +3608,22 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           </div>
         </div>
       )}
+      {/* Plan Review Modal */}
+      <PlanReviewModal
+        isOpen={isPlanModalOpen}
+        onClose={() => setIsPlanModalOpen(false)}
+        plan={currentPlan}
+        onApprove={handleApprovePlan}
+        onRegenerate={() => {
+          setIsPlanModalOpen(false);
+          if (currentPlan?.recommendationId) {
+            const rec = recommendations.find(r => r.id === currentPlan.recommendationId);
+            if (rec) handleGenerateStrategy(rec, true);
+          }
+        }}
+        isProcessing={isProcessingPlan}
+        onPlanUpdated={(updatedPlan) => setCurrentPlan(updatedPlan)}
+      />
     </Layout >
   );
 };

@@ -232,52 +232,44 @@ export interface AssetDetectionResult {
 export function detectContentAsset(action: string): AssetDetectionResult {
     const actionLower = action.toLowerCase();
 
-    // 1. EXPLICIT ARTICLE/BLOG - Highest priority
-    const articleKeywords = ['article', 'standard article', 'publish article', 'blog post', 'guest post', 'write article', 'pillar page', 'resource guide'];
-    if (articleKeywords.some(k => actionLower.includes(k))) {
-        return { asset: 'article', confidence: 'high' };
-    }
 
-    // 2. Social Media Thread (Priority: High for LinkedIn/X)
-    const threadKeywords = ['thread', 'linkedin carousel', 'twitter thread', 'x thread', 'social thread', 'linkedin', 'twitter', 'x.com'];
-    if (threadKeywords.some(k => actionLower.includes(k))) {
-        return { asset: 'social_media_thread', confidence: 'high' };
-    }
 
-    // 3. Expert Community / Forum (Specific Format)
-    const expertKeywords = ['expert community', 'forum response', 'quora', 'reddit', 'reddit response', 'community answer', 'expert answer'];
-    if (expertKeywords.some(k => actionLower.includes(k))) {
-        return { asset: 'expert_community_response', confidence: 'high' };
-    }
 
-    // 3. Podcast (Specific Format) - NEW
+
+    // 2. Podcast (Specific Format) - NEW
     const podcastKeywords = ['podcast', 'audio', 'interview script'];
     if (podcastKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'podcast', confidence: 'high' };
     }
 
-    // 4. Video/YouTube Keywords (Specific Format) - MOVED UP
+    // 3. Video/YouTube Keywords (Specific Format) - MOVED UP
     const videoKeywords = ['video', 'youtube', 'script', 'vlog', 'tiktok', 'reels'];
     if (videoKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'short_video', confidence: 'high' };
     }
 
-    // 5. Webinar Keywords (Specific Format)
+    // 4. Webinar Keywords (Specific Format)
     const webinarKeywords = ['webinar', 'recap', 'event summary', 'presentation', 'talk'];
     if (webinarKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'webinar_recap', confidence: 'high' };
     }
 
-    // 6. Case Study Keywords
+    // 5. Case Study Keywords
     const caseStudyKeywords = ['case study', 'success story', 'customer story'];
     if (caseStudyKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'case_study', confidence: 'high' };
     }
 
-    // 7. Comparison Table (MOVED UP: Prioritize over whitepaper if both keywords exist)
-    const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison', 'versus table', 'vs table'];
+    // 5. Comparison Table (Specific Format)
+    const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison', 'versus table', 'vs table', 'comparison'];
     if (explicitComparisonKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'comparison_table', confidence: 'high' };
+    }
+
+    // 6. EXPLICIT ARTICLE/BLOG (Moved down to avoid masking specific types)
+    const articleKeywords = ['article', 'standard article', 'publish article', 'blog post', 'guest post', 'write article', 'pillar page', 'resource guide'];
+    if (articleKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'article', confidence: 'high' };
     }
 
     // 8. EXPLICIT WHITEPAPER/REPORT

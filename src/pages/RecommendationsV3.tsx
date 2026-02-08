@@ -1342,8 +1342,15 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       const existing = next.get(recommendationId);
 
       if (typeof existing === 'object' && existing !== null) {
+        // Handle v5.0 (Unified Content)
+        if (existing.version === '5.0') {
+           next.set(recommendationId, {
+             ...existing,
+             content: editBuffer
+           });
+        }
         // If it's the v2.0 format, we need to update deep inside
-        if (existing.version === '2.0' && existing.publishableContent) {
+        else if (existing.version === '2.0' && existing.publishableContent) {
           next.set(recommendationId, {
             ...existing,
             publishableContent: {
@@ -2124,27 +2131,36 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                     // Strategy 1: Content is already an object
                                     if (typeof content === 'object' && content !== null) {
-                                      if (content.content) {
+                                      // Check if it's already a full v5.0 object
+                                      if (content.version === '5.0') {
+                                        parsedContent = content;
+                                      } 
+                                      else if (content.content) {
                                         // Content is in .content property
                                         if (typeof content.content === 'string') {
                                           rawContent = content.content;
                                           try {
-                                            parsedContent = JSON.parse(content.content);
-                                          } catch {
-                                            // Try to extract JSON from string
-                                            const jsonMatch = content.content.match(/\{[\s\S]*\}/);
-                                            if (jsonMatch) {
-                                              try {
-                                                parsedContent = JSON.parse(jsonMatch[0]);
-                                              } catch {
-                                                parsedContent = null;
-                                              }
+                                            // Try to parse the inner content string as JSON (Unified Format often comes as stringified JSON inside .content)
+                                            const innerParsed = JSON.parse(content.content);
+                                            if (innerParsed && (innerParsed.version === '5.0' || innerParsed.version === '4.0')) {
+                                              parsedContent = innerParsed;
+                                            } else {
+                                              // If parsing succeeded but it's not a versioned object, it might be just the raw markdown string that happened to be valid JSON (unlikely but possible)
+                                              // OR it's a v5 object where .content is just the markdown string.
+                                              // If the parent object has version='5.0', we should have caught it above.
+                                              // If we are here, parent doesn't have version='5.0'.
+                                              // Let's assume if we parsed an object with version, use it. Otherwise, fall back.
+                                              parsedContent = null; 
                                             }
+                                          } catch {
+                                            parsedContent = null; 
                                           }
                                         } else {
                                           parsedContent = content.content;
                                         }
                                       } else {
+                                        // Content is an object but no .content and no .version='5.0'?
+                                        // Might be v4.0 directly
                                         parsedContent = content;
                                       }
                                     } else if (typeof content === 'string') {
@@ -2152,6 +2168,14 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       rawContent = content;
                                       try {
                                         parsedContent = JSON.parse(content);
+                                        // Handle double-stringified JSON (e.g. "{\"version\": ...}")
+                                        if (typeof parsedContent === 'string') {
+                                            try {
+                                                parsedContent = JSON.parse(parsedContent);
+                                            } catch (e) {
+                                                // ignore
+                                            }
+                                        }
                                       } catch {
                                         // Try to extract JSON object from text
                                         const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -2334,21 +2358,14 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                             {/* Main Content */}
                                             <div className="p-6">
-                                              {editingId === rec.id ? (
-                                                <textarea
-                                                  className="w-full h-[400px] p-4 bg-white border border-[#00bcdc] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00bcdc] text-[14px] text-[#1a1d29] leading-relaxed font-sans shadow-inner"
-                                                  value={editBuffer}
-                                                  onChange={(e) => setEditBuffer(e.target.value)}
-                                                  autoFocus
-                                                />
-                                              ) : (
-                                                <UnifiedContentRenderer 
-                                                  content={unescapeNewlines(content)} 
-                                                  highlightFillIns={highlightFillIns} 
-                                                />
-                                              )}
+                                                    <UnifiedContentRenderer 
+                                                      content={editingId === rec.id ? editBuffer : unescapeNewlines(content)} 
+                                                      highlightFillIns={highlightFillIns} 
+                                                      isEditing={editingId === rec.id}
+                                                      onContentChange={(newContent: string) => setEditBuffer(newContent)}
+                                                    />
 
-                                              {/* Required Inputs */}
+                                                  {/* Required Inputs */}
                                               {requiredInputs.length > 0 && (
                                                 <div className="mt-4 p-3 bg-[#fef3c7] border border-[#fcd34d] rounded-lg">
                                                   <p className="text-[12px] font-semibold text-[#92400e] mb-2">⚠️ Fill in before publishing:</p>

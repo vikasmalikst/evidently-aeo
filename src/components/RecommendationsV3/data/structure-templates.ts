@@ -18,12 +18,7 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
 
     return {
         article: [
-            {
-                id: "direct_answer",
-                title: "The Direct Answer",
-                content: "The first H2 should be a question that matches the query. The paragraph following it must be a 40-60 word definitive statement starting with the Primary Entity name.",
-                sectionType: "answer"
-            },
+
             {
                 id: "exec_abstract",
                 title: "Executive Abstract (The Snippet)",
@@ -103,6 +98,12 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
         ],
         expert_community_response: [
             {
+                id: "hook_title",
+                title: "Title (The Hook)",
+                content: "Title Format: [H1] My Experience with [Topic]. The Hook.",
+                sectionType: "hook"
+            },
+            {
                 id: "expert_perspective",
                 title: "The Expert Perspective",
                 content: `Word Count: 100 words. Tonality: Anecdotal, experienced. Format: First-person ("I've been in [Industry] for..."). State credentials and mention work at/with ${brandName}.`,
@@ -149,7 +150,6 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
                 sectionType: "cta"
             }
         ],
-        // Podcast remains unchanged as it has no unified template yet
         podcast: [
             {
                 id: "intro",
@@ -204,8 +204,13 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
     // 0. Explicit Overrides
     if (act.includes('expert article')) return 'article';
 
-    // 2. Check for Expert Response first (Specific)
-    if (act.includes('expert community response') || act.includes('forum') || act.includes('reddit')) {
+    // 1. Check for Social Media Thread (Priority: High for LinkedIn/X)
+    if (act.includes('social media') || act.includes('thread') || act.includes('linkedin') || act.includes('twitter') || act.includes('x.com')) {
+        return 'social_media_thread';
+    }
+
+    // 2. Check for Expert Response (Specific)
+    if (act.includes('expert community response') || act.includes('forum') || act.includes('reddit') || act.includes('quora')) {
         return 'expert_community_response';
     }
 
@@ -227,11 +232,6 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
     // 6. Check for Comparison Table
     if (act.includes('comparison table') || act.includes('comparison')) {
         return 'comparison_table';
-    }
-
-    // 7. Check for Social Media Thread
-    if (act.includes('social media') || act.includes('thread') || act.includes('linkedin') || act.includes('twitter') || act.includes('x.com')) {
-        return 'social_media_thread';
     }
 
     return 'article';

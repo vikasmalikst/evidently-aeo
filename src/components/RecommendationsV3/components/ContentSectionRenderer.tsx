@@ -592,10 +592,14 @@ export function SectionTypeBadge({ sectionType }: { sectionType: ContentSectionT
  */
 export function UnifiedContentRenderer({ 
   content, 
-  highlightFillIns 
+  highlightFillIns, 
+  isEditing = false, 
+  onContentChange 
 }: { 
-  content: string;
-  highlightFillIns?: (text: string) => string;
+  content: string; 
+  highlightFillIns?: (text: string) => string; 
+  isEditing?: boolean; 
+  onContentChange?: (newContent: string) => void; 
 }) {
   // Normalize content: ensure real newlines (handle escaped \n from JSON)
   const normalizedContent = React.useMemo(() => {
@@ -661,21 +665,64 @@ export function UnifiedContentRenderer({
 
   if (sections.length === 0) return null;
 
+  // Helper to update a specific section and cascade changes to parent
+  const handleSectionUpdate = (index: number, newTitle: string, newContent: string) => {
+    const updatedSections = [...sections];
+    updatedSections[index] = { title: newTitle, content: newContent };
+    
+    // Reconstruct full markdown
+    // We assume the first section might be intro (no H2), but here we enforce H2 for all valid sections
+    // or we just join them with newlines.
+    // Strategy: Re-add "## " before titles.
+    const fullMarkdown = updatedSections.map(s => `## ${s.title}\n\n${s.content}`).join('\n\n');
+    
+    // If there was preamble before the first H2, we might lose it if we don't track it.
+    // However, the current split logic absorbs preamble into the first section if it doesn't have a header?
+    // Let's check the split logic. 
+    // The split logic pushes "Introduction" as first section if text exists before first ##.
+    // If we simply join with `##`, the Introduction gets a `## Introduction` header which might be fine, 
+    // or we might want to check if the original had a header.
+    // For simplicity in v5 Unified, we enforce headers to maintain structure.
+    
+    if (onContentChange) {
+      onContentChange(fullMarkdown);
+    }
+  };
+
   return (
-    <div className="bg-white border border-[#e2e8f0] rounded-xl shadow-sm p-8 md:p-10">
+    <div className="bg-white border border-[#e2e8f0] rounded-xl shadow-sm p-8 md:p-10 transition-all">
       {sections.map((section, idx) => (
-        <div key={idx} className={idx > 0 ? 'mt-12' : ''}>
-          {/* Section Header - Big and Bold as requested */}
-          <h2 className="text-[24px] md:text-[28px] font-bold text-[#1e293b] mb-6 leading-tight">
-            {section.title}
-          </h2>
+        <div key={idx} className={idx > 0 ? 'mt-8' : ''}>
+          {/* Section Header */}
+          <div className="mb-4 group relative">
+             {isEditing ? (
+               <input 
+                 type="text" 
+                 value={section.title}
+                 onChange={(e) => handleSectionUpdate(idx, e.target.value, section.content)}
+                 className="text-[20px] md:text-[22px] font-bold text-[#1e293b] w-full border-b border-dashed border-[#cbd5e1] focus:border-[#0ea5e9] focus:outline-none bg-transparent"
+               />
+             ) : (
+                <h2 className="text-[20px] md:text-[22px] font-bold text-[#1e293b] leading-snug">
+                  {section.title}
+                </h2>
+             )}
+          </div>
 
           {/* Section Content */}
           <div className="text-[16px] text-[#334155] leading-relaxed">
-            <MarkdownRenderer 
-              content={section.content} 
-              highlightFillIns={Boolean(highlightFillIns)} 
-            />
+            {isEditing ? (
+               <EditableMarkdown 
+                 content={section.content} 
+                 onChange={(newVal) => handleSectionUpdate(idx, section.title, newVal)}
+                 className="min-h-[100px]"
+               />
+            ) : (
+                <MarkdownRenderer 
+                  content={section.content} 
+                  highlightFillIns={Boolean(highlightFillIns)} 
+                />
+            )}
           </div>
         </div>
       ))}

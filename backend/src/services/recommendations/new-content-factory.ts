@@ -238,7 +238,13 @@ export function detectContentAsset(action: string): AssetDetectionResult {
         return { asset: 'article', confidence: 'high' };
     }
 
-    // 2. Expert Community / Forum (Specific Format) - MOVED UP
+    // 2. Social Media Thread (Priority: High for LinkedIn/X)
+    const threadKeywords = ['thread', 'linkedin carousel', 'twitter thread', 'x thread', 'social thread', 'linkedin', 'twitter', 'x.com'];
+    if (threadKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'social_media_thread', confidence: 'high' };
+    }
+
+    // 3. Expert Community / Forum (Specific Format)
     const expertKeywords = ['expert community', 'forum response', 'quora', 'reddit', 'reddit response', 'community answer', 'expert answer'];
     if (expertKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'expert_community_response', confidence: 'high' };
@@ -280,11 +286,7 @@ export function detectContentAsset(action: string): AssetDetectionResult {
         return { asset: 'whitepaper', confidence: 'high' };
     }
 
-    // 8. Social Media Thread
-    const threadKeywords = ['thread', 'linkedin carousel', 'twitter thread', 'x thread', 'social thread'];
-    if (threadKeywords.some(k => actionLower.includes(k))) {
-        return { asset: 'social_media_thread', confidence: 'high' };
-    }
+
 
     // 9. Guide keyword
     if (actionLower.includes('guide')) {

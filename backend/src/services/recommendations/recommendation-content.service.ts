@@ -159,7 +159,18 @@ type GeneratedContentJsonV4 = {
   requiredInputs: string[];                // [FILL_IN:] markers user needs to complete
 };
 
-type GeneratedContentJson = GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4;
+
+// NEW v5.0 format: Unified Content Canvas
+type GeneratedContentJsonV5 = {
+  version: '5.0';
+  recommendationId: string;
+  brandName: string;
+  contentTitle: string;
+  content: string;
+  requiredInputs: string[];
+};
+
+type GeneratedContentJson = GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4 | GeneratedContentJsonV5;
 type GeneratedAnyJson = GeneratedContentJson | GeneratedGuideJsonV1;
 
 // Cold-start guide format (Step 2/3 for cold_start)

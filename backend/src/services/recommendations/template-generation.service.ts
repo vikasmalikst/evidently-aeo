@@ -9,6 +9,7 @@
 import { supabaseAdmin } from '../../config/database';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
 import { RecommendationV3, TemplatePlan, BrandContextV3, ContextFile } from './recommendation.types';
+import { getContentTemplates, detectContentType, StructureSection, ContentTemplateType } from './content-templates';
 const pdf = require('pdf-parse');
 
 interface ServiceResponse<T> {
@@ -52,7 +53,9 @@ class TemplateGenerationService {
                 return { success: false, error: 'Recommendation not found' };
             }
 
-            // 1b. Check for Existing Plan (unless forced)
+            // 1b. CACHING DISABLED - Always regenerate with AI using new templates
+            // Uncomment below to re-enable caching:
+            /*
             if (!request.force) {
                 const { data: existingPlan } = await supabaseAdmin
                     .from('recommendation_generated_contents')
@@ -76,6 +79,8 @@ class TemplateGenerationService {
                     }
                 }
             }
+            */
+            console.log('🔄 [TemplateService] Cache disabled - generating fresh AI strategy');
 
             const { data: brand } = await supabaseAdmin
                 .from('brands')
@@ -85,6 +90,7 @@ class TemplateGenerationService {
 
             // 2. Select Base Skeleton (Hardcoded for MVP reliability, can be dynamic later)
             // Use snake_case from DB result
+            console.log(`🔍 [TemplateService] Template Detection - action: "${rec.action}", asset_type: "${rec.asset_type}", channel: "${channel}"`);
             const skeleton = this.getBaseSkeleton(channel, rec.action, brand?.name || 'Brand', rec.asset_type);
 
             // 3. Build Prompt
@@ -385,131 +391,37 @@ class TemplateGenerationService {
 
     private getBaseSkeleton(channel: string, action: string, brandName: string, assetType?: string): any {
         const topic = this.extractTopicFromAction(action);
-        const actionLower = action.toLowerCase();
 
-        // 1. YouTube / Video
-        if (assetType === 'video' || channel.includes('youtube')) {
-            return {
-                version: '1.0',
-                recommendationId: '',
-                targetChannel: channel,
-                content_type: 'video',
-                primary_entity: topic,
-                action_description: action,
-                aeo_extraction_targets: {
-                    snippet: { required: true, instruction: 'Video description snippet' },
-                    list: { required: false, instruction: '' },
-                    table: { required: false, instruction: '' }
-                },
-                structure: [
-                    { id: 'intro', type: 'section', text_template: 'Video Intro: Hook & Promise', instructions: ['Start with a visual hook', 'State the problem clearly'] },
-                    { id: 'step1', type: 'section', text_template: 'Step 1: The Setup', instructions: ['Explain the first step'] },
-                    { id: 'cta', type: 'cta', text_template: 'Call to Action', instructions: ['Ask to subscribe'] }
-                ],
-                embedded_placeholders: {
-                    fact_pack_slot: true,
-                    sources_slot: true,
-                    voice_rules_slot: true,
-                    banned_claims_slot: true
-                }
-            };
+        // 1. Detect content type using shared logic
+        const contentType = detectContentType(action, assetType);
+        console.log(`✅ [TemplateService] Detected content type: "${contentType}" for action: "${action}"`);
+
+        // 2. Get template from content-templates.ts
+        const templates = getContentTemplates({ brandName });
+        const template = templates[contentType];
+
+        if (!template) {
+            console.warn(`⚠️ [TemplateService] No template found for type: ${contentType}, falling back to article`);
+            return this.buildSkeletonFromTemplate('article', templates.article, channel, topic, action, brandName);
         }
 
-        // 2. Expert Community Response (Reddit, Quora, Forums)
-        if (assetType === 'expert_community_response' || actionLower.includes('expert community response') || actionLower.includes('reddit') || actionLower.includes('quora')) {
-            return {
-                version: '1.0',
-                recommendationId: '',
-                targetChannel: channel,
-                content_type: 'expert_community_response',
-                primary_entity: topic,
-                action_description: action,
-                aeo_extraction_targets: {
-                    snippet: { required: true, instruction: 'Target specific question snippet' },
-                    list: { required: false, instruction: '' },
-                    table: { required: false, instruction: '' }
-                },
-                structure: [
-                    { id: 'intro', type: 'section', text_template: 'Hook & Empathy', instructions: ['Acknowledge the user\'s pain point', 'State personal experience ("I\'ve faced this too...")', 'No marketing fluff initially'] },
-                    { id: 'answer', type: 'section', text_template: 'The Core Solution', instructions: ['Direct, actionable advice', 'Solve the problem immediately'] },
-                    { id: 'evidence', type: 'section', text_template: 'Why this works (Evidence)', instructions: ['Share specific results or logic', `Mention how ${brandName} approaches this (subtly)`] },
-                    { id: 'engagement', type: 'cta', text_template: 'Closing Question', instructions: ['Ask an open-ended question to drive comments', 'Do NOT use a hard sales pitch'] }
-                ],
-                embedded_placeholders: {
-                    fact_pack_slot: true,
-                    sources_slot: true,
-                    voice_rules_slot: true,
-                    banned_claims_slot: true
-                }
-            };
-        }
+        console.log(`📝 [TemplateService] Using template with ${template.length} sections for type: ${contentType}`);
 
-        // 3. Comprehensive Guide / How-to
-        if (assetType === 'guide' || actionLower.includes('guide') || actionLower.includes('how to') || actionLower.includes('tutorial')) {
-            return {
-                version: '1.0',
-                recommendationId: '',
-                targetChannel: channel,
-                content_type: 'guide',
-                primary_entity: topic,
-                action_description: action,
-                aeo_extraction_targets: {
-                    snippet: { required: true, instruction: 'Definitive step-by-step list' },
-                    list: { required: true, instruction: 'Step-by-step process' },
-                    table: { required: false, instruction: '' }
-                },
-                structure: [
-                    { id: 'h1', type: 'heading', heading_level: 1, text_template: `The Ultimate Guide to {TOPIC}`, instructions: [`Include ${brandName}`, 'Focus on "Ultimate" or "Complete"'] },
-                    { id: 'intro', type: 'section', text_template: 'Introduction', instructions: ['Who is this for?', 'What will you learn?', 'Time estimate'] },
-                    { id: 'prerequisites', type: 'section', text_template: 'Prerequisites & Tools', instructions: ['List everything needed before starting'] },
-                    { id: 'steps', type: 'heading', heading_level: 2, text_template: 'Step-by-Step Instructions', instructions: ['Break down the core methodology'] },
-                    { id: 'troubleshooting', type: 'faq', text_template: 'Common Pitfalls', instructions: ['Address 3 common mistakes'] },
-                    { id: 'conclusion', type: 'cta', text_template: 'Summary & Next Steps', instructions: ['Recap key learnings', `CTA for ${brandName}`] }
-                ],
-                embedded_placeholders: {
-                    fact_pack_slot: true,
-                    sources_slot: true,
-                    voice_rules_slot: true,
-                    banned_claims_slot: true
-                }
-            };
-        }
+        // 3. Convert template to skeleton format
+        return this.buildSkeletonFromTemplate(contentType, template, channel, topic, action, brandName);
+    }
 
-        // 4. Comparison / Buying Guide
-        if (assetType === 'comparison' || actionLower.includes('vs') || actionLower.includes('best') || actionLower.includes('comparison') || actionLower.includes('review')) {
-            return {
-                version: '1.0',
-                recommendationId: '',
-                targetChannel: channel,
-                content_type: 'comparison',
-                primary_entity: topic,
-                action_description: action,
-                aeo_extraction_targets: {
-                    snippet: { required: true, instruction: 'Winner declaration' },
-                    list: { required: true, instruction: 'Top 5 list' },
-                    table: { required: true, instruction: 'Feature comparison table' }
-                },
-                structure: [
-                    { id: 'h1', type: 'heading', heading_level: 1, text_template: `{TOPIC}: Top Picks for 2026`, instructions: [`Include ${brandName} if applicable`, 'Must mention 2026'] },
-                    { id: 'intro', type: 'section', text_template: 'Why this matters', instructions: ['Explain the category importance', 'Who needs this?'] },
-                    { id: 'criteria', type: 'section', text_template: 'Evaluation Criteria', instructions: ['How we judged (Price, Features, Support)'] },
-                    { id: 'top_pick', type: 'heading', heading_level: 2, text_template: 'Start with the Winner', instructions: ['Direct recommendation'] },
-                    { id: 'comparison_table', type: 'section', text_template: 'Comparison Matrix', instructions: ['Create a comparison table or list'] },
-                    { id: 'verdict', type: 'section', text_template: 'Final Verdict', instructions: ['Summary decision matrix'] }
-                ],
-                embedded_placeholders: {
-                    fact_pack_slot: true,
-                    sources_slot: true,
-                    voice_rules_slot: true,
-                    banned_claims_slot: true
-                }
-            };
-        }
-
-        // 5. Default Article / Blog Post
-        let contentType = 'article';
-        if (actionLower.includes('blog')) contentType = 'blog_post';
-
+    /**
+     * Convert a StructureSection[] template into a TemplatePlan skeleton
+     */
+    private buildSkeletonFromTemplate(
+        contentType: ContentTemplateType,
+        template: StructureSection[],
+        channel: string,
+        topic: string,
+        action: string,
+        brandName: string
+    ): any {
         return {
             version: '1.0',
             recommendationId: '',
@@ -517,18 +429,8 @@ class TemplateGenerationService {
             content_type: contentType,
             primary_entity: topic,
             action_description: action,
-            aeo_extraction_targets: {
-                snippet: { required: true, instruction: 'Optimize for direct answer box' },
-                list: { required: false, instruction: '' },
-                table: { required: false, instruction: '' }
-            },
-            structure: [
-                { id: 'h1', type: 'heading', heading_level: 1, text_template: `How to {ACTION_TOPIC} in 2026`, instructions: [`Include ${brandName}`, 'Must mention 2026'] },
-                { id: 'answer', type: 'heading', heading_level: 2, text_template: 'Direct Answer', instructions: ['40-60 words bold answer', 'Start with entity name', 'Define the core concept immediately'] },
-                { id: 'benefits', type: 'heading', heading_level: 2, text_template: 'Key Benefits', instructions: ['List 3 key benefits', 'Focus on value'] },
-                { id: 'how_to', type: 'heading', heading_level: 2, text_template: 'Actionable Steps', instructions: ['Provide practical advice'] },
-                { id: 'faq', type: 'faq', text_template: 'People Also Ask', instructions: ['Generate 3 PAA questions based on the topic'] }
-            ],
+            aeo_extraction_targets: this.getAeoTargets(contentType),
+            structure: template.map((section, index) => this.convertSectionToStructure(section, index, brandName)),
             embedded_placeholders: {
                 fact_pack_slot: true,
                 sources_slot: true,
@@ -538,21 +440,121 @@ class TemplateGenerationService {
         };
     }
 
+    /**
+     * Convert a StructureSection to a structure item format
+     */
+    private convertSectionToStructure(section: StructureSection, index: number, brandName: string): any {
+        // Infer heading level from section type and position
+        const headingLevel = this.inferHeadingLevel(section.sectionType, index);
+
+        // Determine structure type
+        const type = this.inferStructureType(section.sectionType);
+
+        return {
+            id: section.id,
+            type: type,
+            heading_level: headingLevel,
+            text_template: section.title.replace('[Brand Name]', brandName).replace('[Industry]', '[Industry]').replace('[Topic]', '[Topic]'),
+            instructions: [section.content] // Content contains all the detailed guidance
+        };
+    }
+
+    /**
+     * Infer heading level from section type and position
+     */
+    private inferHeadingLevel(sectionType: string, index: number): number | undefined {
+        if (sectionType === 'hook' || sectionType === 'executive_summary') return 1;
+        if (sectionType === 'summary' || sectionType === 'context' || sectionType === 'strategies') return 2;
+        if (index === 0) return 1; // First section is usually H1
+        return 2; // Default to H2
+    }
+
+    /**
+     * Infer structure type from section type
+     */
+    private inferStructureType(sectionType: string): 'heading' | 'section' | 'faq' | 'cta' {
+        if (sectionType === 'cta') return 'cta';
+        if (sectionType === 'faq') return 'faq';
+        if (sectionType === 'hook' || sectionType === 'summary' || sectionType === 'context' || sectionType === 'strategies') {
+            return 'heading';
+        }
+        return 'section';
+    }
+
+    /**
+     * Get AEO extraction targets based on content type
+     */
+    private getAeoTargets(contentType: ContentTemplateType): any {
+        switch (contentType) {
+            case 'article':
+            case 'expert_community_response':
+                return {
+                    snippet: { required: true, instruction: 'Optimize for featured snippet extraction' },
+                    list: { required: false, instruction: '' },
+                    table: { required: false, instruction: '' }
+                };
+
+            case 'whitepaper':
+                return {
+                    snippet: { required: true, instruction: 'Executive summary snippet' },
+                    list: { required: true, instruction: 'Key findings list' },
+                    table: { required: false, instruction: '' }
+                };
+
+            case 'short_video':
+                return {
+                    snippet: { required: true, instruction: 'Video description snippet' },
+                    list: { required: false, instruction: '' },
+                    table: { required: false, instruction: '' }
+                };
+
+            case 'comparison_table':
+                return {
+                    snippet: { required: true, instruction: 'Winner declaration' },
+                    list: { required: true, instruction: 'Top picks list' },
+                    table: { required: true, instruction: 'Feature comparison table' }
+                };
+
+            case 'social_media_thread':
+                return {
+                    snippet: { required: false, instruction: '' },
+                    list: { required: false, instruction: '' },
+                    table: { required: false, instruction: '' }
+                };
+
+            case 'podcast':
+                return {
+                    snippet: { required: true, instruction: 'Episode summary' },
+                    list: { required: true, instruction: 'Key takeaways' },
+                    table: { required: false, instruction: '' }
+                };
+
+            default:
+                return {
+                    snippet: { required: true, instruction: 'Optimize for direct answer box' },
+                    list: { required: false, instruction: '' },
+                    table: { required: false, instruction: '' }
+                };
+        }
+    }
+
     private buildPlannerPrompt(rec: RecommendationV3, brand: any, skeleton: any, channel: string, customInstructions?: string): string {
         return `You are the Content Architect for ${brand.name}.
     
-    TASK: Flesh out this Content Plan.
+    TASK: Flesh out this Content Plan based on the provided skeleton template.
     1.  Use the provided Skeleton as a base - KEEP ALL FIELDS (version, targetChannel, primary_entity, aeo_extraction_targets, structure).
     2.  Rewrite 'text_template' (Headings) in the structure array to be specific to: "${rec.action}" and KPI: "${rec.kpi}".
     3.  Add specific 'instructions' for the writer based on the Brand Summary: "${brand?.summary || 'Standard brand profile'}".
-    4.  Ensure H1 includes "2026".
-    5.  ${customInstructions ? `USER INSTRUCTIONS: ${customInstructions}` : ''}
+    4.  Ensure H1 includes "2026" for freshness signals.
+    5.  You MAY make MINOR adjustments to section titles and descriptions if they better fit the specific recommendation, but maintain the overall template structure, word counts, tonality, and formatting guidance.
+    6.  ${customInstructions ? `USER INSTRUCTIONS: ${customInstructions}` : ''}
 
     SKELETON (JSON):
     ${JSON.stringify(skeleton, null, 2)}
 
     OUTPUT: Return ONLY valid JSON matching the 'TemplatePlan' interface. You MUST include ALL fields from the skeleton (version, targetChannel, primary_entity, aeo_extraction_targets, structure). Do NOT omit any top-level fields.`;
     }
+
 
     private parseAndValidatePlan(text: string): TemplatePlan | null {
         try {

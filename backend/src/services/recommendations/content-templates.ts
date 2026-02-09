@@ -1,9 +1,24 @@
+/**
+ * Content Templates for Template Generation Service
+ * 
+ * These templates define the structure and instructions for each content type.
+ * They are used by the template-generation.service.ts to create TemplatePlan skeletons.
+ * 
+ * Source: Migrated from frontend structure-templates.ts (Recom-Test branch)
+ */
 
-import { StructureSection } from '../components/ContentStructureEditor';
+export interface StructureSection {
+    id: string;
+    title: string;
+    content: string;
+    sectionType: string;
+}
 
 export type ContentTemplateType = 'article' | 'whitepaper' | 'short_video' | 'expert_community_response' | 'podcast' | 'comparison_table' | 'social_media_thread';
 
-// Helper to get templates with dynamic context
+/**
+ * Get content templates with dynamic brand/competitor context
+ */
 export const getContentTemplates = (context?: { brandName?: string; competitors?: string[] }): Record<ContentTemplateType, StructureSection[]> => {
     const brandName = context?.brandName || '[Brand Name]';
     const competitors = context?.competitors || [];
@@ -18,7 +33,6 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
 
     return {
         article: [
-
             {
                 id: "exec_abstract",
                 title: "Executive Abstract (The Snippet)",
@@ -146,7 +160,7 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
             {
                 id: "brand_tie_in",
                 title: "Post 6 (The Brand Tie-in)",
-                content: `Word Count: 30 words. Tonality: Consultative. Format: CTA. "We just solved this at ${brandName}. Here’s the data: [Link]."`,
+                content: `Word Count: 30 words. Tonality: Consultative. Format: CTA. "We just solved this at ${brandName}. Here's the data: [Link]."`,
                 sectionType: "cta"
             }
         ],
@@ -185,54 +199,62 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
     };
 };
 
-// Deprecated: Use getContentTemplates() instead
-export const CONTENT_TEMPLATES = getContentTemplates();
-
-export const getTemplateForAction = (action: string, assetType?: string): ContentTemplateType => {
-    // 1. Trust assetType if explicitly provided and matches a known template
-    if (assetType) {
-        if (assetType === 'expert_community_response') return 'expert_community_response';
-        if (assetType === 'whitepaper') return 'whitepaper';
-        if (assetType === 'comparison_table') return 'comparison_table';
-        if (assetType === 'social_media_thread') return 'social_media_thread';
-        if (assetType.includes('video')) return 'short_video';
-        if (assetType === 'podcast') return 'podcast';
-    }
-
+/**
+ * Helper to detect content type from action and assetType
+ * Priority: Action text > Specific assetType > Fallback to article
+ */
+export const detectContentType = (action: string, assetType?: string): ContentTemplateType => {
     const act = action.toLowerCase();
 
-    // 0. Explicit Overrides
+    // 1. Check action text FIRST (highest priority) - matches Recom-Test logic
+
+    // Explicit Override: Expert Article
     if (act.includes('expert article')) return 'article';
 
-    // 1. Check for Social Media Thread (Priority: High for LinkedIn/X)
+    // Social Media Thread (High Priority for LinkedIn/X)
     if (act.includes('social media') || act.includes('thread') || act.includes('linkedin') || act.includes('twitter') || act.includes('x.com')) {
         return 'social_media_thread';
     }
 
-    // 2. Check for Expert Response (Specific)
+    // Expert Community Response
     if (act.includes('expert community response') || act.includes('forum') || act.includes('reddit') || act.includes('quora')) {
         return 'expert_community_response';
     }
 
-    // 3. Check for Podcast (Specific)
+    // Podcast
     if (act.includes('podcast') || act.includes('audio')) {
         return 'podcast';
     }
 
-    // 4. Check for Video (Specific)
+    // Video
     if (act.includes('video') || act.includes('short') || act.includes('tiktok') || act.includes('reel')) {
         return 'short_video';
     }
 
-    // 5. Check for Comparison Table (Check BEFORE Whitepaper because "Guide" is common in comparison titles)
+    // Comparison Table (Check BEFORE Whitepaper because "Guide" is common in comparison titles)
     if (act.includes('comparison table') || act.includes('comparison')) {
         return 'comparison_table';
     }
 
-    // 6. Check for Whitepaper (Can be a referenced object, so check last among specifics)
+    // Whitepaper (Can be a referenced object, so check last among specifics)
     if (act.includes('whitepaper') || act.includes('white paper') || act.includes('report') || act.includes('guide')) {
         return 'whitepaper';
     }
 
+    // 2. Only use assetType if action text didn't match anything specific AND assetType is NOT generic
+    // Ignore generic values like "article" to prevent misclassification
+    if (assetType) {
+        const type = assetType.toLowerCase();
+        // Only trust specific assetType values, not generic ones
+        if (type === 'expert_community_response') return 'expert_community_response';
+        if (type === 'whitepaper' || type === 'guide') return 'whitepaper';
+        if (type === 'comparison_table' || type === 'comparison') return 'comparison_table';
+        if (type === 'social_media_thread') return 'social_media_thread';
+        if (type.includes('video')) return 'short_video';
+        if (type === 'podcast') return 'podcast';
+        // DO NOT trust "article" assetType - it's often a default/fallback value
+    }
+
+    // 3. Default fallback
     return 'article';
 };

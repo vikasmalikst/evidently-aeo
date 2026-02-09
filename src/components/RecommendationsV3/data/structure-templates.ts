@@ -224,14 +224,14 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
         return 'short_video';
     }
 
-    // 5. Check for Whitepaper (Can be a referenced object, so check last among specifics)
-    if (act.includes('whitepaper') || act.includes('white paper') || act.includes('report') || act.includes('guide')) {
-        return 'whitepaper';
-    }
-
-    // 6. Check for Comparison Table
+    // 5. Check for Comparison Table (Check BEFORE Whitepaper because "Guide" is common in comparison titles)
     if (act.includes('comparison table') || act.includes('comparison')) {
         return 'comparison_table';
+    }
+
+    // 6. Check for Whitepaper (Can be a referenced object, so check last among specifics)
+    if (act.includes('whitepaper') || act.includes('white paper') || act.includes('report') || act.includes('guide')) {
+        return 'whitepaper';
     }
 
     return 'article';

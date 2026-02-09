@@ -3239,16 +3239,26 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       );
                                     } else {
                                       // Fallback: display raw content or JSON
-                                      const fallbackText = parsedContent?.raw || rawContent || JSON.stringify(parsedContent, null, 2);
+                                      // Special handling for v5.0 content that fell through (extract .content field)
+                                      let fallbackText = '';
+                                      if (parsedContent && parsedContent.version === '5.0' && parsedContent.content) {
+                                        fallbackText = parsedContent.content;
+                                      } else {
+                                        fallbackText = parsedContent?.raw || rawContent || JSON.stringify(parsedContent, null, 2);
+                                      }
                                       return (
                                         <div className="bg-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6">
                                           <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
                                             <div className="w-1.5 h-1.5 rounded-full bg-[#64748b]"></div>
                                             <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Generated Content</h4>
                                           </div>
-                                          <pre className="text-[13px] text-[#1a1d29] whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto max-h-96 overflow-y-auto">
-                                            {fallbackText}
-                                          </pre>
+                                          {parsedContent && parsedContent.version === '5.0' && parsedContent.content ? (
+                                            <UnifiedContentRenderer content={fallbackText} />
+                                          ) : (
+                                            <pre className="text-[13px] text-[#1a1d29] whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto max-h-96 overflow-y-auto">
+                                              {fallbackText}
+                                            </pre>
+                                          )}
                                         </div>
                                       );
                                     }

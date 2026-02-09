@@ -80,10 +80,10 @@ export class OpenRouterCollectorService {
         topP: 0.9
       },
       content: {
-        model: 'openai/gpt-oss-20b',
+        model: 'meta-llama/llama-3.3-70b-instruct',
         systemPrompt: 'You are a senior content strategist. Write clear, brand-safe marketing content that is factual, structured, and ready to ship. Do not use web search unless explicitly requested.',
         enableWebSearch: false,
-        maxTokens: 4000, // Increased for reasoning models - they need tokens for both reasoning and output
+        maxTokens: 7000, // Increased for reasoning models - they need tokens for both reasoning and output
         temperature: 0.6,
         topP: 0.9
       }

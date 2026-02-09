@@ -37,17 +37,19 @@ Format: 3 Bullets highlighting "Unique Selling Propositions" (USPs). Explicitly 
     }
 
     // Dynamic header for instructions
-    const competitorList = competitors.length > 0 ? competitors.join(', ') : "[Competitor A], [Competitor B]";
+    const competitorList = competitors.length > 0
+        ? competitors.join(', ')
+        : "Identify the main competitor(s) directly from the Content Title provided above";
 
     return `${systemContext}
 ${recContext}
 
 AEO UNIFIED COMPARISON REQUIREMENTS:
 - ONE UNIFIED DOCUMENT: Output a single, cohesive Markdown document.
-- TEMPLATE STRICTNESS: Follow the structure exactly.
+- TEMPLATE ADAPTABILITY: Follow the row structure, but YOU MUST ADD COLUMNS if the Content Title mentions competitors that are missing from the template.
 - FAIRNESS: Compare 5-7 realistic features/criteria in DEPTH.
 - TABLE SYNTAX: The comparison table must be valid MARKDOWN TABLE syntax.
-- COMPETITORS: Compare ${brandName} against: ${competitorList}.
+- COMPETITORS: Compare ${brandName} against the competitors defined in the TEMPLATE structure below. If the template uses placeholders, compare against: ${competitorList}.
 
 === THE TEMPLATE ===
 ${template}

@@ -99,6 +99,7 @@ RULES
 - focusArea must be: "visibility", "soa", or "sentiment"
 - priority must be: "High", "Medium", or "Low"
 - effort must be: "Low", "Medium", or "High"
+- contentType must be one of: "article", "video", "guide", "comparison", "expert_community_response"
 - **PUBLISHING RULE**: Publishing content on a competitor's website is NOT an option. Do not suggest guest posting, commenting, or any form of content placement on domains that belong to competitors.
 - **COMPETITOR EXCLUSION**: Competitor sources have already been filtered out from the available citation sources list.
 - **STRATEGIC COMPARISONS**: You CAN mention competitors in the action, reason, or explanation IF it is for differentiation or comparison (e.g., "Create a comparison guide: Us vs. [Competitor]").
@@ -135,7 +136,8 @@ Generate 8-12 recommendations. Each recommendation should:
 4. Have priority (High/Medium/Low) and effort (Low/Medium/High)
 6. Include reason (why this matters), explanation (4-5 sentences), expectedBoost, timeline, confidence
 7. Include focusSources, contentFocus, kpi ("Visibility Index" | "SOA %" | "Sentiment Score")
-8. **CONTENT ASSET STRATEGY (FSA Framework)**: When recommending content, choose the most effective Asset Type:
+8. Include contentType ("article" | "video" | "guide" | "comparison" | "expert_community_response")
+9. **CONTENT ASSET STRATEGY (FSA Framework)**: When recommending content, choose the most effective Asset Type:
   
    - **Comparison Table** -> For 'vs' or 'best' queries (e.g., "X vs Y", "best X for Y"). Generate structured markdown tables.
    - **Whitepaper / Report** -> For complex B2B topics requiring authority. Generates metadata (summary, chapters).
@@ -160,6 +162,7 @@ Return ONLY a JSON array. Here are two examples showing different recommendation
     "expectedBoost": "+5-10%",
     "focusSources": "reddit.com",
     "contentFocus": "Technical FAQs and troubleshooting guides",
+    "contentType": "expert_community_response",
     "timeline": "2-4 weeks",
     "confidence": 75
   },
@@ -175,6 +178,7 @@ Return ONLY a JSON array. Here are two examples showing different recommendation
     "expectedBoost": "+8-15%",
     "focusSources": "insidersports.com.au",
     "contentFocus": "Pricing comparison, value positioning, affordable ticket options",
+    "contentType": "comparison",
     "timeline": "2-4 weeks",
     "confidence": 80
   }

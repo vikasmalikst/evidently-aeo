@@ -214,12 +214,14 @@ export const CONTENT_TEMPLATES = getContentTemplates();
 export const getTemplateForAction = (action: string, assetType?: string): ContentTemplateType => {
     // 1. Trust assetType if explicitly provided and matches a known template
     if (assetType) {
-        if (assetType === 'expert_community_response') return 'expert_community_response';
-        if (assetType === 'whitepaper') return 'whitepaper';
-        if (assetType === 'comparison_table') return 'comparison_table';
-        if (assetType === 'social_media_thread') return 'social_media_thread';
-        if (assetType.includes('video')) return 'short_video';
-        if (assetType === 'podcast') return 'podcast';
+        const type = assetType.toLowerCase();
+        if (type === 'expert_community_response') return 'expert_community_response';
+        if (type === 'whitepaper' || type === 'guide') return 'whitepaper';
+        if (type === 'comparison_table' || type === 'comparison') return 'comparison_table';
+        if (type === 'social_media_thread') return 'social_media_thread';
+        if (type.includes('video')) return 'short_video';
+        if (type === 'podcast') return 'podcast';
+        if (type === 'article') return 'article';
     }
 
     const act = action.toLowerCase();

@@ -248,7 +248,8 @@ export class OpportunityRecommendationService {
                 display_order: index,
                 is_approved: false,
                 competitors_target: targetCompetitors,
-                query_id: opp?.queryId // Link back to the original query
+                query_id: opp?.queryId, // Link back to the original query
+                asset_type: this.normalizeContentType(l.ContentType)
             };
         });
 
@@ -262,6 +263,15 @@ export class OpportunityRecommendationService {
         }
 
         return inserted as unknown as RecommendationV3[];
+    }
+
+    private normalizeContentType(rawType: string): string {
+        const t = (rawType || '').toLowerCase();
+        if (t.includes('video')) return 'video';
+        if (t.includes('comparison')) return 'comparison';
+        if (t.includes('expert community') || t.includes('reddit') || t.includes('forum')) return 'expert_community_response';
+        if (t.includes('white paper') || t.includes('guide') || t.includes('tutorial')) return 'guide';
+        return 'article';
     }
 }
 

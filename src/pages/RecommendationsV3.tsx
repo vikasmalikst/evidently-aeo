@@ -40,6 +40,7 @@ import { OpportunityStrategyCard } from '../components/RecommendationsV3/compone
 import { StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
 import { ContentStructureInlineEditor } from '../components/RecommendationsV3/components/ContentStructureInlineEditor';
 import { PlanReviewModal } from '../components/RecommendationsV3/components/PlanReviewModal';
+import { PlanReviewInline } from '../components/RecommendationsV3/components/PlanReviewInline';
 
 import { getTemplateForAction } from '../components/RecommendationsV3/data/structure-templates';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
@@ -168,6 +169,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<any>(null); // TemplatePlan
   const [isProcessingPlan, setIsProcessingPlan] = useState(false); // Generating plan or content
+
+  // Per-recommendation plan map (recId -> TemplatePlan) for inline plan review in Step 2
+  const [planMap, setPlanMap] = useState<Map<string, any>>(new Map());
 
 
 
@@ -789,22 +793,24 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const handleGenerateStrategy = async (rec: RecommendationV3, force = false) => {
     if (!rec.id) return;
 
-    setIsLoading(true);
-    setIsProcessingPlan(true);
+    // Mark this specific recommendation as generating
+    setGeneratingContentIds(prev => new Set(prev).add(rec.id!));
 
     try {
-      // Import dynamically 
       const { generateTemplatePlan } = await import('../api/recommendationsV3Api');
 
       console.log(`🧠 [RecommendationsV3] Generating Plan for ${rec.id} (Force: ${force})`);
-      const response = await generateTemplatePlan(rec.id, {
-        force
-        // Optional: pass overrides if we had UI for them
-      });
+      const response = await generateTemplatePlan(rec.id, { force });
 
       if (response.success && response.data) {
-        setCurrentPlan(response.data);
-        setIsPlanModalOpen(true);
+        // Store plan in per-recommendation map
+        setPlanMap(prev => {
+          const next = new Map(prev);
+          next.set(rec.id!, response.data);
+          return next;
+        });
+        // Auto-expand the row to show the inline plan
+        setTargetExpandedId(rec.id!);
       } else {
         setError(response.error || 'Failed to generate plan');
       }
@@ -812,42 +818,73 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       console.error('Plan generation error:', err);
       setError(err.message || 'Failed to generate plan');
     } finally {
-      setIsLoading(false);
-      setIsProcessingPlan(false);
+      setGeneratingContentIds(prev => {
+        const next = new Set(prev);
+        next.delete(rec.id!);
+        return next;
+      });
     }
   };
 
   /**
    * Handle "Approve & Write" Action (Step 2 -> Step 3)
-   * Called from Modal
+   * Called from inline PlanReviewInline component (or legacy modal).
+   * Accepts a recId and reads plan from planMap.
    */
-  const handleApprovePlan = async () => {
-    if (!currentPlan) return;
+  const handleApprovePlan = async (recId?: string) => {
+    // Support both new (recId) and legacy (currentPlan) flows
+    const resolvedRecId = recId || currentPlan?.recommendationId;
+    const resolvedPlan = recId ? planMap.get(recId) : currentPlan;
+    if (!resolvedRecId || !resolvedPlan) return;
 
-    setIsProcessingPlan(true); // Modal loading state
+    // Mark this recommendation as generating
+    setGeneratingContentIds(prev => new Set(prev).add(resolvedRecId));
 
     try {
       const { generateContentFromPlan } = await import('../api/recommendationsV3Api');
-      console.log(`✍️ [RecommendationsV3] Generating Content from Plan for ${currentPlan.recommendationId}`);
+      console.log(`✍️ [RecommendationsV3] Generating Content from Plan for ${resolvedRecId}`);
 
-      const response = await generateContentFromPlan(currentPlan.recommendationId, currentPlan);
+      const response = await generateContentFromPlan(resolvedRecId, resolvedPlan);
 
       if (response.success) {
         console.log(`✅ [RecommendationsV3] Content generated successfully!`);
+        // Close legacy modal if it was open
         setIsPlanModalOpen(false);
         setCurrentPlan(null);
 
-        // Optimistic update
+        // Store the generated content in contentMap so Step 3 can display it
+        if (response.data) {
+          const newContentMap = new Map(contentMap);
+          try {
+            let contentData = response.data;
+            if (typeof contentData.content === 'string') {
+              try {
+                contentData = { ...contentData, content: JSON.parse(contentData.content) };
+              } catch { /* keep as string */ }
+            }
+            const innerContent = contentData.content || contentData;
+            newContentMap.set(resolvedRecId, innerContent);
+            setContentMap(newContentMap);
+            console.log(`📊 [RecommendationsV3] Stored generated content in contentMap for ${resolvedRecId}`);
+          } catch (err) {
+            console.error('Error storing generated content:', err);
+          }
+        }
+
+        // Optimistic update - mark as content generated
         setRecommendations(prev => prev.map(r =>
-          r.id === currentPlan.recommendationId
-            ? { ...r, isContentGenerated: true }
-            : r
+          r.id === resolvedRecId ? { ...r, isContentGenerated: true } : r
         ));
 
-        setTimeout(() => {
-          // Trigger reload of current step by re-fetching latest generation logic or just let the user navigate
-        }, 500);
+        // Flag that content was generated so Step 3 tab gets attention animation
+        setHasGeneratedContentForStep3(true);
 
+        // Navigate to Step 3 (Refine) and expand the newly generated content
+        setTimeout(() => {
+          setTargetExpandedId(resolvedRecId);
+          setCurrentStep(3);
+          persistStep(3, selectedBrandId);
+        }, 600);
       } else {
         alert(`Error: ${response.error}`);
       }
@@ -855,7 +892,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       console.error('Content generation error:', err);
       alert('Failed to generate content');
     } finally {
-      setIsProcessingPlan(false);
+      setGeneratingContentIds(prev => {
+        const next = new Set(prev);
+        next.delete(resolvedRecId);
+        return next;
+      });
     }
   };
 
@@ -1194,44 +1235,34 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   // Render inline structure editor for Step 2
   const renderStep2ExpandedContent = (recommendation: RecommendationV3) => {
-    console.log(`[RecommendationsV3Step2] Rendering Editor for ${recommendation.id}`, {
-      competitorsOriginal: recommendation.competitors_target,
-      competitorsMapped: recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || [],
-      brandName
-    });
+    const recId = recommendation.id!;
+    const existingPlan = planMap.get(recId);
+
+    // No plan generated yet — show an empty-state hint
+    if (!existingPlan) {
+      return (
+        <div className="px-8 py-10 text-center">
+          <p className="text-sm text-slate-400">
+            Click <span className="font-semibold text-indigo-500">Generate Strategy</span> to create a content plan for this recommendation.
+          </p>
+        </div>
+      );
+    }
+
+    // Plan exists — render inline review
     return (
-      <ContentStructureInlineEditor
-        recommendationId={recommendation.id!}
-        contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
-        initialSections={customizedStructures.get(recommendation.id!)}
-        competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || []}
-        brandName={brandName}
-        onChange={(sections) => {
-          setCustomizedStructures(prev => {
+      <PlanReviewInline
+        plan={existingPlan}
+        onApprove={() => handleApprovePlan(recId)}
+        onRegenerate={() => handleGenerateStrategy(recommendation, true)}
+        isProcessing={generatingContentIds.has(recId)}
+        onPlanUpdated={(updatedPlan) => {
+          setPlanMap(prev => {
             const next = new Map(prev);
-            next.set(recommendation.id!, sections);
+            next.set(recId, updatedPlan);
             return next;
           });
         }}
-        onSave={async (sections) => {
-          setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
-          try {
-            // Only save to DB, do not generate
-            const res = await saveContentDraftV3(recommendation.id!, sections);
-            if (!res.success) {
-              throw new Error(res.error || 'Failed to save content structure');
-            }
-            // Invalidate cache to ensure fresh content is fetched on reload
-            invalidateCache(new RegExp(`recommendations-v3/${recommendation.id!}/content`));
-          } finally {
-            setGeneratingContentIds(prev => {
-              const next = new Set(prev);
-              next.delete(recommendation.id!);
-              return next;
-            });
-          }
-        }}
-        isSaving={generatingContentIds.has(recommendation.id!)}
       />
     );
   };
@@ -1822,10 +1853,19 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                     <RecommendationsTableV3
                       recommendations={recommendations}
                       showActions={true}
-                      onAction={isColdStart ? handleGenerateGuide : (rec) => handleGenerateStrategy(rec)}
-                      actionLabel={isColdStart ? 'Generate Guide' : (rec) => 'Generate Strategy'}
+                      onAction={isColdStart ? handleGenerateGuide : (rec) => {
+                        // If plan already exists, just expand the row; otherwise generate
+                        if (rec.id && planMap.has(rec.id)) {
+                          setTargetExpandedId(rec.id);
+                        } else {
+                          handleGenerateStrategy(rec);
+                        }
+                      }}
+                      actionLabel={isColdStart ? 'Generate Guide' : (rec) =>
+                        rec.id && planMap.has(rec.id) ? 'View Plan' : 'Generate Strategy'
+                      }
                       actionType={isColdStart ? 'generate-guide' : 'generate-strategy'}
-                      generatedLabel={isColdStart ? 'Guide Ready' : 'Generated'}
+                      generatedLabel={isColdStart ? 'Guide Ready' : 'Plan Ready'}
                       generatingContentIds={generatingContentIds}
                       onStopTracking={(id) => {
                         if (confirm('Stop tracking this recommendation? It will be removed from your view.')) {
@@ -2532,187 +2572,215 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       const hasFeedback = Array.from(recFeedback.values()).some(f => f.trim().length > 0) || refs.trim().length > 0;
 
                                       return (
-                                        <div className="space-y-4">
-                                          {/* Header with overall title - Premium Library Card Design */}
-                                          <div className="bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between relative overflow-hidden">
-                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-slate-400 to-slate-300" />
-                                            <div className="relative flex items-center gap-4 pl-2">
+                                        <div className="space-y-0">
+                                          {/* ═══ Unified Document Canvas ═══ */}
+                                          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 
+                                            {/* Document Header Bar */}
+                                            <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-slate-200 px-8 py-4 flex items-center justify-between">
                                               <div>
-                                                <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
-                                                <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections </p>
+                                                <h3 className="text-[20px] font-bold text-slate-900 leading-tight">{contentTitle}</h3>
+                                                <p className="text-[12px] text-slate-400 mt-1">{sections.length} sections · {brandName || 'Brand'}</p>
+                                              </div>
+                                              <div className="flex items-center gap-3">
+                                                <button
+                                                  onClick={() => {
+                                                    // Collect all section content for clipboard
+                                                    const fullText = sections.map((s: any) => `## ${s.title}\n\n${s.content}`).join('\n\n---\n\n');
+                                                    navigator.clipboard.writeText(`# ${contentTitle}\n\n${fullText}${callToAction ? `\n\n---\n\n${callToAction}` : ''}`);
+                                                  }}
+                                                  className="px-3 py-1.5 text-[12px] font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <IconDownload size={14} />
+                                                  Copy All
+                                                </button>
+                                                <button
+                                                  onClick={handleRefine}
+                                                  disabled={isRefining || !hasFeedback}
+                                                  className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-all shadow-sm hover:shadow-md active:scale-[0.98] flex items-center gap-2 ${isRefining || !hasFeedback
+                                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                                                    : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3]'
+                                                    }`}
+                                                >
+                                                  {isRefining ? (
+                                                    <>
+                                                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                      Refining...
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <IconSparkles size={14} />
+                                                      Refine with Feedback
+                                                    </>
+                                                  )}
+                                                </button>
                                               </div>
                                             </div>
 
-                                            {/* Refine with Feedback Button - Moved to Header */}
-                                            <button
-                                              onClick={handleRefine}
-                                              disabled={isRefining || !hasFeedback}
-                                              className={`px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2 ${isRefining || !hasFeedback
-                                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                                : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3] border border-transparent'
-                                                }`}
-                                            >
-                                              {isRefining ? (
-                                                <>
-                                                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                  Refining...
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <IconSparkles size={16} />
-                                                  Refine with Feedback
-                                                </>
-                                              )}
-                                            </button>
-                                          </div>
+                                            {/* Document Body - Continuous Canvas */}
+                                            <div className="px-8 md:px-12 lg:px-16 py-8 max-w-none prose-slate">
+                                              {sections.map((section: any, idx: number) => {
+                                                const editedContent = recEdits.get(section.id) || section.content;
+                                                const feedback = recFeedback.get(section.id) || '';
+                                                const isEditingSection = editingId === `${recId}_${section.id}`;
 
-                                          {/* Section Cards */}
-                                          {sections.map((section: any, idx: number) => {
-                                            const editedContent = recEdits.get(section.id) || section.content;
-                                            const feedback = recFeedback.get(section.id) || '';
-                                            const isEditingSection = editingId === `${recId}_${section.id}`;
-
-                                            return (
-                                              <div key={section.id} className="bg-white border border-[#e2e8f0] rounded-lg shadow-sm overflow-hidden">
-                                                {/* Section Header - Clean Muted Style */}
-                                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50 border-b border-slate-100">
-                                                  <div className="flex items-center gap-3">
-                                                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                                                      {String(idx + 1).padStart(2, '0')}
-                                                    </span>
-                                                    {isEditingSection ? (
-                                                      <input
-                                                        type="text"
-                                                        value={recTitleEdits.get(section.id) ?? section.title}
-                                                        onChange={(e) => updateSectionTitleEdit(section.id, e.target.value)}
-                                                        className="text-[14px] font-medium text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent min-w-[200px]"
-                                                        placeholder="Section title"
-                                                      />
-                                                    ) : (
-                                                      <h4 className="text-[15px] font-bold text-slate-900 tracking-tight">{recTitleEdits.get(section.id) ?? section.title}</h4>
+                                                return (
+                                                  <div key={section.id} className="group relative" id={`section-${section.id}`}>
+                                                    {/* Section Divider (between sections, not before first) */}
+                                                    {idx > 0 && (
+                                                      <div className="my-8 border-t border-slate-100" />
                                                     )}
-                                                  </div>
-                                                  <div className="flex items-center gap-2">
-                                                    <button
-                                                      onClick={() => {
-                                                        const sectionKey = `${recId}_${section.id}`;
-                                                        setActiveFeedbackSection(activeFeedbackSection === sectionKey ? null : sectionKey);
-                                                      }}
-                                                      className={`p-1.5 rounded-md transition-colors relative ${feedback.trim().length > 0 ? 'text-slate-600 bg-slate-100' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
-                                                      title="Feedback"
-                                                    >
-                                                      <IconMessageCircle size={16} />
-                                                      {feedback.trim().length > 0 && (
-                                                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#f59e0b] rounded-full border border-white"></span>
-                                                      )}
-                                                    </button>
-                                                    <button
-                                                      onClick={() => {
-                                                        if (isEditingSection) {
-                                                          handleSaveSection(section.id);
-                                                        } else {
-                                                          setEditingId(`${recId}_${section.id}`);
-                                                        }
-                                                      }}
-                                                      disabled={isSavingSection(section.id)}
-                                                      className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${isSavingSection(section.id)
-                                                        ? 'text-slate-300 cursor-not-allowed'
-                                                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                                                        }`}
-                                                    >
-                                                      {isSavingSection(section.id) ? '⏳ Saving...' : isEditingSection ? '✓ Done' : '✎ Edit'}
-                                                    </button>
-                                                  </div>
-                                                </div>
 
-                                                {/* Feedback Popover */}
-                                                {activeFeedbackSection === `${recId}_${section.id}` && (
-                                                  <div className="absolute top-12 right-4 z-50 w-[320px] bg-white border border-[#fcd34d] rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                                                    <div className="bg-[#fffbeb] px-4 py-2 border-b border-[#fcd34d] flex items-center justify-between">
-                                                      <span className="text-[12px] font-bold text-[#92400e]">Feedback for {section.title}</span>
-                                                      <button
-                                                        onClick={() => setActiveFeedbackSection(null)}
-                                                        className="text-[#92400e] hover:bg-[#fef3c7] p-1 rounded-md"
-                                                      >
-                                                        <IconX size={14} />
-                                                      </button>
-                                                    </div>
-                                                    <div className="p-4">
-                                                      <textarea
-                                                        className="w-full p-3 bg-white border border-[#fcd34d] rounded-lg text-[13px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#f59e0b] min-h-[100px]"
-                                                        placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
-                                                        autoFocus
-                                                        value={feedback}
-                                                        onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
-                                                      />
-                                                      <div className="mt-3 flex justify-end">
+                                                    {/* Section Header Row */}
+                                                    <div className="flex items-start justify-between gap-4 mb-4">
+                                                      <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                                                        <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex-shrink-0 pt-1">
+                                                          {String(idx + 1).padStart(2, '0')}
+                                                        </span>
+                                                        {isEditingSection ? (
+                                                          <input
+                                                            type="text"
+                                                            value={recTitleEdits.get(section.id) ?? section.title}
+                                                            onChange={(e) => updateSectionTitleEdit(section.id, e.target.value)}
+                                                            className="text-[18px] font-bold text-slate-900 bg-white border-b-2 border-[#00bcdc] focus:outline-none w-full pb-1"
+                                                            placeholder="Section title"
+                                                          />
+                                                        ) : (
+                                                          <h2 className="text-[18px] font-bold text-slate-900 leading-snug">{recTitleEdits.get(section.id) ?? section.title}</h2>
+                                                        )}
+                                                      </div>
+
+                                                      {/* Section Actions - Visible on hover */}
+                                                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0">
                                                         <button
-                                                          onClick={() => setActiveFeedbackSection(null)}
-                                                          className="px-4 py-1.5 bg-[#fcd34d] text-[#92400e] text-[12px] font-bold rounded-lg hover:bg-[#fbbf24] transition-colors"
+                                                          onClick={() => {
+                                                            const sectionKey = `${recId}_${section.id}`;
+                                                            setActiveFeedbackSection(activeFeedbackSection === sectionKey ? null : sectionKey);
+                                                          }}
+                                                          className={`p-1.5 rounded-md transition-colors relative ${feedback.trim().length > 0
+                                                            ? 'text-amber-600 bg-amber-50 opacity-100'
+                                                            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                                            }`}
+                                                          title="Add feedback for this section"
                                                         >
-                                                          Done
+                                                          <IconMessageCircle size={15} />
+                                                          {feedback.trim().length > 0 && (
+                                                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full" />
+                                                          )}
+                                                        </button>
+                                                        <button
+                                                          onClick={() => {
+                                                            if (isEditingSection) {
+                                                              handleSaveSection(section.id);
+                                                            } else {
+                                                              setEditingId(`${recId}_${section.id}`);
+                                                            }
+                                                          }}
+                                                          disabled={isSavingSection(section.id)}
+                                                          className={`px-2 py-1 text-[11px] font-medium rounded-md transition-colors ${isSavingSection(section.id)
+                                                            ? 'text-slate-300 cursor-not-allowed'
+                                                            : isEditingSection
+                                                              ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 opacity-100'
+                                                              : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                                            }`}
+                                                        >
+                                                          {isSavingSection(section.id) ? 'Saving...' : isEditingSection ? '✓ Done' : '✎ Edit'}
                                                         </button>
                                                       </div>
+                                                      {/* Always-visible feedback indicator when feedback exists */}
+                                                      {feedback.trim().length > 0 && (
+                                                        <span className="flex-shrink-0 text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium group-hover:hidden">
+                                                          Has feedback
+                                                        </span>
+                                                      )}
+                                                    </div>
+
+                                                    {/* Inline Feedback Panel (slides in below header) */}
+                                                    <AnimatePresence>
+                                                      {activeFeedbackSection === `${recId}_${section.id}` && (
+                                                        <motion.div
+                                                          initial={{ opacity: 0, height: 0 }}
+                                                          animate={{ opacity: 1, height: 'auto' }}
+                                                          exit={{ opacity: 0, height: 0 }}
+                                                          transition={{ duration: 0.2 }}
+                                                          className="mb-4 overflow-hidden"
+                                                        >
+                                                          <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-4">
+                                                            <div className="flex items-center justify-between mb-2">
+                                                              <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Feedback for this section</span>
+                                                              <button
+                                                                onClick={() => setActiveFeedbackSection(null)}
+                                                                className="text-amber-600 hover:bg-amber-100 p-1 rounded"
+                                                              >
+                                                                <IconX size={14} />
+                                                              </button>
+                                                            </div>
+                                                            <textarea
+                                                              className="w-full p-3 bg-white border border-amber-200 rounded-lg text-[13px] text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-transparent"
+                                                              placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
+                                                              autoFocus
+                                                              rows={3}
+                                                              value={feedback}
+                                                              onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
+                                                            />
+                                                            <div className="mt-2 flex justify-end">
+                                                              <button
+                                                                onClick={() => setActiveFeedbackSection(null)}
+                                                                className="px-3 py-1.5 bg-amber-200 text-amber-800 text-[11px] font-bold rounded-lg hover:bg-amber-300 transition-colors"
+                                                              >
+                                                                Done
+                                                              </button>
+                                                            </div>
+                                                          </div>
+                                                        </motion.div>
+                                                      )}
+                                                    </AnimatePresence>
+
+                                                    {/* Section Content - Flowing Document Style */}
+                                                    <div className="pl-8">
+                                                      <ContentSectionRenderer
+                                                        section={{
+                                                          id: section.id,
+                                                          title: section.title,
+                                                          content: section.content,
+                                                          sectionType: section.sectionType,
+                                                        }}
+                                                        isEditing={isEditingSection}
+                                                        editedContent={editedContent}
+                                                        onContentChange={(content) => updateSectionEdit(section.id, content)}
+                                                        highlightFillIns={highlightFillIns}
+                                                      />
                                                     </div>
                                                   </div>
-                                                )}
+                                                );
+                                              })}
 
-                                                {/* Section Content */}
-                                                <div className="p-4">
-                                                  <ContentSectionRenderer
-                                                    section={{
-                                                      id: section.id,
-                                                      title: section.title,
-                                                      content: section.content,
-                                                      sectionType: section.sectionType,
-                                                    }}
-                                                    isEditing={isEditingSection}
-                                                    editedContent={editedContent}
-                                                    onContentChange={(content) => updateSectionEdit(section.id, content)}
-                                                    highlightFillIns={highlightFillIns}
-                                                  />
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-
-                                          {/* Call to Action */}
-                                          {callToAction && (
-                                            <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg p-4">
-                                              <p className="text-[12px] font-semibold text-[#166534] mb-1">📢 Call to Action</p>
-                                              <p className="text-[13px] text-[#166534]">{callToAction}</p>
+                                              {/* Call to Action - Inline at bottom of document */}
+                                              {callToAction && (
+                                                <>
+                                                  <div className="my-8 border-t border-slate-200" />
+                                                  <div className="bg-emerald-50/50 border border-emerald-200 rounded-lg px-6 py-4">
+                                                    <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-2">Call to Action</p>
+                                                    <p className="text-[14px] text-emerald-800 leading-relaxed">{callToAction}</p>
+                                                  </div>
+                                                </>
+                                              )}
                                             </div>
-                                          )}
 
-                                          {/* Required Inputs
-                                        {requiredInputs.length > 0 && (
-                                          <div className="bg-[#fef3c7] border border-[#fcd34d] rounded-lg p-4">
-                                            <p className="text-[12px] font-semibold text-[#92400e] mb-2">⚠️ Fill in before publishing:</p>
-                                            <ul className="list-disc pl-5 space-y-1">
-                                              {requiredInputs.map((input: string, idx: number) => (
-                                                <li key={idx} className="text-[12px] text-[#92400e]">{input}</li>
-                                              ))}
-                                            </ul>
+                                            {/* Document Footer - References */}
+                                            <div className="border-t border-slate-100 px-8 md:px-12 lg:px-16 py-5 bg-slate-50/50">
+                                              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                                                Additional References (optional)
+                                              </label>
+                                              <textarea
+                                                className="w-full p-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#00bcdc] focus:border-transparent"
+                                                placeholder="Add any additional context, URLs, or reference material for refinement..."
+                                                rows={2}
+                                                value={refs}
+                                                onChange={(e) => updateReferences(e.target.value)}
+                                              />
+                                            </div>
                                           </div>
-                                        )} */}
-
-                                          {/* Global References */}
-                                          <div className="bg-[#f1f5f9] border border-[#cbd5e1] rounded-lg p-4">
-                                            <label className="text-[12px] font-semibold text-[#475569] block mb-2">
-                                              📎 Additional References (optional)
-                                            </label>
-                                            <textarea
-                                              className="w-full p-3 bg-white border border-[#cbd5e1] rounded-lg text-[12px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-1 focus:ring-[#00bcdc]"
-                                              placeholder="Add any additional context, URLs, or reference material..."
-                                              rows={2}
-                                              value={refs}
-                                              onChange={(e) => updateReferences(e.target.value)}
-                                            />
-                                          </div>
-
-
-
 
 
 
@@ -3608,22 +3676,25 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           </div>
         </div>
       )}
-      {/* Plan Review Modal */}
-      <PlanReviewModal
-        isOpen={isPlanModalOpen}
-        onClose={() => setIsPlanModalOpen(false)}
-        plan={currentPlan}
-        onApprove={handleApprovePlan}
-        onRegenerate={() => {
-          setIsPlanModalOpen(false);
-          if (currentPlan?.recommendationId) {
-            const rec = recommendations.find(r => r.id === currentPlan.recommendationId);
-            if (rec) handleGenerateStrategy(rec, true);
-          }
-        }}
-        isProcessing={isProcessingPlan}
-        onPlanUpdated={(updatedPlan) => setCurrentPlan(updatedPlan)}
-      />
+      {/* Plan Review Modal — replaced by inline PlanReviewInline in Step 2 rows.
+         Keeping component available for legacy/fallback use but no longer triggered. */}
+      {isPlanModalOpen && currentPlan && (
+        <PlanReviewModal
+          isOpen={isPlanModalOpen}
+          onClose={() => setIsPlanModalOpen(false)}
+          plan={currentPlan}
+          onApprove={() => handleApprovePlan()}
+          onRegenerate={() => {
+            setIsPlanModalOpen(false);
+            if (currentPlan?.recommendationId) {
+              const rec = recommendations.find(r => r.id === currentPlan.recommendationId);
+              if (rec) handleGenerateStrategy(rec, true);
+            }
+          }}
+          isProcessing={isProcessingPlan}
+          onPlanUpdated={(updatedPlan) => setCurrentPlan(updatedPlan)}
+        />
+      )}
     </Layout >
   );
 };

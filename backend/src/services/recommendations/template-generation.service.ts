@@ -8,7 +8,7 @@
 
 import { supabaseAdmin } from '../../config/database';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
-import { RecommendationV3, TemplatePlan, BrandContextV3 } from './recommendation.types';
+import { RecommendationV3, TemplatePlan, BrandContextV3, ContextFile } from './recommendation.types';
 const pdf = require('pdf-parse');
 
 interface ServiceResponse<T> {
@@ -84,7 +84,8 @@ class TemplateGenerationService {
                 .single();
 
             // 2. Select Base Skeleton (Hardcoded for MVP reliability, can be dynamic later)
-            const skeleton = this.getBaseSkeleton(channel, rec.action, brand?.name || 'Brand');
+            // Use snake_case from DB result
+            const skeleton = this.getBaseSkeleton(channel, rec.action, brand?.name || 'Brand', rec.asset_type);
 
             // 3. Build Prompt
             const prompt = this.buildPlannerPrompt(rec, brand, skeleton, channel, customInstructions);
@@ -164,16 +165,7 @@ class TemplateGenerationService {
             console.log(`📂 [TemplateService] Parsing file with mime: ${mimetype}`);
 
             if (mimetype === 'application/pdf') {
-                // Version 2.4.5+ uses a class-based API
-                const pdfModule = await import('pdf-parse');
-                const PDFParse = pdfModule.PDFParse;
-
-                if (!PDFParse) {
-                    throw new Error('PDFParse class not found in module exports');
-                }
-
-                const parser = new PDFParse({ data: buffer });
-                const result = await parser.getText();
+                const result = await pdf(buffer);
                 return result.text;
             } else if (mimetype === 'text/plain' || mimetype === 'text/markdown' || mimetype === 'application/json') {
                 return buffer.toString('utf-8');
@@ -188,7 +180,7 @@ class TemplateGenerationService {
     }
 
     /**
-     * Update the additional_context field of an existing plan
+     * Update the additional_context field (Quick Notes) of an existing plan
      */
     async updatePlanContext(
         recommendationId: string,
@@ -209,22 +201,117 @@ class TemplateGenerationService {
             }
 
             // Parse and update
-            let plan: TemplatePlan;
-            if (typeof existingPlan.content === 'string') {
-                plan = JSON.parse(existingPlan.content);
-            } else {
-                plan = existingPlan.content;
-            }
+            const plan: TemplatePlan = JSON.parse(existingPlan.content);
             plan.additional_context = contextText;
-            plan.recommendationId = recommendationId;
 
             // Save back to DB
             await this.savePlanToDb(recommendationId, customerId, plan);
 
-            console.log(`✅ [TemplateService] Updated context for ${recommendationId} (${contextText.length} chars)`);
+            console.log(`✅ [TemplateService] Updated quick notes for ${recommendationId} (${contextText.length} chars)`);
             return { success: true, data: plan };
         } catch (error: any) {
             console.error('❌ [TemplateService] Error updating plan context:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Add a parsed file to the plan's context_files array
+     */
+    async addContextFile(
+        recommendationId: string,
+        customerId: string,
+        file: { buffer: Buffer; originalName: string; mimeType: string; size: number }
+    ): Promise<ServiceResponse<TemplatePlan>> {
+        try {
+            // 1. Parse content
+            const extractedText = await this.parseContextFile(file.buffer, file.mimeType);
+
+            // 2. Create ContextFile object
+            const newFile: ContextFile = {
+                id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                name: file.originalName,
+                type: file.mimeType,
+                size: file.size,
+                content: extractedText,
+                uploadedAt: new Date().toISOString()
+            };
+
+            // 3. Fetch existing plan
+            const { data: existingPlan } = await supabaseAdmin
+                .from('recommendation_generated_contents')
+                .select('content')
+                .eq('recommendation_id', recommendationId)
+                .eq('content_type', 'template_plan')
+                .maybeSingle();
+
+            if (!existingPlan || !existingPlan.content) {
+                return { success: false, error: 'No existing plan found for this recommendation' };
+            }
+
+            const plan: TemplatePlan = JSON.parse(existingPlan.content);
+
+            // 4. Append to context_files
+            if (!plan.context_files) {
+                plan.context_files = [];
+            }
+            plan.context_files.push(newFile);
+
+            // 5. Save back to DB
+            await this.savePlanToDb(recommendationId, customerId, plan);
+
+            console.log(`✅ [TemplateService] Added context file ${newFile.name} to ${recommendationId}`);
+            return { success: true, data: plan };
+
+        } catch (error: any) {
+            console.error('❌ [TemplateService] Error adding context file:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Remove a context file from the plan
+     */
+    async removeContextFile(
+        recommendationId: string,
+        customerId: string,
+        fileId: string
+    ): Promise<ServiceResponse<TemplatePlan>> {
+        try {
+            // 1. Fetch existing plan
+            const { data: existingPlan } = await supabaseAdmin
+                .from('recommendation_generated_contents')
+                .select('content')
+                .eq('recommendation_id', recommendationId)
+                .eq('content_type', 'template_plan')
+                .maybeSingle();
+
+            if (!existingPlan || !existingPlan.content) {
+                return { success: false, error: 'No existing plan found for this recommendation' };
+            }
+
+            const plan: TemplatePlan = JSON.parse(existingPlan.content);
+
+            // 2. Remove file
+            if (plan.context_files) {
+                const initialLength = plan.context_files.length;
+                plan.context_files = plan.context_files.filter(f => f.id !== fileId);
+
+                if (plan.context_files.length === initialLength) {
+                    return { success: false, error: 'File not found in context' };
+                }
+            } else {
+                return { success: false, error: 'No context files to remove' };
+            }
+
+            // 3. Save back to DB
+            await this.savePlanToDb(recommendationId, customerId, plan);
+
+            console.log(`✅ [TemplateService] Removed context file ${fileId} from ${recommendationId}`);
+            return { success: true, data: plan };
+
+        } catch (error: any) {
+            console.error('❌ [TemplateService] Error removing context file:', error);
             return { success: false, error: error.message };
         }
     }
@@ -296,10 +383,12 @@ class TemplateGenerationService {
         return firstSentence.substring(0, 80); // Limit length
     }
 
-    private getBaseSkeleton(channel: string, action: string, brandName: string): any {
-        // Simple logic to pick a structure type
-        if (channel.includes('youtube')) {
-            const topic = this.extractTopicFromAction(action);
+    private getBaseSkeleton(channel: string, action: string, brandName: string, assetType?: string): any {
+        const topic = this.extractTopicFromAction(action);
+        const actionLower = action.toLowerCase();
+
+        // 1. YouTube / Video
+        if (assetType === 'video' || channel.includes('youtube')) {
             return {
                 version: '1.0',
                 recommendationId: '',
@@ -316,29 +405,118 @@ class TemplateGenerationService {
                     { id: 'intro', type: 'section', text_template: 'Video Intro: Hook & Promise', instructions: ['Start with a visual hook', 'State the problem clearly'] },
                     { id: 'step1', type: 'section', text_template: 'Step 1: The Setup', instructions: ['Explain the first step'] },
                     { id: 'cta', type: 'cta', text_template: 'Call to Action', instructions: ['Ask to subscribe'] }
-                ]
+                ],
+                embedded_placeholders: {
+                    fact_pack_slot: true,
+                    sources_slot: true,
+                    voice_rules_slot: true,
+                    banned_claims_slot: true
+                }
             };
         }
-        // Default Article Skeleton
-        const topic = this.extractTopicFromAction(action);
 
-        // Determine content type from action
-        let contentType = 'article';
-        if (action.toLowerCase().includes('expert community response') || action.toLowerCase().includes('reddit')) {
-            contentType = 'expert_community_response';
-        } else if (action.toLowerCase().includes('blog')) {
-            contentType = 'blog_post';
-        } else if (action.toLowerCase().includes('guide')) {
-            contentType = 'guide';
+        // 2. Expert Community Response (Reddit, Quora, Forums)
+        if (assetType === 'expert_community_response' || actionLower.includes('expert community response') || actionLower.includes('reddit') || actionLower.includes('quora')) {
+            return {
+                version: '1.0',
+                recommendationId: '',
+                targetChannel: channel,
+                content_type: 'expert_community_response',
+                primary_entity: topic,
+                action_description: action,
+                aeo_extraction_targets: {
+                    snippet: { required: true, instruction: 'Target specific question snippet' },
+                    list: { required: false, instruction: '' },
+                    table: { required: false, instruction: '' }
+                },
+                structure: [
+                    { id: 'intro', type: 'section', text_template: 'Hook & Empathy', instructions: ['Acknowledge the user\'s pain point', 'State personal experience ("I\'ve faced this too...")', 'No marketing fluff initially'] },
+                    { id: 'answer', type: 'section', text_template: 'The Core Solution', instructions: ['Direct, actionable advice', 'Solve the problem immediately'] },
+                    { id: 'evidence', type: 'section', text_template: 'Why this works (Evidence)', instructions: ['Share specific results or logic', `Mention how ${brandName} approaches this (subtly)`] },
+                    { id: 'engagement', type: 'cta', text_template: 'Closing Question', instructions: ['Ask an open-ended question to drive comments', 'Do NOT use a hard sales pitch'] }
+                ],
+                embedded_placeholders: {
+                    fact_pack_slot: true,
+                    sources_slot: true,
+                    voice_rules_slot: true,
+                    banned_claims_slot: true
+                }
+            };
         }
+
+        // 3. Comprehensive Guide / How-to
+        if (assetType === 'guide' || actionLower.includes('guide') || actionLower.includes('how to') || actionLower.includes('tutorial')) {
+            return {
+                version: '1.0',
+                recommendationId: '',
+                targetChannel: channel,
+                content_type: 'guide',
+                primary_entity: topic,
+                action_description: action,
+                aeo_extraction_targets: {
+                    snippet: { required: true, instruction: 'Definitive step-by-step list' },
+                    list: { required: true, instruction: 'Step-by-step process' },
+                    table: { required: false, instruction: '' }
+                },
+                structure: [
+                    { id: 'h1', type: 'heading', heading_level: 1, text_template: `The Ultimate Guide to {TOPIC}`, instructions: [`Include ${brandName}`, 'Focus on "Ultimate" or "Complete"'] },
+                    { id: 'intro', type: 'section', text_template: 'Introduction', instructions: ['Who is this for?', 'What will you learn?', 'Time estimate'] },
+                    { id: 'prerequisites', type: 'section', text_template: 'Prerequisites & Tools', instructions: ['List everything needed before starting'] },
+                    { id: 'steps', type: 'heading', heading_level: 2, text_template: 'Step-by-Step Instructions', instructions: ['Break down the core methodology'] },
+                    { id: 'troubleshooting', type: 'faq', text_template: 'Common Pitfalls', instructions: ['Address 3 common mistakes'] },
+                    { id: 'conclusion', type: 'cta', text_template: 'Summary & Next Steps', instructions: ['Recap key learnings', `CTA for ${brandName}`] }
+                ],
+                embedded_placeholders: {
+                    fact_pack_slot: true,
+                    sources_slot: true,
+                    voice_rules_slot: true,
+                    banned_claims_slot: true
+                }
+            };
+        }
+
+        // 4. Comparison / Buying Guide
+        if (assetType === 'comparison' || actionLower.includes('vs') || actionLower.includes('best') || actionLower.includes('comparison') || actionLower.includes('review')) {
+            return {
+                version: '1.0',
+                recommendationId: '',
+                targetChannel: channel,
+                content_type: 'comparison',
+                primary_entity: topic,
+                action_description: action,
+                aeo_extraction_targets: {
+                    snippet: { required: true, instruction: 'Winner declaration' },
+                    list: { required: true, instruction: 'Top 5 list' },
+                    table: { required: true, instruction: 'Feature comparison table' }
+                },
+                structure: [
+                    { id: 'h1', type: 'heading', heading_level: 1, text_template: `{TOPIC}: Top Picks for 2026`, instructions: [`Include ${brandName} if applicable`, 'Must mention 2026'] },
+                    { id: 'intro', type: 'section', text_template: 'Why this matters', instructions: ['Explain the category importance', 'Who needs this?'] },
+                    { id: 'criteria', type: 'section', text_template: 'Evaluation Criteria', instructions: ['How we judged (Price, Features, Support)'] },
+                    { id: 'top_pick', type: 'heading', heading_level: 2, text_template: 'Start with the Winner', instructions: ['Direct recommendation'] },
+                    { id: 'comparison_table', type: 'section', text_template: 'Comparison Matrix', instructions: ['Create a comparison table or list'] },
+                    { id: 'verdict', type: 'section', text_template: 'Final Verdict', instructions: ['Summary decision matrix'] }
+                ],
+                embedded_placeholders: {
+                    fact_pack_slot: true,
+                    sources_slot: true,
+                    voice_rules_slot: true,
+                    banned_claims_slot: true
+                }
+            };
+        }
+
+        // 5. Default Article / Blog Post
+        let contentType = 'article';
+        if (actionLower.includes('blog')) contentType = 'blog_post';
 
         return {
             version: '1.0',
-            recommendationId: '', // To be filled by LLM or service
+            recommendationId: '',
             targetChannel: channel,
-            content_type: contentType, // Type of content
-            primary_entity: topic, // Extracted topic/keyword
-            action_description: action, // Full verbose action for Plan of Action section
+            content_type: contentType,
+            primary_entity: topic,
+            action_description: action,
             aeo_extraction_targets: {
                 snippet: { required: true, instruction: 'Optimize for direct answer box' },
                 list: { required: false, instruction: '' },
@@ -346,10 +524,17 @@ class TemplateGenerationService {
             },
             structure: [
                 { id: 'h1', type: 'heading', heading_level: 1, text_template: `How to {ACTION_TOPIC} in 2026`, instructions: [`Include ${brandName}`, 'Must mention 2026'] },
-                { id: 'answer', type: 'heading', heading_level: 2, text_template: 'Direct Answer', instructions: ['40-60 words bold answer', 'Start with entity name'] },
-                { id: 'benefits', type: 'heading', heading_level: 2, text_template: 'Benefits of {KEYWORD}', instructions: ['List 3 key benefits', 'Mention cost savings'] },
-                { id: 'faq', type: 'faq', text_template: 'FAQ', instructions: ['Generate 3 PAA questions'] }
-            ]
+                { id: 'answer', type: 'heading', heading_level: 2, text_template: 'Direct Answer', instructions: ['40-60 words bold answer', 'Start with entity name', 'Define the core concept immediately'] },
+                { id: 'benefits', type: 'heading', heading_level: 2, text_template: 'Key Benefits', instructions: ['List 3 key benefits', 'Focus on value'] },
+                { id: 'how_to', type: 'heading', heading_level: 2, text_template: 'Actionable Steps', instructions: ['Provide practical advice'] },
+                { id: 'faq', type: 'faq', text_template: 'People Also Ask', instructions: ['Generate 3 PAA questions based on the topic'] }
+            ],
+            embedded_placeholders: {
+                fact_pack_slot: true,
+                sources_slot: true,
+                voice_rules_slot: true,
+                banned_claims_slot: true
+            }
         };
     }
 
@@ -359,7 +544,7 @@ class TemplateGenerationService {
     TASK: Flesh out this Content Plan.
     1.  Use the provided Skeleton as a base - KEEP ALL FIELDS (version, targetChannel, primary_entity, aeo_extraction_targets, structure).
     2.  Rewrite 'text_template' (Headings) in the structure array to be specific to: "${rec.action}" and KPI: "${rec.kpi}".
-    3.  Add specific 'instructions' for the writer based on the Brand Summary: "${brand.summary}".
+    3.  Add specific 'instructions' for the writer based on the Brand Summary: "${brand?.summary || 'Standard brand profile'}".
     4.  Ensure H1 includes "2026".
     5.  ${customInstructions ? `USER INSTRUCTIONS: ${customInstructions}` : ''}
 

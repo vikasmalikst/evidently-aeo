@@ -31,11 +31,18 @@ export const ContentTypeFilter = ({ value, onChange, options }: ContentTypeFilte
           <option value="all">All Types</option>
           {options.map((type) => (
             <option key={type} value={type}>
-              {type}
+              {formatLabel(type)}
             </option>
           ))}
         </select>
       </div>
     </div>
   );
+};
+
+const formatLabel = (type: string): string => {
+  return type
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 };

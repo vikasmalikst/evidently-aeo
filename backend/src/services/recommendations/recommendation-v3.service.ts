@@ -240,7 +240,8 @@ class RecommendationV3Service {
         timeline: rec.timeline || '2-4 weeks',
         confidence: typeof rec.confidence === 'number' ? rec.confidence : 55,
         focusSources: rec.focusSources,
-        contentFocus: rec.contentFocus
+        contentFocus: rec.contentFocus,
+        assetType: rec.contentType || 'article'
       }));
     } catch (e) {
       console.error('❌ [RecommendationV3Service] Cold Start Personalization failed:', e);
@@ -827,6 +828,7 @@ Return ONLY a JSON array with the personalized recommendations.`;
           calculated_score: rec.calculatedScore ?? null,
           display_order: index,
           kpi_id: kpiId,
+          asset_type: rec.assetType || 'article',
           is_approved: false,
           is_content_generated: false,
           is_completed: false

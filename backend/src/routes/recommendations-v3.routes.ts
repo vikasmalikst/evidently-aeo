@@ -492,12 +492,12 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
       let visibilityScore = rec.visibility_score;
       let mentionRate = rec.mention_rate;
 
-      // Extract assetType from explanation (e.g., "[Video] Create a video..." -> "Video")
-      let assetType = null;
-      if (rec.explanation) {
+      // Prefer database asset_type, fallback to heuristic extraction from explanation
+      let assetType = rec.asset_type || null;
+      if (!assetType && rec.explanation) {
         const match = rec.explanation.match(/^\[(.*?)\]/);
         if (match && match[1]) {
-          assetType = match[1];
+          assetType = match[1].toLowerCase();
         }
       }
 
@@ -858,35 +858,79 @@ router.put(
    */
 router.post('/:recommendationId/upload-context', authenticateToken, requireFeatureEntitlement('recommendations'), uploadMiddleware.single('file'), async (req, res) => {
   try {
-    const { recommendationId } = req.params;
     const customerId = req.user?.customer_id;
+    if (!customerId) return res.status(401).json({ success: false, error: 'User not authenticated' });
 
-    // Handle file upload
-    let contextText = '';
-    if (req.file) {
-      console.log(`📂 [API] Processing uploaded file: ${req.file.originalname} (${req.file.mimetype})`);
-      contextText = await templateGenerationService.parseContextFile(req.file.buffer, req.file.mimetype);
-    } else if (req.body.text) {
-      contextText = req.body.text;
-    } else {
-      return res.status(400).json({ success: false, error: 'No file or text provided' });
+    const { recommendationId } = req.params;
+    const file = req.file;
+    const { textContext } = req.body; // For raw text input fallback or quick notes
+
+    console.log(`🔍 [RecommendationsV3] Upload Request for ${recommendationId}`);
+
+    // Case 1: File Upload (New Context Manager)
+    if (file) {
+      console.log(`📂 [RecommendationsV3] Processing file upload: ${file.originalname} (${file.size} bytes)`);
+
+      const result = await templateGenerationService.addContextFile(recommendationId, customerId, {
+        buffer: file.buffer,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size
+      });
+
+      if (!result.success) {
+        return res.status(500).json(result);
+      }
+
+      return res.json(result);
     }
 
-    if (!contextText.trim()) {
-      return res.status(400).json({ success: false, error: 'Extracted text is empty' });
+    // Case 2: Raw Text Update (Quick Notes)
+    else if (textContext !== undefined) {
+      console.log(`📝 [RecommendationsV3] Updating quick notes: ${textContext.length} chars`);
+
+      const result = await templateGenerationService.updatePlanContext(recommendationId, customerId, textContext);
+
+      if (!result.success) {
+        return res.status(500).json(result);
+      }
+
+      return res.json(result);
     }
 
-    console.log(`📝 [API] Updating context for ${recommendationId} (Length: ${contextText.length})`);
-    const result = await templateGenerationService.updatePlanContext(recommendationId, customerId, contextText);
-
-    if (result.success) {
-      return res.json({ success: true, data: { context: contextText } });
-    } else {
-      return res.status(400).json(result);
-    }
+    console.warn(`⚠️ [RecommendationsV3] No file or text provided in request`);
+    return res.status(400).json({ success: false, error: 'No file or text provided' });
 
   } catch (error: any) {
-    console.error('❌ [API] Error uploading context:', error);
+    console.error('❌ [RecommendationsV3 Upload] Error:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/recommendations-v3/:recommendationId/context/:fileId
+ * 
+ * Remove a specific context file from the recommendation.
+ */
+router.delete('/:recommendationId/context/:fileId', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) return res.status(401).json({ success: false, error: 'User not authenticated' });
+
+    const { recommendationId, fileId } = req.params;
+
+    console.log(`🗑️ [RecommendationsV3] Removing context file ${fileId} from ${recommendationId}`);
+
+    const result = await templateGenerationService.removeContextFile(recommendationId, customerId, fileId);
+
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    return res.json(result);
+
+  } catch (error: any) {
+    console.error('❌ [RecommendationsV3 Remove File] Error:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -916,8 +960,20 @@ router.post('/:recommendationId/generate-content/step2', authenticateToken, requ
       return res.status(500).json({ success: false, error: 'Failed to generate content' });
     }
 
-    // Also update recommendation status to 'content_generated' logic
-    // (This might happen inside service, but let's ensure we return success)
+    // Mark recommendation as content generated so it appears in Step 3 (Refine)
+    const { error: markError } = await supabaseAdmin
+      .from('recommendations')
+      .update({ is_content_generated: true })
+      .eq('id', recommendationId)
+      .eq('customer_id', customerId);
+
+    if (markError) {
+      console.error('⚠️ [RecommendationsV3] Failed to mark recommendation as content generated:', markError);
+      // Continue anyway - content was saved successfully
+    } else {
+      console.log(`✅ [RecommendationsV3] Marked recommendation ${recommendationId} as content generated (is_content_generated=true)`);
+    }
+
     return res.json({ success: true, data: content });
 
   } catch (error) {

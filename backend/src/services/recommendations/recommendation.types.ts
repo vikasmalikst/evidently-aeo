@@ -60,6 +60,8 @@ export interface RecommendationV3 {
 
     // Strategic classification (filled by ranking service)
     strategicRole?: 'Battleground' | 'Stronghold' | 'Opportunity' | 'Standard';
+
+    assetType?: string; // Explicit content type (article, video, guide, etc.)
 }
 
 /**
@@ -181,7 +183,6 @@ export type ContentSectionType =
     | 'custom'               // Generic fallback
     // New Strategic Asset Types
     | 'comparison_table'     // Structured markdown table (for "vs" queries)
-    | 'comparison_table'     // Structured markdown table (for "vs" queries)
     | 'whitepaper_metadata'  // Report metadata (summary, chapters, download link)
     | 'structured_list'      // Timestamped lists (webinar recaps, checklists)
     | 'code_block'           // Technical code/config snippets
@@ -260,6 +261,15 @@ export interface TemplateSection {
     keywords_to_include?: string[];
 }
 
+export interface ContextFile {
+    id: string;
+    name: string;
+    type: string; // 'pdf', 'text', 'doc'
+    size: number; // in bytes
+    content: string; // extracted text content
+    uploadedAt: string;
+}
+
 export interface TemplatePlan {
     version: '1.0';
     recommendationId: string;
@@ -277,6 +287,7 @@ export interface TemplatePlan {
         voice_rules_slot: boolean;
         banned_claims_slot: boolean;
     };
-    additional_context?: string; // User-uploaded context/files (parsed text)
+    additional_context?: string; // Quick notes / raw text
+    context_files?: ContextFile[]; // Uploaded files with metadata
 }
 

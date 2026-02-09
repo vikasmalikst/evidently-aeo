@@ -101,8 +101,8 @@ export const OpportunityStrategyCard: React.FC<OpportunityStrategyCardProps> = (
                 </div>
                 <div className="flex flex-col items-end gap-2">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${recommendation.reviewStatus === 'approved' ? 'bg-green-100 text-green-800 border-green-200' :
-                            recommendation.reviewStatus === 'rejected' ? 'bg-red-100 text-red-800 border-red-200' :
-                                'bg-orange-100 text-orange-800 border-orange-200' /* Pending */
+                        recommendation.reviewStatus === 'rejected' ? 'bg-red-100 text-red-800 border-red-200' :
+                            'bg-orange-100 text-orange-800 border-orange-200' /* Pending */
                         }`}>
                         {recommendation.reviewStatus === 'approved' ? 'Approved' :
                             recommendation.reviewStatus === 'rejected' ? 'Rejected' : 'Pending'}
@@ -148,18 +148,18 @@ export const OpportunityStrategyCard: React.FC<OpportunityStrategyCardProps> = (
                                 const name = typeof competitor === 'string' ? competitor : competitor.name;
                                 const domain = typeof competitor === 'string' ? competitor : (competitor.domain || competitor.name);
                                 const logo = typeof competitor === 'string' ? undefined : (competitor.logo || undefined);
-                                
+
                                 return (
-                                <div key={name} className="flex items-center gap-2 bg-gray-50 px-2 py-1.5 rounded-lg border border-gray-100">
-                                    <SafeLogo
-                                        domain={domain}
-                                        src={logo}
-                                        alt={name}
-                                        className="w-5 h-5 rounded-full object-contain bg-white"
-                                        size={20}
-                                    />
-                                    <span className="text-xs font-medium text-gray-700">{name}</span>
-                                </div>
+                                    <div key={name} className="flex items-center gap-2 bg-gray-50 px-2 py-1.5 rounded-lg border border-gray-100">
+                                        <SafeLogo
+                                            domain={domain}
+                                            src={logo}
+                                            alt={name}
+                                            className="w-5 h-5 rounded-full object-contain bg-white"
+                                            size={20}
+                                        />
+                                        <span className="text-xs font-medium text-gray-700">{name}</span>
+                                    </div>
                                 );
                             })}
                         </div>
@@ -181,7 +181,7 @@ export const OpportunityStrategyCard: React.FC<OpportunityStrategyCardProps> = (
                     <div className="flex-1 p-3 border-r border-gray-200 last:border-r-0">
                         <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Content Type</p>
                         <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">
-                            {recommendation.assetType || 'Article'}
+                            {formatAssetType(recommendation.assetType)}
                         </span>
                     </div>
                     <div className="flex-1 p-3 border-r border-gray-200 last:border-r-0">
@@ -213,4 +213,12 @@ export const OpportunityStrategyCard: React.FC<OpportunityStrategyCardProps> = (
             </div>
         </div>
     );
+};
+
+const formatAssetType = (type?: string): string => {
+    if (!type) return 'Article';
+    return type
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
 };

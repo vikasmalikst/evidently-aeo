@@ -801,6 +801,104 @@ export async function generateContentFromPlan(
 }
 
 /**
+ * Upload context file for a recommendation
+ */
+export async function uploadContextFile(
+  recommendationId: string,
+  file: File
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/upload-context`;
+    const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error: any) {
+    console.error('Error uploading context file:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to upload file'
+    };
+  }
+}
+
+/**
+ * Remove a context file from a recommendation
+ */
+export async function deleteContextFile(
+  recommendationId: string,
+  fileId: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    // apiClient.delete returns the parsed JSON response directly
+    const response = await apiClient.delete<{ success: boolean; data?: any; error?: string }>(
+      `/recommendations-v3/${recommendationId}/context/${fileId}`
+    );
+    return response;
+  } catch (error: any) {
+    console.error('Error deleting context file:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to delete file'
+    };
+  }
+}
+
+/**
+ * Update quick notes (text context)
+ */
+export async function updateContextNotes(
+  recommendationId: string,
+  text: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/upload-context`;
+    const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
+      },
+      body: JSON.stringify({ textContext: text })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Update failed with status ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error: any) {
+    console.error('Error updating context notes:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to update notes'
+    };
+  }
+}
+
+/**
  * Upload context (file or text) for a recommendation plan
  */
 export async function uploadContextV3(

@@ -1070,29 +1070,84 @@ ${contentStyleGuide}
     }
   }
 
+  /**
+   * Sanitize LLM JSON: replace control characters (e.g. literal newlines) inside string values.
+   * JSON only allows \n, \r, \t etc. when escaped; raw control chars cause "Bad control character" parse errors.
+   */
+  private sanitizeJsonStringLiteralControlChars(raw: string): string {
+    if (!raw || typeof raw !== 'string') return raw;
+    let out = '';
+    let insideString = false;
+    let i = 0;
+    while (i < raw.length) {
+      const c = raw[i];
+      const code = c.charCodeAt(0);
+      if (insideString) {
+        if (c === '\\') {
+          out += c;
+          if (i + 1 < raw.length) {
+            out += raw[i + 1];
+            i += 1;
+          }
+          i += 1;
+          continue;
+        }
+        if (c === '"') {
+          insideString = false;
+          out += c;
+          i += 1;
+          continue;
+        }
+        // Replace control chars (U+0000–U+001F) inside string with space
+        if (code >= 0 && code <= 0x1f) {
+          out += ' ';
+        } else {
+          out += c;
+        }
+        i += 1;
+        continue;
+      }
+      if (c === '"') {
+        insideString = true;
+        out += c;
+        i += 1;
+        continue;
+      }
+      out += c;
+      i += 1;
+    }
+    return out;
+  }
+
   private parseGeneratedContentJson(raw: string): GeneratedAnyJson | null {
     if (!raw || typeof raw !== 'string') return null;
+
+    // Sanitize control chars inside string literals (LLMs sometimes emit literal newlines in content)
+    raw = this.sanitizeJsonStringLiteralControlChars(raw);
 
     // Strategy 1: Try direct JSON parse
     try {
       const parsed = JSON.parse(raw.trim());
       if (this.isValidGeneratedContent(parsed)) {
+        console.log('✅ [PARSE] Strategy 1 (direct parse) SUCCEEDED. Version:', parsed?.version);
         return this.normalizeGeneratedContent(parsed);
       } else {
-        console.warn('[PARSE] Direct parse succeeded but content invalid. Version:', parsed?.version);
+        console.warn('[PARSE] Strategy 1: Direct parse succeeded but validation failed. Version:', parsed?.version);
       }
     } catch (e) {
-      console.warn('[PARSE] Strategy 1 (direct) failed:', (e as Error).message);
+      const hasCodeFence = raw.trimStart().startsWith('```');
+      console.warn(`[PARSE] Strategy 1 (direct) failed${hasCodeFence ? ' (response wrapped in code fences - expected, trying Strategy 2)' : ''}: ${(e as Error).message?.substring(0, 80)}`);
     }
 
     // Strategy 2: Extract JSON from markdown code blocks
     try {
       let cleaned = raw.trim();
 
-      // Remove markdown code blocks
-      const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      // Remove markdown code blocks - use GREEDY match to capture full content between fences
+      const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*)\s*```\s*$/);
       if (jsonBlockMatch) {
         cleaned = jsonBlockMatch[1].trim();
+        console.log('[PARSE] Strategy 2: Extracted content from code fences, length:', cleaned.length);
       } else {
         // Try removing just the markers
         if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
@@ -1103,10 +1158,13 @@ ${contentStyleGuide}
 
       const parsed = JSON.parse(cleaned);
       if (this.isValidGeneratedContent(parsed)) {
+        console.log('✅ [PARSE] Strategy 2 (code fence removal) SUCCEEDED. Version:', parsed?.version);
         return this.normalizeGeneratedContent(parsed);
+      } else {
+        console.warn('[PARSE] Strategy 2: Parsed OK but validation failed. Version:', parsed?.version, 'Keys:', Object.keys(parsed).join(', '));
       }
-    } catch {
-      // Continue to next strategy
+    } catch (e) {
+      console.warn('[PARSE] Strategy 2 (code fence removal) failed:', (e as Error).message?.substring(0, 100));
     }
 
     // Strategy 3: Extract JSON object from text (find first { ... } block)
@@ -1115,11 +1173,14 @@ ${contentStyleGuide}
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         if (this.isValidGeneratedContent(parsed)) {
+          console.log('✅ [PARSE] Strategy 3 (brace extraction) SUCCEEDED. Version:', parsed?.version);
           return this.normalizeGeneratedContent(parsed);
+        } else {
+          console.warn('[PARSE] Strategy 3: Parsed OK but validation failed. Version:', parsed?.version);
         }
       }
-    } catch {
-      // Continue to next strategy
+    } catch (e) {
+      console.warn('[PARSE] Strategy 3 (brace extraction) failed:', (e as Error).message?.substring(0, 100));
     }
 
     // Strategy 3.5: Robust V4 Recovery (for truncated/malformed responses)
@@ -1978,11 +2039,27 @@ RULES:
       ).join('\n\n');
 
       let additionalContextBlock = '';
-      if (plan.additional_context) {
+      const contextParts: string[] = [];
+
+      // 1. Add Quick Notes
+      if (plan.additional_context?.trim()) {
+        contextParts.push(`--- Quick Notes ---\n${plan.additional_context}`);
+      }
+
+      // 2. Add Uploaded Files
+      if (plan.context_files && plan.context_files.length > 0) {
+        plan.context_files.forEach((file: any) => {
+          contextParts.push(`--- File: ${file.name} ---\n${file.content}`);
+        });
+      }
+
+      if (contextParts.length > 0) {
         additionalContextBlock = `
-      === ADDITIONAL CONTEXT (User Provided) ===
+      === ADDITIONAL CONTEXT & SOURCE MATERIAL ===
+      The user has provided the following context files and notes. Use this information effectively when writing the content.
+      
       """
-      ${plan.additional_context}
+      ${contextParts.join('\n\n')}
       """
       `;
       }
@@ -2024,6 +2101,7 @@ RULES:
       1. Write authoritative, AEO-optimized text for each section.
       2. Follow the specific instructions for each section in the PLAN.
       3. Do NOT change the section IDs.
+      4. Return ONLY raw JSON. Do NOT wrap in markdown code fences (\`\`\`json or \`\`\`). Start your response with { and end with }.
       `;
 
       // 3. Call LLM (Cerebras for speed/quality text generation)
@@ -2035,68 +2113,106 @@ RULES:
       */
 
       let responseContent = '';
-      let provider: RecommendationContentProvider = 'cerebras';
-      let model = this.cerebrasModel;
+      let provider: RecommendationContentProvider = 'openrouter';
+      let model = 'meta-llama/llama-3.3-70b-instruct';
 
-      if (this.cerebrasApiKey) {
-        try {
-          // ... Call Cerebras (using existing patterns if we had a direct helper, 
-          // but we can reuse the openRouter collector if we want 20B, 
-          // or just use OpenRouter for everything to be safe with the 20B strategy user requested).
+      // ═══════════════════════════════════════════════════════════
+      // LOGGING: Full Prompt Being Sent to LLM
+      // ═══════════════════════════════════════════════════════════
+      console.log('\n' + '='.repeat(80));
+      console.log('📤 [Step2 Content Gen] FULL PROMPT SENT TO LLM');
+      console.log('='.repeat(80));
+      console.log(`   Recommendation ID: ${recommendationId}`);
+      console.log(`   Brand: ${brand?.name} (${brand?.industry})`);
+      console.log(`   Model: ${model}`);
+      console.log(`   MaxTokens: 3000 | Temperature: 0.5`);
+      console.log(`   Plan sections: ${plan.structure?.length || 0}`);
+      console.log(`   Additional context length: ${additionalContextBlock.length} chars`);
+      console.log('-'.repeat(80));
+      console.log(prompt);
+      console.log('='.repeat(80) + '\n');
 
-          // User requested "Strategy feasibility... with GPT-OSS:20B". 
-          // So we should probably use OpenRouter/GPT-OSS-20B for this step too?
-          // Actually, the Blueprint says "Step 2: Final Content Generation... (Drafter)". 
-          // Let's use OpenRouter 20B as requested to prove the strategy.
-          provider = 'openrouter';
-          model = 'meta-llama/llama-3.3-70b-instruct';
+      try {
+        const llmStartTime = Date.now();
 
-          const orResponse = await openRouterCollectorService.executeQuery({
-            collectorType: 'content',
-            prompt: prompt,
-            maxTokens: 3000,
-            temperature: 0.5,
-            model: 'meta-llama/llama-3.3-70b-instruct'
-          });
-          responseContent = orResponse.response || '';
-        } catch (e) {
-          console.error('Step 2 generation failed', e);
-        }
+        const orResponse = await openRouterCollectorService.executeQuery({
+          collectorType: 'content',
+          prompt: prompt,
+          maxTokens: 3000,
+          temperature: 0.5,
+          model: model
+        });
+        responseContent = orResponse.response || '';
+
+        const llmDuration = Date.now() - llmStartTime;
+
+        // ═══════════════════════════════════════════════════════════
+        // LOGGING: Full Response Received from LLM
+        // ═══════════════════════════════════════════════════════════
+        console.log('\n' + '='.repeat(80));
+        console.log('📥 [Step2 Content Gen] FULL LLM RESPONSE');
+        console.log('='.repeat(80));
+        console.log(`   Duration: ${llmDuration}ms (${(llmDuration / 1000).toFixed(1)}s)`);
+        console.log(`   Response length: ${responseContent.length} chars`);
+        console.log(`   Starts with code fence: ${responseContent.trimStart().startsWith('\`\`\`')}`);
+        console.log('-'.repeat(80));
+        console.log(responseContent);
+        console.log('='.repeat(80) + '\n');
+
+      } catch (e) {
+        console.error('❌ [Step2 Content Gen] LLM call FAILED:', e);
+        throw e;
       }
 
-      if (!responseContent) throw new Error('Failed to generate content');
+      if (!responseContent) throw new Error('Failed to generate content - empty LLM response');
 
       // 4. Parse & Save
+      console.log('🔍 [Step2 Content Gen] Parsing LLM response...');
       const parsed = this.parseGeneratedContentJson(responseContent);
-      if (parsed && this.isValidGeneratedContent(parsed)) {
-        const normalized = this.normalizeGeneratedContent(parsed);
 
-        // Save to DB
-        const { data: saved, error: saveError } = await supabaseAdmin
-          .from('recommendation_generated_contents')
-          .insert({
-            recommendation_id: recommendationId,
-            generation_id: rec.generation_id,
-            brand_id: rec.brand_id,
-            customer_id: customerId,
-            status: 'generated',
-            content_type: 'article', // Default to article/v4
-            content: JSON.stringify(normalized),
-            model_provider: provider,
-            model_name: model,
-            metadata: {
-              from_plan: true,
-              plan_version: plan.version
-            }
-          })
-          .select('*')
-          .single();
-
-        if (saveError) throw saveError;
-        return saved as any;
+      if (!parsed) {
+        console.error('❌ [Step2 Content Gen] ALL parse strategies failed. Raw response logged above.');
+        console.error('❌ [Step2 Content Gen] First 200 chars:', responseContent.substring(0, 200));
+        return null;
       }
 
-      return null;
+      if (!this.isValidGeneratedContent(parsed)) {
+        console.error('❌ [Step2 Content Gen] Parsed JSON failed validation. Parsed object:', JSON.stringify(parsed, null, 2).substring(0, 500));
+        return null;
+      }
+
+      console.log('✅ [Step2 Content Gen] Parse & validation succeeded. Version:', (parsed as any).version);
+
+      const normalized = this.normalizeGeneratedContent(parsed);
+
+      // Save to DB
+      const { data: saved, error: saveError } = await supabaseAdmin
+        .from('recommendation_generated_contents')
+        .insert({
+          recommendation_id: recommendationId,
+          generation_id: rec.generation_id,
+          brand_id: rec.brand_id,
+          customer_id: customerId,
+          status: 'generated',
+          content_type: 'article', // Default to article/v4
+          content: JSON.stringify(normalized),
+          model_provider: provider,
+          model_name: model,
+          metadata: {
+            from_plan: true,
+            plan_version: plan.version
+          }
+        })
+        .select('*')
+        .single();
+
+      if (saveError) {
+        console.error('❌ [Step2 Content Gen] DB save failed:', saveError);
+        throw saveError;
+      }
+
+      console.log(`✅ [Step2 Content Gen] Content saved to DB for recommendation ${recommendationId}`);
+      return saved as any;
 
     } catch (error) {
       console.error('❌ [Step2] Error:', error);

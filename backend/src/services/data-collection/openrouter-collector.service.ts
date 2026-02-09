@@ -80,10 +80,10 @@ export class OpenRouterCollectorService {
         topP: 0.9
       },
       content: {
-        model: 'openai/gpt-oss-20b',
+        model: 'meta-llama/llama-3.3-70b-instruct',
         systemPrompt: 'You are a senior content strategist. Write clear, brand-safe marketing content that is factual, structured, and ready to ship. Do not use web search unless explicitly requested.',
         enableWebSearch: false,
-        maxTokens: 4000, // Increased for reasoning models - they need tokens for both reasoning and output
+        maxTokens: 7000, // Increased for reasoning models - they need tokens for both reasoning and output
         temperature: 0.6,
         topP: 0.9
       }
@@ -162,10 +162,10 @@ export class OpenRouterCollectorService {
         }
       ];
     }
-    
+
     // Log request for debugging (without sensitive data)
     console.log(`🌐 OpenRouter request: model=${resolvedConfig.model}, collectorType=${collectorType}, messages=${messages.length}, hasTools=${!!body.tools}`);
-    
+
     const response = await fetch(this.baseUrl, {
       method: 'POST',
       headers: {
@@ -188,20 +188,20 @@ export class OpenRouterCollectorService {
     }
 
     const result = await response.json() as any;
-    
+
     // Log the full response structure for debugging
     if (!result?.choices?.[0]) {
       console.error('❌ OpenRouter response structure:', JSON.stringify(result, null, 2));
       throw new Error(`Invalid OpenRouter response: no choices found. Response: ${JSON.stringify(result).substring(0, 500)}`);
     }
-    
+
     const message = result?.choices?.[0]?.message;
     const messageContent = message?.content;
     const finishReason = result?.choices?.[0]?.finish_reason;
-    
+
     // Handle different content types
     let answer: string = '';
-    
+
     // First, try to get content
     if (typeof messageContent === 'string' && messageContent.trim().length > 0) {
       answer = messageContent;
@@ -220,7 +220,7 @@ export class OpenRouterCollectorService {
       // Try to stringify other types
       answer = String(messageContent);
     }
-    
+
     // If content is empty but there's reasoning (for reasoning models like gpt-oss-20b)
     // The reasoning might contain the answer, or we need to extract from reasoning_details
     if ((!answer || answer.trim().length === 0) && message?.reasoning) {
@@ -229,10 +229,10 @@ export class OpenRouterCollectorService {
       if (finishReason === 'length') {
         console.warn(`⚠️ OpenRouter response hit token limit. Reasoning tokens used: ${result?.usage?.completion_tokens_details?.reasoning_tokens || 'unknown'}`);
         // Try to extract any JSON from the reasoning text
-        const reasoningText = typeof message.reasoning === 'string' 
-          ? message.reasoning 
+        const reasoningText = typeof message.reasoning === 'string'
+          ? message.reasoning
           : message.reasoning_details?.[0]?.text || '';
-        
+
         // Look for JSON in reasoning text as fallback
         const jsonMatch = reasoningText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -246,7 +246,7 @@ export class OpenRouterCollectorService {
         answer = typeof message.reasoning === 'string' ? message.reasoning : '';
       }
     }
-    
+
     if (!answer || answer.trim().length === 0) {
       console.error('❌ OpenRouter empty answer. Full response:', JSON.stringify(result, null, 2));
       throw new Error(`Empty content in OpenRouter response. Model: ${result?.model || body.model}, Finish reason: ${finishReason || 'unknown'}`);

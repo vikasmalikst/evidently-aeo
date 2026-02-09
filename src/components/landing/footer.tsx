@@ -134,9 +134,9 @@ export function Footer() {
           <div className="text-sm text-slate-500 flex flex-col md:flex-row items-center gap-2 md:gap-4">
             <span>© 2025 EvidentlyAEO, Inc.</span>
             <span className="hidden md:inline text-slate-700">•</span>
-            <span className="flex items-center gap-1">
+            {/* <span className="flex items-center gap-1">
               Made with <Heart className="w-3 h-3 text-red-500 fill-red-500" /> in San Francisco
-            </span>
+            </span> */}
           </div>
 
           {/* Social Icons */}

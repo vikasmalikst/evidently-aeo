@@ -159,7 +159,18 @@ type GeneratedContentJsonV4 = {
   requiredInputs: string[];                // [FILL_IN:] markers user needs to complete
 };
 
-type GeneratedContentJson = GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4;
+
+// NEW v5.0 format: Unified Content Canvas
+type GeneratedContentJsonV5 = {
+  version: '5.0';
+  recommendationId: string;
+  brandName: string;
+  contentTitle: string;
+  content: string;
+  requiredInputs: string[];
+};
+
+type GeneratedContentJson = GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4 | GeneratedContentJsonV5;
 type GeneratedAnyJson = GeneratedContentJson | GeneratedGuideJsonV1;
 
 // Cold-start guide format (Step 2/3 for cold_start)
@@ -1434,7 +1445,7 @@ ${contentStyleGuide}
 
     // Check version
     const version = parsed.version;
-    if (version !== '1.0' && version !== '2.0' && version !== '3.0' && version !== '4.0' && version !== 'guide_v1') {
+    if (version !== '1.0' && version !== '2.0' && version !== '3.0' && version !== '4.0' && version !== '5.0' && version !== 'guide_v1') {
       console.warn(`[VALIDATION FAIL] Invalid version: ${version}`);
       return false;
     }
@@ -1503,13 +1514,30 @@ ${contentStyleGuide}
       const hasPlan = Array.isArray(parsed.implementationPlan) && parsed.implementationPlan.length > 0;
       const hasSuccess = !!parsed.successCriteria;
       return hasPlan || hasSuccess;
+    } else if (version === '5.0') {
+      // v5.0 Unified Canvas: requires content and contentTitle
+      if (!parsed.content || !parsed.contentTitle) return false;
+      return true;
     }
 
     return false;
   }
 
-  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4 | GeneratedGuideJsonV1>): GeneratedAnyJson {
+  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4 | GeneratedGuideJsonV1 | any>): GeneratedAnyJson {
     const version = parsed.version || '1.0';
+
+    // Handle v5.0 (Unified Content - New System)
+    if (version === '5.0') {
+      const p5 = parsed as any;
+      return {
+        version: '5.0',
+        recommendationId: String(p5.recommendationId || ''),
+        brandName: String(p5.brandName || ''),
+        contentTitle: String(p5.contentTitle || ''),
+        content: String(p5.content || ''),
+        requiredInputs: Array.isArray(p5.requiredInputs) ? p5.requiredInputs : []
+      };
+    }
 
     // Handle v4.0 (sectioned content for interactive refinement AND FSA strategic assets)
     if (version === '4.0') {

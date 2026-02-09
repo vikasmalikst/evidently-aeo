@@ -9,110 +9,145 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
     const competitors = context?.competitors || [];
 
     // Dynamic table header
-    const competitorColumns = competitors.length > 0
-        ? competitors.map(c => `[Value]`).join(' | ') // Use generic [Value] for cells
-        : '[Competitor]';
+    const competitorPlaceholders = competitors.length > 0
+        ? competitors.map(() => '[Analysis Needed]').join(' | ')
+        : '[Analysis Needed]';
     const competitorHeader = competitors.length > 0
         ? competitors.join(' | ')
         : '[Competitor]';
 
     return {
         article: [
+
             {
-                id: "direct_answer",
-                title: "Direct Answer",
-                content: "Provide a direct, standalone answer to the main user question immediately (80-120 words). Optimize for 'featured snippet' extraction. Bold key concepts.",
-                sectionType: "answer"
+                id: "exec_abstract",
+                title: "Executive Abstract (The Snippet)",
+                content: "50-60 words. Objective, authoritative. Blockquote or bolded paragraph. Define the [Primary Entity] and its relationship to the [Query].",
+                sectionType: "summary"
             },
             {
-                id: "how_it_works",
-                title: "How It Works",
-                content: "Break down the mechanism or process into clear, numbered steps. Focus on 'why' it works, not just 'what' it is to build semantic depth.",
-                sectionType: "explanation"
+                id: "current_landscape",
+                title: "The Current Landscape of [Industry]",
+                content: "150 words. Analytical. Short paragraphs. Mention 3-5 'Freshness Signals' (e.g., 'Recent shifts in Feb 2026 show...').",
+                sectionType: "context"
             },
             {
-                id: "comparison",
-                title: "Comparison With Alternatives",
-                content: "Objectively compare with 2-3 main alternatives. Highlight unique differentiators without marketing fluff. Use contrastive language (e.g., 'Unlike X, Y does...').",
-                sectionType: "comparison"
+                id: "strategic_solutions",
+                title: `Strategic Solutions by ${brandName}`,
+                content: "200 words. Problem-solving. H3 headers for each sub-solution. Use Bolded Entities to help the LLM map your brand to specific features.",
+                sectionType: "strategies"
             },
             {
-                id: "limitations",
-                title: "Limitations and Trade-Offs",
-                content: "Explicitly state 1-2 limitations or trade-offs. This increases trust and prevents 'too good to be true' penalties in AI scoring.",
-                sectionType: "constraints"
+                id: "future_outlook",
+                title: "Conclusion: The Future of [Topic]",
+                content: "75 words. Visionary. Bullets for 'Key Predictions' for the future of this topic.",
+                sectionType: "conclusion"
             }
         ],
         whitepaper: [
             {
-                id: "exec_summary",
-                title: "Executive Summary",
-                content: "A complete, self-contained summary of the entire paper (200-300 words). Must address the Problem, Solution, and Key Outcome. Optimized for executive skimming.",
+                id: "abs_key_findings",
+                title: "Abstract & Key Findings",
+                content: `Word Count: 100 words. Tonality: Academic, neutral. Format: Bulleted "Key Takeaways" list. Include at least two proprietary "Stats" (e.g., "${brandName} data shows a 30% increase in...").`,
                 sectionType: "executive_summary"
             },
             {
-                id: "problem",
-                title: "Problem Statement",
-                content: "Define the industry problem with precision. Use specific terminology and avoid generalizations. Establish the 'cost of inaction'.",
-                sectionType: "problem_statement"
-            },
-            {
                 id: "methodology",
-                title: "Methodology / Approach",
-                content: "Explain the technical or research approach used to derive insights. Build authority by showing the 'work' behind the claims.",
+                title: "Methodology",
+                content: "Word Count: 50 words. Tonality: Transparent. Format: Brief paragraph. State clearly where the data came from to satisfy E-E-A-T.",
                 sectionType: "methodology"
             },
             {
-                id: "analysis",
-                title: "Detailed Analysis",
-                content: "Deep-dive analysis with causal reasoning. Connect data points to conclusions using 'if-then' logic to demonstrate expertise.",
+                id: "tech_analysis",
+                title: "Technical Analysis",
+                content: "Word Count: 400 words. Tonality: Expert, dense. Format: H3 headers and technical diagrams (text-based). Use high-density industry terminology.",
                 sectionType: "detailed_analysis"
             },
             {
-                id: "limitations",
-                title: "Strategic Limitations",
-                content: "Rigorous, honest assessment of scope and constraints. Define exactly where this solution applies and where it doesn't.",
-                sectionType: "limitations"
+                id: "about_brand",
+                title: `About ${brandName}`,
+                content: "Word Count: 50 words. Tonality: Corporate, established. Format: Standard boilerplate describing the brand's authority.",
+                sectionType: "about"
             }
         ],
         short_video: [
             {
-                id: "transcript",
-                title: "Full Audio Transcript",
-                content: "Verbatim spoken-word script (approx 150 words). USE LINE BREAKS between sections:\n\n**[0-5s] Hook:** <Hook text>\n**[5-20s] Answer:** <Direct answer>\n**[20-50s] Explanation:** <Details>\n**[50-60s] Takeaway:** <Final thought>",
-                sectionType: "transcript"
+                id: "hook",
+                title: "The Hook (0:00-0:05)",
+                content: "Word Count: 15–20 words. Tonality: High energy, urgent. Format: One punchy sentence. Must repeat the [Query] exactly as the user typed it.",
+                sectionType: "hook"
             },
             {
-                id: "production_tips",
-                title: "Production Guidelines",
-                content: "Strategic visual direction. Use a Bulleted List:\n* **Visuals:** <Camera angles/B-roll>\n* **Text Overlay:** <Keywords to show>\n* **Tone:** <Speaker emotion>",
-                sectionType: "tips"
+                id: "quick_win",
+                title: "The Quick Win (0:05-0:15)",
+                content: `Word Count: 30 words. Tonality: Confident, helpful. Format: Short, declarative sentences. Provide the immediate answer. "The secret to [Query] is ${brandName}'s [Product/Feature]."`,
+                sectionType: "answer"
+            },
+            {
+                id: "steps",
+                title: "The Steps (0:15-0:50)",
+                content: "Word Count: 100 words. Tonality: Instructional, educational. Format: Numbered list (Step 1, Step 2, Step 3). Describe 3 clear actions. Use 'Action Verbs'.",
+                sectionType: "steps"
+            },
+            {
+                id: "social_signal",
+                title: "The Social Signal (0:50-0:60)",
+                content: "Word Count: 15 words. Tonality: Community-focused. Format: Call to Action (CTA). Ask a question to spark comments.",
+                sectionType: "cta"
             }
         ],
         expert_community_response: [
             {
-                id: "direct_answer",
-                title: "Question",
-                content: "Give the clear stance immediately in 2–3 sentences. Include the core recommendation and key condition without introductions.",
+                id: "hook_title",
+                title: "Title (The Hook)",
+                content: "Title Format: [H1] My Experience with [Topic]. The Hook.",
+                sectionType: "hook"
+            },
+            {
+                id: "expert_perspective",
+                title: "The Expert Perspective",
+                content: `Word Count: 100 words. Tonality: Anecdotal, experienced. Format: First-person ("I've been in [Industry] for..."). State credentials and mention work at/with ${brandName}.`,
+                sectionType: "intro"
+            },
+            {
+                id: "nuanced_answer",
+                title: "The Nuanced Answer",
+                content: "Word Count: 150 words. Tonality: Honest, 'No-BS'. Format: Bullet points for 'What actually works.' Mention a 'Freshness Signal' (e.g., 'Since the latest 2026 update...').",
                 sectionType: "answer"
+            }
+        ],
+        comparison_table: [
+            {
+                id: "comparison_matrix",
+                title: "Comparison Matrix",
+                content: `| Feature | ${brandName} | ${competitorHeader} |\n|---|---|${competitors.length > 0 ? competitors.map(() => '---').join('|') : '---'}|\n| [Key Feature 1] | [Analysis Needed] | ${competitorPlaceholders} |\n| [Key Feature 2] | [Analysis Needed] | ${competitorPlaceholders} |`,
+                sectionType: "comparison_table"
             },
             {
-                id: "experience_context",
-                title: "Experience Context",
-                content: "Provide first-hand practitioner context using 'I' or 'We'. Mention real constraints such as time, cost, scale, integrations, or failures.",
-                sectionType: "context"
+                id: "brand_advantage",
+                title: `The ${brandName} Advantage`,
+                content: "100 words. Tonality: Competitive, assertive. 3 Bullets highlighting 'Unique Selling Propositions' (USPs). Explicitly state: 'Unlike [Competitors], [Brand] offers [Feature].'",
+                sectionType: "strategies"
+            }
+        ],
+        social_media_thread: [
+            {
+                id: "hook",
+                title: "Post 1 (The Hook)",
+                content: "Word Count: 25 words. Tonality: Contrarian or provocative. Format: One sentence + 'A thread 🧵'.",
+                sectionType: "hook"
             },
             {
-                id: "reasoning_evidence",
-                title: "Reasoning & Evidence",
-                content: "Explain the technical and practical reasoning behind the stance. Be specific about mechanisms, trade-offs, and measurable factors.",
-                sectionType: "explanation"
+                id: "value_mid",
+                title: "Posts 2-5 (The Value)",
+                content: "Word Count: 40 words per post. Tonality: Fast-paced. Format: 1 Insight per post. Bold the Key Entity in every post. Number the posts (2/x, 3/x, etc.).",
+                sectionType: "points"
             },
             {
-                id: "tradeoffs_limits",
-                title: "Trade-offs & When Not To Use",
-                content: "Explain scenarios where the opposite choice is better. Acknowledge downsides and edge cases candidly.",
-                sectionType: "comparison"
+                id: "brand_tie_in",
+                title: "Post 6 (The Brand Tie-in)",
+                content: `Word Count: 30 words. Tonality: Consultative. Format: CTA. "We just solved this at ${brandName}. Here’s the data: [Link]."`,
+                sectionType: "cta"
             }
         ],
         podcast: [
@@ -146,64 +181,6 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
                 content: "Host summarizes 3 specific, actionable takeaways, phrasing them as 'rules of thumb' for easy memorization and extraction.",
                 sectionType: "summary"
             }
-        ],
-        comparison_table: [
-            {
-                id: "overview",
-                title: "Overview",
-                content: "A neutral, high-level summary of the comparison landscape (300-400 words). Define the criteria used for evaluation.",
-                sectionType: "context"
-            },
-            {
-                id: "table",
-                title: "Comparison Table",
-                content: `| Feature | ${brandName} | ${competitorHeader} |\n|---|---|${competitors.length > 0 ? competitors.map(() => '---').join('|') : '---'}|\n| [Feature 1] | [Value] | ${competitorColumns} |`,
-                sectionType: "comparison_table"
-            },
-            {
-                id: "detailed_analysis",
-                title: "Deep Dive Analysis",
-                content: "Prose analysis explaining the 'why' behind the table ratings. Focus on nuances that don't fit in the grid. 400-600 words. Use Short Paragraphs, Subheaders, and Bullet Points.",
-                sectionType: "strategies"
-            },
-            {
-                id: "verdict",
-                title: "Final Verdict",
-                content: "A 'Who is this for?' conclusion. Define the ideal user profile for each option rather than declaring a universal winner.",
-                sectionType: "cta"
-            }
-        ],
-        social_media_thread: [
-            {
-                id: "hook",
-                title: "Hook",
-                content: "Opening tweet/post that grabs attention with a counter-intuitive insight or bold claim. 1-2 sentences max.",
-                sectionType: "hook"
-            },
-            {
-                id: "context",
-                title: "Context Setup",
-                content: "Brief context or problem statement. Explain why this matters. 2-3 tweets.",
-                sectionType: "context"
-            },
-            {
-                id: "main_points",
-                title: "Main Points",
-                content: "Core insights or tips, structured as numbered points or bullets. 3-5 tweets. Each should be standalone but build on the thread.",
-                sectionType: "points"
-            },
-            {
-                id: "evidence",
-                title: "Evidence/Example",
-                content: "Supporting data, case study, or concrete example. Makes the thread credible. 1-2 tweets.",
-                sectionType: "evidence"
-            },
-            {
-                id: "takeaway",
-                title: "Takeaway",
-                content: "Closing summary or call-to-action. Reinforce the key message. 1-2 tweets.",
-                sectionType: "summary"
-            }
         ]
     };
 };
@@ -227,8 +204,13 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
     // 0. Explicit Overrides
     if (act.includes('expert article')) return 'article';
 
-    // 2. Check for Expert Response first (Specific)
-    if (act.includes('expert community response') || act.includes('forum') || act.includes('reddit')) {
+    // 1. Check for Social Media Thread (Priority: High for LinkedIn/X)
+    if (act.includes('social media') || act.includes('thread') || act.includes('linkedin') || act.includes('twitter') || act.includes('x.com')) {
+        return 'social_media_thread';
+    }
+
+    // 2. Check for Expert Response (Specific)
+    if (act.includes('expert community response') || act.includes('forum') || act.includes('reddit') || act.includes('quora')) {
         return 'expert_community_response';
     }
 
@@ -242,19 +224,14 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
         return 'short_video';
     }
 
-    // 5. Check for Whitepaper (Can be a referenced object, so check last among specifics)
-    if (act.includes('whitepaper') || act.includes('white paper') || act.includes('report') || act.includes('guide')) {
-        return 'whitepaper';
-    }
-
-    // 6. Check for Comparison Table
+    // 5. Check for Comparison Table (Check BEFORE Whitepaper because "Guide" is common in comparison titles)
     if (act.includes('comparison table') || act.includes('comparison')) {
         return 'comparison_table';
     }
 
-    // 7. Check for Social Media Thread
-    if (act.includes('social media') || act.includes('thread') || act.includes('linkedin') || act.includes('twitter') || act.includes('x.com')) {
-        return 'social_media_thread';
+    // 6. Check for Whitepaper (Can be a referenced object, so check last among specifics)
+    if (act.includes('whitepaper') || act.includes('white paper') || act.includes('report') || act.includes('guide')) {
+        return 'whitepaper';
     }
 
     return 'article';

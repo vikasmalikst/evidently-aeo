@@ -9,6 +9,12 @@ import { buildExpertResponsePrompt } from './prompts/expert-response-prompt';
 import { buildPodcastPrompt } from './prompts/podcast-prompt';
 import { buildComparisonTablePrompt } from './prompts/comparison-table-prompt';
 import { buildSocialMediaThreadPrompt } from './prompts/social-media-thread-prompt';
+import { buildUnifiedArticlePrompt } from './prompts/unified/unified-article-prompt';
+import { buildUnifiedVideoPrompt } from './prompts/unified/unified-video-prompt';
+import { buildUnifiedWhitepaperPrompt } from './prompts/unified/unified-whitepaper-prompt';
+import { buildUnifiedExpertPrompt } from './prompts/unified/unified-expert-prompt';
+import { buildUnifiedComparisonPrompt } from './prompts/unified/unified-comparison-prompt';
+import { buildUnifiedSocialPrompt } from './prompts/unified/unified-social-prompt';
 
 // ... (existing imports)
 
@@ -39,23 +45,25 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
 
     switch (assetType) {
         case 'article':
-            return buildBlogArticlePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+            const isDeepDive = ctx.recommendation.contentFocus?.toLowerCase().includes('deep dive') || false;
+            return buildUnifiedArticlePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig, isDeepDive);
         case 'whitepaper':
-            return buildWhitepaperPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+            return buildUnifiedWhitepaperPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         case 'short_video':
-            return buildShortVideoPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+            return buildUnifiedVideoPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         case 'expert_community_response':
-            return buildExpertResponsePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
-        case 'podcast':
+            return buildUnifiedExpertPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+        case 'podcast': // No unified podcast prompt yet, fallback to old or default (not requested)
             return buildPodcastPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         case 'comparison_table':
             const competitors = ctx.recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name) || [];
             console.log(`[NewContentFactory] Comparison Table Competitors: ${JSON.stringify(competitors)}`);
-            return buildComparisonTablePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig, competitors);
+            return buildUnifiedComparisonPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig, competitors);
         case 'social_media_thread':
-            return buildSocialMediaThreadPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
+            return buildUnifiedSocialPrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         default:
-            return null;
+            // Fallback to article prompt if type is recognized but no specific handler
+            return buildUnifiedArticlePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
     }
 }
 function buildSemanticConstraints(rec: RecommendationV3): string {
@@ -224,13 +232,15 @@ export interface AssetDetectionResult {
 export function detectContentAsset(action: string): AssetDetectionResult {
     const actionLower = action.toLowerCase();
 
-    // 1. EXPLICIT ARTICLE/BLOG - Highest priority
-    const articleKeywords = ['article', 'standard article', 'publish article', 'blog post', 'guest post', 'write article', 'pillar page', 'resource guide'];
-    if (articleKeywords.some(k => actionLower.includes(k))) {
-        return { asset: 'article', confidence: 'high' };
+
+
+    // 2. Social Media Thread (Priority: High for LinkedIn/X)
+    const threadKeywords = ['thread', 'linkedin carousel', 'twitter thread', 'x thread', 'social thread', 'linkedin', 'twitter', 'x.com'];
+    if (threadKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'social_media_thread', confidence: 'high' };
     }
 
-    // 2. Expert Community / Forum (Specific Format) - MOVED UP
+    // 3. Expert Community / Forum (Specific Format)
     const expertKeywords = ['expert community', 'forum response', 'quora', 'reddit', 'reddit response', 'community answer', 'expert answer'];
     if (expertKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'expert_community_response', confidence: 'high' };
@@ -260,10 +270,16 @@ export function detectContentAsset(action: string): AssetDetectionResult {
         return { asset: 'case_study', confidence: 'high' };
     }
 
-    // 7. Comparison Table (MOVED UP: Prioritize over whitepaper if both keywords exist)
-    const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison', 'versus table', 'vs table'];
+    // 5. Comparison Table (Specific Format)
+    const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison', 'versus table', 'vs table', 'comparison'];
     if (explicitComparisonKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'comparison_table', confidence: 'high' };
+    }
+
+    // 6. EXPLICIT ARTICLE/BLOG (Moved down to avoid masking specific types)
+    const articleKeywords = ['article', 'standard article', 'publish article', 'blog post', 'guest post', 'write article', 'pillar page', 'resource guide'];
+    if (articleKeywords.some(k => actionLower.includes(k))) {
+        return { asset: 'article', confidence: 'high' };
     }
 
     // 8. EXPLICIT WHITEPAPER/REPORT
@@ -272,11 +288,7 @@ export function detectContentAsset(action: string): AssetDetectionResult {
         return { asset: 'whitepaper', confidence: 'high' };
     }
 
-    // 8. Social Media Thread
-    const threadKeywords = ['thread', 'linkedin carousel', 'twitter thread', 'x thread', 'social thread'];
-    if (threadKeywords.some(k => actionLower.includes(k))) {
-        return { asset: 'social_media_thread', confidence: 'high' };
-    }
+
 
     // 9. Guide keyword
     if (actionLower.includes('guide')) {

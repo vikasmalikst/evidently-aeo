@@ -9,9 +9,9 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
     const competitors = context?.competitors || [];
 
     // Dynamic table header
-    const competitorColumns = competitors.length > 0
-        ? competitors.map(c => `[Value]`).join(' | ') // Use generic [Value] for cells
-        : '[Competitor]';
+    const competitorPlaceholders = competitors.length > 0
+        ? competitors.map(() => '[Analysis Needed]').join(' | ')
+        : '[Analysis Needed]';
     const competitorHeader = competitors.length > 0
         ? competitors.join(' | ')
         : '[Competitor]';
@@ -120,7 +120,7 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
             {
                 id: "comparison_matrix",
                 title: "Comparison Matrix",
-                content: `| Feature | ${brandName} | ${competitorHeader} |\n|---|---|${competitors.length > 0 ? competitors.map(() => '---').join('|') : '---'}|\n| Key Feature 1 | ✅ Included | ❌ Missing |\n| Key Feature 2 | ✅ Full Support | ⚠️ Limited |`,
+                content: `| Feature | ${brandName} | ${competitorHeader} |\n|---|---|${competitors.length > 0 ? competitors.map(() => '---').join('|') : '---'}|\n| [Key Feature 1] | [Analysis Needed] | ${competitorPlaceholders} |\n| [Key Feature 2] | [Analysis Needed] | ${competitorPlaceholders} |`,
                 sectionType: "comparison_table"
             },
             {

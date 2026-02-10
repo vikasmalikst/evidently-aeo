@@ -1123,93 +1123,83 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
     return (
       <div className="space-y-4">
-        {/* Strategy Generation Section */}
-        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4">
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg flex items-center justify-center">
-                <IconSparkles size={20} className="text-white" />
+        {/* Strategy Generation Section - Minimal Dropdown Style */}
+        {!strategyPlan && (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <IconSparkles size={16} className="text-emerald-600" />
+                <span className="text-sm font-medium text-gray-700">AI Strategy Planner</span>
               </div>
-              <div>
-                <h3 className="text-[15px] font-bold text-gray-900">AI Strategy Planner</h3>
-                <p className="text-[13px] text-gray-600">Get LLM-powered strategic guidance</p>
-              </div>
-            </div>
-            {!strategyPlan && (
               <button
                 onClick={() => handleGenerateStrategy(recommendation)}
                 disabled={isGeneratingStrategy}
-                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-[13px] font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isGeneratingStrategy ? (
                   <>
-                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Generating...
+                    <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Generating...</span>
                   </>
                 ) : (
                   <>
                     <IconRobot size={16} />
-                    Generate Strategy
+                    <span>Generate Content Strategy</span>
                   </>
                 )}
               </button>
-            )}
-          </div>
-
-          {strategyPlan && (
-            <div className="flex justify-end mt-2">
-               <button
-                onClick={() => {
-                  setStrategyPlans(prev => {
-                    const next = new Map(prev);
-                    next.delete(recommendation.id!);
-                    return next;
-                  });
-                  handleGenerateStrategy(recommendation);
-                }}
-                disabled={isGeneratingStrategy}
-                className="text-xs text-purple-600 hover:text-purple-800 font-medium flex items-center gap-1 disabled:opacity-50 transition-colors"
-                title="Regenerate Strategy"
-              >
-                <IconRefresh size={14} className={isGeneratingStrategy ? "animate-spin" : ""} />
-                Regenerate Strategy
-              </button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Structure Editor */}
-        <ContentStructureInlineEditor
-          recommendationId={recommendation.id!}
-          contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
-          initialSections={customizedStructures.get(recommendation.id!)}
-          competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || []}
-          brandName={brandName}
-          onChange={(sections) => {
-            setCustomizedStructures(prev => {
-              const next = new Map(prev);
-              next.set(recommendation.id!, sections);
-              return next;
-            });
-          }}
-          onSave={async (sections) => {
-            setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
-            try {
-              const res = await saveContentDraftV3(recommendation.id!, sections);
-              if (!res.success) {
-                throw new Error(res.error || 'Failed to save content structure');
-              }
-              invalidateCache(new RegExp(`recommendations-v3/${recommendation.id!}/content`));
-            } finally {
-              setGeneratingContentIds(prev => {
-                const next = new Set(prev);
-                next.delete(recommendation.id!);
-                return next;
-              });
-            }
-          }}
-          isSaving={generatingContentIds.has(recommendation.id!)}
-        />
+
+
+
+
+        {/* Structure Editor - Only visible AFTER strategy generation */}
+        {strategyPlan ? (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <ContentStructureInlineEditor
+                recommendationId={recommendation.id!}
+                contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
+                initialSections={customizedStructures.get(recommendation.id!)}
+                competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || []}
+                brandName={brandName}
+                onChange={(sections) => {
+                    setCustomizedStructures(prev => {
+                    const next = new Map(prev);
+                    next.set(recommendation.id!, sections);
+                    return next;
+                    });
+                }}
+                onSave={async (sections) => {
+                    setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
+                    try {
+                    const res = await saveContentDraftV3(recommendation.id!, sections);
+                    if (!res.success) {
+                        throw new Error(res.error || 'Failed to save content structure');
+                    }
+                    invalidateCache(new RegExp(`recommendations-v3/${recommendation.id!}/content`));
+                    } finally {
+                    setGeneratingContentIds(prev => {
+                        const next = new Set(prev);
+                        next.delete(recommendation.id!);
+                        return next;
+                    });
+                    }
+                }}
+                isSaving={generatingContentIds.has(recommendation.id!)}
+                />
+            </div>
+        ) : (
+            // Optional: Placeholder for the editor area to maintain layout balance, or just leave empty as per "clean" request
+            <div className="h-32 border-2 border-dashed border-gray-100 rounded-xl flex items-center justify-center text-gray-300">
+                <div className="flex flex-col items-center gap-2">
+                    <IconDeviceFloppy size={24} />
+                    <span className="text-sm font-medium">Template editor will appear here</span>
+                </div>
+            </div>
+        )}
       </div>
     );
   };
@@ -2667,15 +2657,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                           if (result.success && result.data?.content) {
                                             console.log('[Save Section] Successfully saved section edits');
-                                            // Update contentMap with the saved content
+                                            
+                                            // Invalidate cache to ensure fresh content is fetched next time
+                                            invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
+
+                                            // Update the contentMap with the saved content to prevent loading state
                                             setContentMap(prev => {
                                               const next = new Map(prev);
-                                              next.set(recId, result.data!.content);
+                                              if (result.data?.content) {
+                                                next.set(recId, result.data.content);
+                                              }
                                               return next;
                                             });
-
-                                            // Invalidate cache to ensure fresh content is fetched on reload
-                                            invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
 
                                             // Clear title edits for this recommendation since they're now saved
                                             setSectionTitleEdits(prev => {
@@ -2712,149 +2705,138 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                       return (
                                         <div className="space-y-4">
-                                          {/* Header with overall title - Premium Library Card Design */}
-                                          <div className="bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between relative overflow-hidden">
-                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-slate-400 to-slate-300" />
-                                            <div className="relative flex items-center gap-4 pl-2">
-
-                                              <div>
-                                                <h3 className="text-[18px] font-bold text-slate-900">{contentTitle}</h3>
-                                                <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">{sections.length} sections </p>
+                                          {/* Unified Canvas - All sections in one container */}
+                                          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                                            <div className="p-8 md:p-10">
+                                              {/* Refine with Feedback Button - Top Right */}
+                                              <div className="flex justify-end mb-6">
+                                                <button
+                                                  onClick={handleRefine}
+                                                  disabled={isRefining || !hasFeedback}
+                                                  className={`px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2 ${isRefining || !hasFeedback
+                                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                                                    : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3] border border-transparent'
+                                                    }`}
+                                                >
+                                                  {isRefining ? (
+                                                    <>
+                                                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                      Refining...
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <IconSparkles size={16} />
+                                                      Refine with Feedback
+                                                    </>
+                                                  )}
+                                                </button>
                                               </div>
-                                            </div>
+                                              {sections.map((section: any, idx: number) => {
+                                                const editedContent = recEdits.get(section.id) || section.content;
+                                                const feedback = recFeedback.get(section.id) || '';
+                                                const isEditingSection = editingId === `${recId}_${section.id}`;
 
-                                            {/* Refine with Feedback Button - Moved to Header */}
-                                            <button
-                                              onClick={handleRefine}
-                                              disabled={isRefining || !hasFeedback}
-                                              className={`px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2 ${isRefining || !hasFeedback
-                                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                                : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3] border border-transparent'
-                                                }`}
-                                            >
-                                              {isRefining ? (
-                                                <>
-                                                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                  Refining...
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <IconSparkles size={16} />
-                                                  Refine with Feedback
-                                                </>
-                                              )}
-                                            </button>
-                                          </div>
-
-                                          {/* Section Cards */}
-                                          {sections.map((section: any, idx: number) => {
-                                            const editedContent = recEdits.get(section.id) || section.content;
-                                            const feedback = recFeedback.get(section.id) || '';
-                                            const isEditingSection = editingId === `${recId}_${section.id}`;
-
-                                            return (
-                                              <div key={section.id} className="bg-white border border-[#e2e8f0] rounded-lg shadow-sm overflow-hidden">
-                                                {/* Section Header - Clean Muted Style */}
-                                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50 border-b border-slate-100">
-                                                  <div className="flex items-center gap-3">
-                                                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                                                      {String(idx + 1).padStart(2, '0')}
-                                                    </span>
-                                                    {isEditingSection ? (
-                                                      <input
-                                                        type="text"
-                                                        value={recTitleEdits.get(section.id) ?? section.title}
-                                                        onChange={(e) => updateSectionTitleEdit(section.id, e.target.value)}
-                                                        className="text-[14px] font-medium text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent min-w-[200px]"
-                                                        placeholder="Section title"
-                                                      />
-                                                    ) : (
-                                                      <h4 className="text-[15px] font-bold text-slate-900 tracking-tight">{recTitleEdits.get(section.id) ?? section.title}</h4>
-                                                    )}
-                                                  </div>
-                                                  <div className="flex items-center gap-2">
-                                                    <button
-                                                      onClick={() => {
-                                                        const sectionKey = `${recId}_${section.id}`;
-                                                        setActiveFeedbackSection(activeFeedbackSection === sectionKey ? null : sectionKey);
-                                                      }}
-                                                      className={`p-1.5 rounded-md transition-colors relative ${feedback.trim().length > 0 ? 'text-slate-600 bg-slate-100' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
-                                                      title="Feedback"
-                                                    >
-                                                      <IconMessageCircle size={16} />
-                                                      {feedback.trim().length > 0 && (
-                                                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#f59e0b] rounded-full border border-white"></span>
-                                                      )}
-                                                    </button>
-                                                    <button
-                                                      onClick={() => {
-                                                        if (isEditingSection) {
-                                                          handleSaveSection(section.id);
-                                                        } else {
-                                                          setEditingId(`${recId}_${section.id}`);
-                                                        }
-                                                      }}
-                                                      disabled={isSavingSection(section.id)}
-                                                      className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${isSavingSection(section.id)
-                                                        ? 'text-slate-300 cursor-not-allowed'
-                                                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                                                        }`}
-                                                    >
-                                                      {isSavingSection(section.id) ? '⏳ Saving...' : isEditingSection ? '✓ Done' : '✎ Edit'}
-                                                    </button>
-                                                  </div>
-                                                </div>
-
-                                                {/* Feedback Popover */}
-                                                {activeFeedbackSection === `${recId}_${section.id}` && (
-                                                  <div className="absolute top-12 right-4 z-50 w-[320px] bg-white border border-[#fcd34d] rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                                                    <div className="bg-[#fffbeb] px-4 py-2 border-b border-[#fcd34d] flex items-center justify-between">
-                                                      <span className="text-[12px] font-bold text-[#92400e]">Feedback for {section.title}</span>
-                                                      <button
-                                                        onClick={() => setActiveFeedbackSection(null)}
-                                                        className="text-[#92400e] hover:bg-[#fef3c7] p-1 rounded-md"
-                                                      >
-                                                        <IconX size={14} />
-                                                      </button>
-                                                    </div>
-                                                    <div className="p-4">
-                                                      <textarea
-                                                        className="w-full p-3 bg-white border border-[#fcd34d] rounded-lg text-[13px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#f59e0b] min-h-[100px]"
-                                                        placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
-                                                        autoFocus
-                                                        value={feedback}
-                                                        onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
-                                                      />
-                                                      <div className="mt-3 flex justify-end">
+                                                return (
+                                                  <div key={section.id} className={idx > 0 ? 'mt-8' : ''}>
+                                                    {/* Section Header with Inline Controls */}
+                                                    <div className="flex items-start justify-between mb-4 group">
+                                                      <div className="flex items-center gap-3 flex-1">
+                                                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                                                          {String(idx + 1).padStart(2, '0')}
+                                                        </span>
+                                                        {isEditingSection ? (
+                                                          <input
+                                                            type="text"
+                                                            value={recTitleEdits.get(section.id) ?? section.title}
+                                                            onChange={(e) => updateSectionTitleEdit(section.id, e.target.value)}
+                                                            className="text-[20px] md:text-[22px] font-bold text-slate-900 bg-white border-b-2 border-emerald-500 px-2 py-1 focus:outline-none flex-1"
+                                                            placeholder="Section title"
+                                                          />
+                                                        ) : (
+                                                          <h2 className="text-[20px] md:text-[22px] font-bold text-slate-900 leading-snug">
+                                                            {recTitleEdits.get(section.id) ?? section.title}
+                                                          </h2>
+                                                        )}
+                                                      </div>
+                                                      
+                                                      {/* Inline Edit and Comment Buttons */}
+                                                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <button
-                                                          onClick={() => setActiveFeedbackSection(null)}
-                                                          className="px-4 py-1.5 bg-[#fcd34d] text-[#92400e] text-[12px] font-bold rounded-lg hover:bg-[#fbbf24] transition-colors"
+                                                          onClick={() => {
+                                                            const sectionKey = `${recId}_${section.id}`;
+                                                            setActiveFeedbackSection(activeFeedbackSection === sectionKey ? null : sectionKey);
+                                                          }}
+                                                          className={`p-1.5 rounded-md transition-colors relative ${feedback.trim().length > 0 ? 'text-slate-600 bg-slate-100' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+                                                          title="Add Feedback"
                                                         >
-                                                          Done
+                                                          <IconMessageCircle size={16} />
+                                                          {feedback.trim().length > 0 && (
+                                                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full border border-white"></span>
+                                                          )}
+                                                        </button>
+                                                        <button
+                                                          onClick={() => {
+                                                            if (isEditingSection) {
+                                                              handleSaveSection(section.id);
+                                                            } else {
+                                                              setEditingId(`${recId}_${section.id}`);
+                                                            }
+                                                          }}
+                                                          disabled={isSavingSection(section.id)}
+                                                          className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${isSavingSection(section.id)
+                                                            ? 'text-slate-300 cursor-not-allowed'
+                                                            : isEditingSection
+                                                              ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 font-semibold'
+                                                              : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                                            }`}
+                                                        >
+                                                          {isSavingSection(section.id) ? '⏳ Saving...' : isEditingSection ? '✓ Done' : '✎ Edit'}
                                                         </button>
                                                       </div>
                                                     </div>
-                                                  </div>
-                                                )}
 
-                                                {/* Section Content */}
-                                                <div className="p-4">
-                                                  <ContentSectionRenderer
-                                                    section={{
-                                                      id: section.id,
-                                                      title: section.title,
-                                                      content: section.content,
-                                                      sectionType: section.sectionType,
-                                                    }}
-                                                    isEditing={isEditingSection}
-                                                    editedContent={editedContent}
-                                                    onContentChange={(content) => updateSectionEdit(section.id, content)}
-                                                    highlightFillIns={highlightFillIns}
-                                                  />
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
+                                                    {/* Feedback Popover */}
+                                                    {activeFeedbackSection === `${recId}_${section.id}` && (
+                                                      <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                          <span className="text-[12px] font-bold text-amber-900">💬 Feedback for this section</span>
+                                                          <button
+                                                            onClick={() => setActiveFeedbackSection(null)}
+                                                            className="text-amber-900 hover:bg-amber-100 p-1 rounded-md"
+                                                          >
+                                                            <IconX size={14} />
+                                                          </button>
+                                                        </div>
+                                                        <textarea
+                                                          className="w-full p-3 bg-white border border-amber-300 rounded-lg text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 min-h-[80px]"
+                                                          placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
+                                                          autoFocus
+                                                          value={feedback}
+                                                          onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
+                                                        />
+                                                      </div>
+                                                    )}
+
+                                                    {/* Section Content */}
+                                                    <div className="text-[16px] text-slate-700 leading-relaxed">
+                                                      <ContentSectionRenderer
+                                                        section={{
+                                                          id: section.id,
+                                                          title: section.title,
+                                                          content: section.content,
+                                                          sectionType: section.sectionType,
+                                                        }}
+                                                        isEditing={isEditingSection}
+                                                        editedContent={editedContent}
+                                                        onContentChange={(content) => updateSectionEdit(section.id, content)}
+                                                        highlightFillIns={highlightFillIns}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
 
                                           {/* Call to Action */}
                                           {callToAction && (

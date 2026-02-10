@@ -269,6 +269,33 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
         brandId: string,
         strategy: StrategyPlan
     ): Promise<void> {
+        // Check for existing strategy to preserve context files
+        const { data: existing } = await supabaseAdmin
+            .from('recommendation_generated_contents')
+            .select('content')
+            .eq('recommendation_id', recommendationId)
+            .eq('content_type', 'strategy_plan')
+            .maybeSingle();
+
+        if (existing) {
+            try {
+                const existingPlan = JSON.parse(existing.content);
+                if (existingPlan.contextFiles && Array.isArray(existingPlan.contextFiles) && existingPlan.contextFiles.length > 0) {
+                    console.log(`📦 [StrategyService] Preserving ${existingPlan.contextFiles.length} context files`);
+                    // If the new strategy doesn't have context files (it shouldn't), copy them over
+                    if (!strategy.contextFiles) {
+                        strategy.contextFiles = existingPlan.contextFiles;
+                    } else {
+                        // If it somehow has them, maybe merge? But simplified: keep existing if new is empty
+                        // For now, assuming new strategy from LLM has no context files
+                        strategy.contextFiles = existingPlan.contextFiles;
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ Failed to parse existing strategy to preserve files', e);
+            }
+        }
+
         // Delete existing strategy plan for this recommendation (if any)
         await supabaseAdmin
             .from('recommendation_generated_contents')
@@ -308,6 +335,30 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
     }
 
     /**
+     * Parse context file content
+     */
+    private async parseContextFile(buffer: Buffer, mimeType: string): Promise<string> {
+        try {
+            if (mimeType === 'application/pdf') {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                let pdf = require('pdf-parse');
+                // Handle ES module default export if present
+                if (pdf.default) {
+                    pdf = pdf.default;
+                }
+                const data = await pdf(buffer);
+                return data.text;
+            } else {
+                // Assume text/plain or similar
+                return buffer.toString('utf-8');
+            }
+        } catch (error) {
+            console.error('❌ Error parsing file:', error);
+            throw new Error('Failed to parse file content');
+        }
+    }
+
+    /**
      * Add context file to strategy
      */
     async addContextFile(
@@ -315,9 +366,11 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
         customerId: string,
         file: {
             name: string;
-            content: string;
+            buffer: Buffer;
+            mimeType: string;
+            size: number;
         }
-    ): Promise<{ success: boolean; error?: string }> {
+    ): Promise<{ success: boolean; error?: string; data?: any }> {
         try {
             // Fetch recommendation to get generation_id
             const { data: rec, error: recError } = await supabaseAdmin
@@ -331,37 +384,89 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                 return { success: false, error: 'Recommendation not found' };
             }
 
+            // Parse file content
+            const extractedText = await this.parseContextFile(file.buffer, file.mimeType);
+
             // Fetch existing strategy
-            const { data: existing } = await supabaseAdmin
+            let { data: existing } = await supabaseAdmin
                 .from('recommendation_generated_contents')
-                .select('content')
+                .select('content, id')
                 .eq('recommendation_id', recommendationId)
                 .eq('content_type', 'strategy_plan')
                 .maybeSingle();
 
-            if (!existing) {
-                return { success: false, error: 'No strategy found. Generate strategy first.' };
-            }
+            // If no strategy exists, create a dummy one to hold context files
+            // This supports the "Step 2" upload flow even if strategy wasn't explicitly generated
+            let strategy: StrategyPlan;
 
-            const strategy: StrategyPlan = JSON.parse(existing.content);
+            if (!existing) {
+                strategy = {
+                    recommendationId,
+                    contentType: 'article', // Default, will be updated if strategy is generated
+                    primaryEntity: '',
+                    targetChannel: '',
+                    brandContext: { name: '' },
+                    structure: [],
+                    strategicGuidance: {
+                        keyFocus: '',
+                        aeoTargets: [],
+                        toneGuidelines: '',
+                        differentiation: ''
+                    },
+                    contextFiles: []
+                };
+            } else {
+                strategy = JSON.parse(existing.content);
+            }
 
             // Add context file
             if (!strategy.contextFiles) {
                 strategy.contextFiles = [];
             }
 
-            strategy.contextFiles.push({
-                id: `file_${Date.now()}`,
+            const newFile = {
+                id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 name: file.name,
-                content: file.content,
+                content: extractedText, // Storing parsed text for LLM context
                 uploadedAt: new Date().toISOString()
-            });
+            };
 
-            // Save updated strategy
-            await this.saveStrategy(recommendationId, customerId, rec.generation_id, rec.brand_id, strategy);
+            strategy.contextFiles.push(newFile);
+
+            // Save updated/new strategy
+            // Using upsert logic here
+            // Delete existing strategy plan for this recommendation (if any)
+            await supabaseAdmin
+                .from('recommendation_generated_contents')
+                .delete()
+                .eq('recommendation_id', recommendationId)
+                .eq('content_type', 'strategy_plan');
+
+            // Insert new strategy plan
+            await supabaseAdmin
+                .from('recommendation_generated_contents')
+                .insert({
+                    recommendation_id: recommendationId,
+                    customer_id: customerId,
+                    generation_id: rec.generation_id,
+                    brand_id: rec.brand_id,
+                    status: 'generated',
+                    content_type: 'strategy_plan',
+                    content: JSON.stringify(strategy),
+                    model_provider: 'openrouter',
+                    model_name: 'meta-llama/llama-3.3-70b-instruct',
+                    prompt: 'strategy_enrichment',
+                    metadata: {
+                        is_strategy_plan: true,
+                        content_type: strategy.contentType,
+                        has_strategic_guidance: true
+                    },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                });
 
             console.log(`✅ [StrategyService] Added context file: ${file.name}`);
-            return { success: true };
+            return { success: true, data: { file: newFile } };
 
         } catch (error: any) {
             console.error('❌ Error adding context file:', error);

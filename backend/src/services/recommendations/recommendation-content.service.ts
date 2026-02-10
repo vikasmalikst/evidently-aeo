@@ -445,7 +445,33 @@ class RecommendationContentService {
 We track brand performance across AI models (visibility, Share of Answers, sentiment) and citation sources.
 Your content should help the customer's brand improve the targeted KPI by executing the recommendation.\n`;
 
-    const recommendationContext = `Brand\n- Name: ${brand?.name || 'Unknown'}\n- Industry: ${brand?.industry || 'Unknown'}\n- Summary: ${brand?.summary || 'N/A'}\n\nRecommendation\n- Action: ${rec.action}\n- KPI: ${rec.kpi}\n- Focus area: ${rec.focus_area}\n- Priority: ${rec.priority}\n- Effort: ${rec.effort}\n- Timeline: ${rec.timeline}\n- Expected boost: ${rec.expected_boost || 'TBD'}\n\nEvidence & metrics\n- Citation source: ${rec.citation_source}\n- Impact score: ${rec.impact_score}\n- Mention rate: ${rec.mention_rate}\n- Visibility: ${rec.visibility_score}\n- SOA: ${rec.soa}\n- Sentiment: ${rec.sentiment}\n- Citations: ${rec.citation_count}\n\nFocus\n- Focus sources: ${rec.focus_sources}\n- Content focus: ${rec.content_focus}\n\nReason\n${rec.reason}\n\nExplanation\n${rec.explanation}`;
+    // Fetch context files from strategy plan (if any)
+    let contextFilesContent = '';
+    const { data: strategyPlan } = await supabaseAdmin
+      .from('recommendation_generated_contents')
+      .select('content')
+      .eq('recommendation_id', recommendationId)
+      .eq('content_type', 'strategy_plan')
+      .maybeSingle();
+
+    if (strategyPlan) {
+      try {
+        const parsedPlan = JSON.parse(strategyPlan.content);
+        if (parsedPlan.contextFiles && Array.isArray(parsedPlan.contextFiles) && parsedPlan.contextFiles.length > 0) {
+          console.log(`📂 [RecommendationContentService] Found ${parsedPlan.contextFiles.length} context files for generation.`);
+
+          contextFilesContent = `\n\nUPLOADED CONTEXT DOCUMENTS:\nThe following documents were provided by the user to guide this content generation. USE them as primary source material.\n\n`;
+
+          parsedPlan.contextFiles.forEach((file: any, index: number) => {
+            contextFilesContent += `--- DOCUMENT ${index + 1}: ${file.name} ---\n${file.content}\n--- END DOCUMENT ${index + 1} ---\n\n`;
+          });
+        }
+      } catch (e) {
+        console.warn('⚠️ [RecommendationContentService] Failed to parse strategy plan for context files', e);
+      }
+    }
+
+    const recommendationContext = `Brand\n- Name: ${brand?.name || 'Unknown'}\n- Industry: ${brand?.industry || 'Unknown'}\n- Summary: ${brand?.summary || 'N/A'}\n\nRecommendation\n- Action: ${rec.action}\n- KPI: ${rec.kpi}\n- Focus area: ${rec.focus_area}\n- Priority: ${rec.priority}\n- Effort: ${rec.effort}\n- Timeline: ${rec.timeline}\n- Expected boost: ${rec.expected_boost || 'TBD'}\n\nEvidence & metrics\n- Citation source: ${rec.citation_source}\n- Impact score: ${rec.impact_score}\n- Mention rate: ${rec.mention_rate}\n- Visibility: ${rec.visibility_score}\n- SOA: ${rec.soa}\n- Sentiment: ${rec.sentiment}\n- Citations: ${rec.citation_count}\n\nFocus\n- Focus sources: ${rec.focus_sources}\n- Content focus: ${rec.content_focus}\n\nReason\n${rec.reason}\n\nExplanation\n${rec.explanation}${contextFilesContent}`;
 
     // Detect source type
     const detectedSourceType = detectSourceType(rec.citation_source || '');

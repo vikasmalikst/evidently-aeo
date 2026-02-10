@@ -2352,23 +2352,21 @@ router.post('/:recommendationId/upload-context',
         return res.status(400).json({ success: false, error: 'No file uploaded' });
       }
 
-      console.log(`📂 [RecommendationsV3] Uploading context file: ${file.originalname}`);
-
-      // Parse file content (for now, just use as text)
-      // TODO: Add PDF/DOCX parsing if needed
-      const content = file.buffer.toString('utf-8');
+      console.log(`📂 [RecommendationsV3] Uploading context file for ${recommendationId}: ${file.originalname} (${file.size} bytes)`);
 
       const result = await strategyGenerationService.addContextFile(
         recommendationId,
         customerId,
         {
           name: file.originalname,
-          content
+          buffer: file.buffer,
+          mimeType: file.mimetype,
+          size: file.size
         }
       );
 
       if (!result.success) {
-        return res.status(500).json(result);
+        return res.status(400).json(result);
       }
 
       return res.json(result);
@@ -2381,6 +2379,8 @@ router.post('/:recommendationId/upload-context',
     }
   }
 );
+
+
 
 export default router;
 

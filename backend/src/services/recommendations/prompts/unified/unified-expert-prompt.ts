@@ -15,7 +15,7 @@ export function buildUnifiedExpertPrompt(
 
     if (structureConfig?.sections && structureConfig.sections.length > 0) {
         template = structureConfig.sections.map(section => {
-            return `[H2] ${section.title}\n${section.content}`;
+            return `[H2] ${section.title}\n> INSTRUCTIONS FOR THIS SECTION: ${section.content}`;
         }).join('\n\n');
 
         template = `[H1] Title (The Hook): My Experience with [Topic]\n\n` + template;
@@ -25,10 +25,10 @@ export function buildUnifiedExpertPrompt(
 [H1] Title (The Hook): My Experience with [Topic]
 
 [H2] The Expert Perspective
-Word Count: 100 words. Tonality: Anecdotal, experienced. Format: First-person ("I've been in [Industry] for..."). State your credentials and mention you work at/with [Brand].
+> INSTRUCTIONS: Word Count: 100 words. Tonality: Anecdotal, experienced. Format: First-person ("I've been in [Industry] for..."). State your credentials and mention you work at/with [Brand].
 
 [H2] The Nuanced Answer
-Word Count: 150 words. Tonality: Honest, "No-BS." Format: Bullet points for "What actually works." Mention a "Freshness Signal" (e.g., "Since the latest 2026 update, I've noticed...").
+> INSTRUCTIONS: Word Count: 150 words. Tonality: Honest, "No-BS." Format: Bullet points for "What actually works." Mention a "Freshness Signal" (e.g., "Since the latest 2026 update, I've noticed...").
 `;
     }
 
@@ -62,6 +62,7 @@ You must return a VALID JSON object with the following structure.
 WRITING RULES:
 - Output the FULL content in the 'content' field as a single markdown string.
 - Use H1 (#), H2 (##) for headers in the markdown.
+- IGNORE LITERAL INSTRUCTIONS: Text starting with "> INSTRUCTIONS" is background guidance for you. Do NOT output this text. Use it to generate the actual content.
 - JSON only.
 `;
 }

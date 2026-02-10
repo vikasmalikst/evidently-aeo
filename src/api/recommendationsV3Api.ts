@@ -766,7 +766,7 @@ export async function generateStrategyV3(
 export async function uploadContextFileV3(
   recommendationId: string,
   file: File
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const formData = new FormData();
     formData.append('file', file);

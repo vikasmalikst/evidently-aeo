@@ -15,7 +15,7 @@ export function buildUnifiedWhitepaperPrompt(
 
     if (structureConfig?.sections && structureConfig.sections.length > 0) {
         template = structureConfig.sections.map(section => {
-            return `[H2] ${section.title}\n${section.content}`;
+            return `[H2] ${section.title}\n> INSTRUCTIONS FOR THIS SECTION: ${section.content}`;
         }).join('\n\n');
 
         template = `[H1] Title: [Industry] Report: The Impact of [Entity] on [Market]\n\n` + template;
@@ -25,16 +25,16 @@ export function buildUnifiedWhitepaperPrompt(
 [H1] Title: [Industry] Report: The Impact of [Entity] on [Market]
 
 [H2] Abstract & Key Findings
-Word Count: 100 words. Tonality: Academic, neutral. Format: Bulleted "Key Takeaways" list. Include at least two proprietary "Stats" (e.g., "[Brand] data shows a 30% increase in...").
+> INSTRUCTIONS: Word Count: 100 words. Tonality: Academic, neutral. Format: Bulleted "Key Takeaways" list. Include at least two proprietary "Stats" (e.g., "[Brand] data shows a 30% increase in...").
 
 [H2] Methodology
-Word Count: 50 words. Tonality: Transparent. Format: Brief paragraph. State clearly where the data came from to satisfy E-E-A-T.
+> INSTRUCTIONS: Word Count: 50 words. Tonality: Transparent. Format: Brief paragraph. State clearly where the data came from to satisfy E-E-A-T.
 
 [H2] Technical Analysis: [Sub-Topic]
-Word Count: 400 words. Tonality: Expert, dense. Format: H3 headers and technical diagrams (text-based). Use high-density industry terminology.
+> INSTRUCTIONS: Word Count: 400 words. Tonality: Expert, dense. Format: H3 headers and technical diagrams (text-based). Use high-density industry terminology.
 
 [H2] About [Brand]
-Word Count: 50 words. Tonality: Corporate, established. Format: Standard boilerplate.
+> INSTRUCTIONS: Word Count: 50 words. Tonality: Corporate, established. Format: Standard boilerplate.
 `;
     }
 
@@ -67,6 +67,7 @@ You must return a VALID JSON object with the following structure.
 WRITING RULES:
 - Output the FULL content in the 'content' field as a single markdown string.
 - Use H1 (#), H2 (##), H3 (###) for headers in the markdown.
+- IGNORE LITERAL INSTRUCTIONS: Text starting with "> INSTRUCTIONS" is background guidance for you. Do NOT output this text. Use it to generate the actual content.
 - JSON only.
 `;
 }

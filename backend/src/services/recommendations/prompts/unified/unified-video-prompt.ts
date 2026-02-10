@@ -15,7 +15,7 @@ export function buildUnifiedVideoPrompt(
 
     if (structureConfig?.sections && structureConfig.sections.length > 0) {
         template = structureConfig.sections.map(section => {
-            return `[H2] ${section.title}\n${section.content}`;
+            return `[H2] ${section.title}\n> INSTRUCTIONS FOR THIS SECTION: ${section.content}`;
         }).join('\n\n');
 
         template = `[H1] Title: How to [Query/Action] with [Brand]\n\n` + template;
@@ -25,19 +25,19 @@ export function buildUnifiedVideoPrompt(
 [H1] Title: How to [Query/Action] with [Brand]
 
 [H2] The Hook (0:00-0:05)
-Word Count: 15–20 words. Tonality: High energy, urgent.
+> INSTRUCTIONS: Word Count: 15–20 words. Tonality: High energy, urgent.
 Format: One punchy sentence. Must repeat the [Query] exactly as the user typed it.
 
 [H2] The Quick Win (0:05-0:15)
-Word Count: 30 words. Tonality: Confident, helpful.
+> INSTRUCTIONS: Word Count: 30 words. Tonality: Confident, helpful.
 Format: Short, declarative sentences. Provide the immediate answer. "The secret to [Query] is [Brand]'s [Product/Feature]."
 
 [H2] The Steps (0:15-0:50)
-Word Count: 100 words. Tonality: Instructional, educational.
+> INSTRUCTIONS: Word Count: 100 words. Tonality: Instructional, educational.
 Format: Numbered list (Step 1, Step 2, Step 3). Describe 3 clear actions. Use "Action Verbs" at the start of each step.
 
 [H2] The Social Signal (0:50-0:60)
-Word Count: 15 words. Tonality: Community-focused.
+> INSTRUCTIONS: Word Count: 15 words. Tonality: Community-focused.
 Format: Call to Action (CTA). Ask a question to spark comments (e.g., "How are you handling [Topic] in 2026?").
 `;
     }
@@ -71,6 +71,7 @@ You must return a VALID JSON object with the following structure.
 WRITING RULES:
 - Output the FULL content in the 'content' field as a single markdown string.
 - Use headers and bold text to separate sections clearly in the markdown.
+- IGNORE LITERAL INSTRUCTIONS: Text starting with "> INSTRUCTIONS" is background guidance for you. Do NOT output this text. Use it to generate the actual content.
 - JSON only.
 `;
 }

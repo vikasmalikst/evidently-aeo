@@ -29,6 +29,7 @@ import {
   saveContentDraftV3,
   saveSectionEditsV3,
   generateStrategyV3,
+  uploadContextFileV3,
   type StrategyPlan
 } from '../api/recommendationsV3Api';
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
@@ -49,7 +50,7 @@ import { ContentTypeFilter } from '../components/RecommendationsV3/components/Co
 import { ContentSectionRenderer, SectionTypeBadge, UnifiedContentRenderer } from '../components/RecommendationsV3/components/ContentSectionRenderer';
 import { SEOScoreCard, ExportModal } from '../components/RecommendationsV3/components/SEOScoreCard';
 import { AEOScoreBadge } from '../components/RecommendationsV3/components/ContentAnalysisTools';
-import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle, IconPlus, IconMinus, IconDownload, IconRobot, IconRefresh } from '@tabler/icons-react';
+import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle, IconPlus, IconMinus, IconDownload, IconRobot, IconRefresh, IconPaperclip, IconLoader2, IconFileText } from '@tabler/icons-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface RecommendationsV3Props {
@@ -129,6 +130,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     return Array.from(types).sort();
   }, [allRecommendations]);
   const [generatingContentIds, setGeneratingContentIds] = useState<Set<string>>(new Set()); // Track which recommendations are generating content
+  const [uploadingContextRecId, setUploadingContextRecId] = useState<string | null>(null);
   const [hasGeneratedContentForStep3, setHasGeneratedContentForStep3] = useState(false); // Drives Step 3 "attention" animation after generating content
   const [hasCompletedForStep4, setHasCompletedForStep4] = useState(false); // Drives Step 4 "attention" animation after marking completed
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -612,6 +614,67 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     // Now update the brand - this will trigger loadLatestGeneration
     selectBrand(newBrandId);
   }, [selectedBrandId, selectBrand]);
+
+  // Handle context file upload
+  const handleUploadContext = async (recId: string, file: File) => {
+    if (uploadingContextRecId === recId) return;
+    
+    // Validations
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size exceeds 5MB limit');
+      return;
+    }
+
+    setUploadingContextRecId(recId);
+    
+    try {
+      const response = await uploadContextFileV3(recId, file);
+      
+      if (response.success && response.data?.file) {
+         const newFile = response.data.file;
+         
+         // Update strategy plans state
+         setStrategyPlans(prev => {
+           const next = new Map(prev);
+           // Get existing plan or create a dummy structure if it doesn't exist locally yet
+           const existingPlan = next.get(recId) || {
+              recommendationId: recId,
+              contentType: 'article', // Default
+              primaryEntity: '',
+              targetChannel: '',
+              brandContext: { name: brandName || '' },
+              structure: [],
+              strategicGuidance: {
+                keyFocus: '',
+                aeoTargets: [],
+                toneGuidelines: '',
+                differentiation: ''
+              },
+              contextFiles: []
+           };
+
+           // Add file to arrays
+           const updatedFiles = [...(existingPlan.contextFiles || []), newFile];
+           
+           next.set(recId, {
+             ...existingPlan,
+             contextFiles: updatedFiles
+           });
+           
+           return next;
+         });
+         
+         console.log(`✅ [RecommendationsV3] Context file uploaded: ${file.name}`);
+      } else {
+        setError(response.error || 'Failed to upload context file');
+      }
+    } catch (err: any) {
+      console.error('Error uploading context file:', err);
+      setError(err.message || 'Failed to upload context file');
+    } finally {
+      setUploadingContextRecId(null);
+    }
+  };
 
   // Load latest generation on mount or when brand changes
   useEffect(() => {
@@ -1123,6 +1186,58 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
     return (
       <div className="space-y-4">
+        {/* Context Upload Section */}
+        <div className="mb-6 bg-slate-50 border border-slate-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <IconPaperclip size={16} />
+              Context Documents
+            </h4>
+            <label className={`cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors ${uploadingContextRecId === recommendation.id ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              {uploadingContextRecId === recommendation.id ? (
+                <>
+                  <IconLoader2 size={14} className="animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <IconPlus size={14} />
+                  Add Document
+                </>
+              )}
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,.txt,.docx,.md"
+                disabled={uploadingContextRecId === recommendation.id}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleUploadContext(recommendation.id!, file);
+                  e.target.value = ''; // Reset
+                }}
+              />
+            </label>
+          </div>
+          
+          {strategyPlan?.contextFiles && strategyPlan.contextFiles.length > 0 ? (
+             <div className="space-y-2">
+               {strategyPlan.contextFiles.map((file: any) => (
+                 <div key={file.id} className="flex items-center justify-between bg-white border border-slate-200 rounded p-2 text-xs">
+                   <div className="flex items-center gap-2 overflow-hidden">
+                     <IconFileText size={14} className="text-slate-400 shrink-0" />
+                     <span className="truncate text-slate-600">{file.name}</span>
+                   </div>
+                   <span className="text-slate-400 text-[10px]">{new Date(file.uploadedAt).toLocaleDateString()}</span>
+                 </div>
+               ))}
+             </div>
+          ) : (
+            <p className="text-xs text-slate-500 italic">
+              Upload PDF, DOCX, or TXT files to provide context for content generation.
+            </p>
+          )}
+        </div>
+
         {/* Strategy Generation Section - Minimal Centered Design */}
         {!strategyPlan && (
           <div className="-mt-2 bg-gradient-to-br from-cyan-50 via-teal-50 to-cyan-50 border-2 border-t-0 border-cyan-200 rounded-b-xl p-8 text-center">
@@ -1435,7 +1550,23 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
     setContentMap(prev => {
       const next = new Map(prev);
-      const existing = next.get(recommendationId);
+      // Resolve existing content: Look in map first, then fallback to recommendations list
+      let existing = next.get(recommendationId);
+      
+      if (!existing) {
+        const originalRec = recommendations.find(r => r.id === recommendationId);
+        if (originalRec && (originalRec as any).content) {
+            existing = (originalRec as any).content;
+            // Parse if string
+            if (typeof existing === 'string' && existing.startsWith('{')) {
+                try {
+                    existing = JSON.parse(existing);
+                } catch (e) {
+                    // keep as string
+                }
+            }
+        }
+      }
 
       if (typeof existing === 'object' && existing !== null) {
         // Handle v5.0 (Unified Content)
@@ -1463,6 +1594,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           next.set(recommendationId, editBuffer);
         }
       } else {
+        // Fallback: If we couldn't find a structure, save as string
+        // Note: This might cause v5.0 to downgrade if originalRec lookup failed, but that shouldn't happen for valid recs
         next.set(recommendationId, editBuffer);
       }
       return next;
@@ -3374,13 +3507,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       } else {
                                         fallbackText = parsedContent?.raw || rawContent || JSON.stringify(parsedContent, null, 2);
                                       }
+
+                                      // Auto-detect markdown structure (likely v5.0 content saved as raw string)
+                                      const isMarkdownContent = typeof fallbackText === 'string' && (fallbackText.includes('## ') || fallbackText.includes('[H2]'));
+                                      const shouldUseUnifiedRenderer = (parsedContent && parsedContent.version === '5.0' && parsedContent.content) || isMarkdownContent;
+
                                       return (
                                         <div className="bg-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6">
                                           <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
                                             <div className="w-1.5 h-1.5 rounded-full bg-[#64748b]"></div>
                                             <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Generated Content</h4>
                                           </div>
-                                          {parsedContent && parsedContent.version === '5.0' && parsedContent.content ? (
+                                          {shouldUseUnifiedRenderer ? (
                                             <UnifiedContentRenderer content={fallbackText} />
                                           ) : (
                                             <pre className="text-[13px] text-[#1a1d29] whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto max-h-96 overflow-y-auto">

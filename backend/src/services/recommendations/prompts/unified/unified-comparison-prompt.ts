@@ -16,7 +16,7 @@ export function buildUnifiedComparisonPrompt(
 
     if (structureConfig?.sections && structureConfig.sections.length > 0) {
         template = structureConfig.sections.map(section => {
-            return `[H2] ${section.title}\n${section.content}`;
+            return `[H2] ${section.title}\n> INSTRUCTIONS FOR THIS SECTION: ${section.content}`;
         }).join('\n\n');
 
         template = `[H1] Title: [Brand] vs. [Competitor A] vs. [Competitor B]: 2026 Comparison\n\n` + template;
@@ -26,12 +26,12 @@ export function buildUnifiedComparisonPrompt(
 [H1] Title: [Brand] vs. [Competitor A] vs. [Competitor B]: 2026 Comparison
 
 [H2] Comparison Matrix
-Description: A Markdown Table comparing features.
+> INSTRUCTIONS: Description: A Markdown Table comparing features.
 Columns: Feature, [Brand], [Competitor A], [Competitor B].
 Rows: 5-7 key features. Use descriptive text in cells (e.g., "Native Integration", "Full Support") rather than just "Yes/No".
 
 [H2] The [Brand] Advantage
-Word Count: 100 words. Tonality: Competitive, assertive.
+> INSTRUCTIONS: Word Count: 100 words. Tonality: Competitive, assertive.
 Format: 3 Bullets highlighting "Unique Selling Propositions" (USPs). Explicitly state: "Unlike [Competitors], [Brand] offers [Feature]."
 `;
     }
@@ -71,6 +71,7 @@ WRITING RULES:
 - Output the FULL content in the 'content' field as a single markdown string.
 - Use H1 (#), H2 (##) for headers in the markdown.
 - Ensure the table is properly formatted in markdown.
+- IGNORE LITERAL INSTRUCTIONS: Text starting with "> INSTRUCTIONS" is background guidance for you. Do NOT output this text. Use it to generate the actual content.
 - JSON only.
 `;
 }

@@ -15,7 +15,7 @@ export function buildUnifiedSocialPrompt(
 
     if (structureConfig?.sections && structureConfig.sections.length > 0) {
         template = structureConfig.sections.map(section => {
-            return `[H2] ${section.title}\n${section.content}`;
+            return `[H2] ${section.title}\n> INSTRUCTIONS FOR THIS SECTION: ${section.content}`;
         }).join('\n\n');
 
         // Social threads usually don't have a main H1 Title in the content body as they are a series of posts, 
@@ -27,16 +27,16 @@ export function buildUnifiedSocialPrompt(
         // Social Media Thread Template (from improvedContentTemplates.md)
         template = `
 [H2] Post 1 (The Hook)
-Word Count: 25 words. Tonality: Contrarian or provocative.
+> INSTRUCTIONS: Word Count: 25 words. Tonality: Contrarian or provocative.
 Format: One sentence + "A thread 🧵".
 
 [H2] Posts 2-5 (The Value)
-Word Count: 40 words per post. Tonality: Fast-paced.
+> INSTRUCTIONS: Word Count: 40 words per post. Tonality: Fast-paced.
 Format: 1 Insight per post. Bold the Key Entity in every post.
 Number the posts (2/x, 3/x, etc.).
 
 [H2] Post 6 (The Brand Tie-in)
-Word Count: 30 words. Tonality: Consultative.
+> INSTRUCTIONS: Word Count: 30 words. Tonality: Consultative.
 Format: CTA. "We just solved this at [Brand]. Here’s the data: [Link]."
 `;
     }
@@ -70,6 +70,7 @@ You must return a VALID JSON object with the following structure.
 WRITING RULES:
 - Output the FULL content in the 'content' field as a single markdown string.
 - Separate posts clearly (e.g., using horizontal rules "---" or bold headers "Post 1:", "Post 2:").
+- IGNORE LITERAL INSTRUCTIONS: Text starting with "> INSTRUCTIONS" is background guidance for you. Do NOT output this text. Use it to generate the actual content.
 - JSON only.
 `;
 }

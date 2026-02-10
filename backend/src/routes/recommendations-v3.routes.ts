@@ -2380,6 +2380,63 @@ router.post('/:recommendationId/upload-context',
   }
 );
 
+/**
+ * POST /api/recommendations-v3/:recommendationId/content/save-unified
+ * 
+ * Save unified content (markdown) for a recommendation.
+ * Updates the existing content record in-place.
+ */
+router.post('/:recommendationId/content/save-unified', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    const { recommendationId } = req.params;
+    const { content } = req.body;
+
+    if (!content) {
+      return res.status(400).json({
+        success: false,
+        error: 'Content is required'
+      });
+    }
+
+    console.log(`📝 [RecommendationsV3 Save Unified] Saving content for recommendation ${recommendationId}`);
+
+    const result = await recommendationContentService.saveUnifiedContent(
+      recommendationId,
+      customerId,
+      content
+    );
+
+    if (result) {
+      return res.json({
+        success: true,
+        data: {
+          content: result
+        }
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to save unified content'
+      });
+    }
+  } catch (error: any) {
+    console.error('❌ [RecommendationsV3 Save Unified] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to save unified content'
+    });
+  }
+});
+
 
 
 export default router;

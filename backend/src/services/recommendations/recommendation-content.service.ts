@@ -2000,6 +2000,72 @@ RULES:
       return null;
     }
   }
+
+  /**
+   * Save unified content (v5.0) for a recommendation.
+   * Updates the existing content record in-place.
+   */
+  async saveUnifiedContent(
+    recommendationId: string,
+    customerId: string,
+    content: string
+  ): Promise<RecommendationContentRecord | null> {
+    try {
+      // Fetch the latest content record
+      const { data: existing, error: fetchError } = await supabaseAdmin
+        .from('recommendation_generated_contents')
+        .select('*')
+        .eq('recommendation_id', recommendationId)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (fetchError || !existing) {
+        console.error('[SAVE_UNIFIED] No existing content found for recommendation:', recommendationId);
+        return null;
+      }
+
+      // Parse the existing content to check version or just overwrite
+      let parsedContent: any;
+      try {
+        parsedContent = typeof existing.content === 'string'
+          ? JSON.parse(existing.content)
+          : existing.content;
+      } catch (parseErr) {
+        // Fallback to simple object if parsing fails
+        parsedContent = { version: '5.0', content: '' };
+      }
+
+      // Update content field
+      parsedContent.content = content;
+      // Ensure it's marked as v5.0 if we're saving unified content
+      parsedContent.version = '5.0';
+
+      // Update the same row in the database
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('recommendation_generated_contents')
+        .update({
+          content: JSON.stringify(parsedContent),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id)
+        .eq('customer_id', customerId)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error('[SAVE_UNIFIED] Failed to update content:', updateError);
+        return null;
+      }
+
+      console.log(`✅ [SAVE_UNIFIED] Successfully saved unified content for recommendation ${recommendationId}`);
+      return updated as any;
+    } catch (error) {
+      console.error('[SAVE_UNIFIED] Error saving unified content:', error);
+      return null;
+    }
+  }
 }
 
 export const recommendationContentService = new RecommendationContentService();

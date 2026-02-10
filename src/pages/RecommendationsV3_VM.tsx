@@ -27,11 +27,7 @@ import {
   type RecommendationV3,
   type IdentifiedKPI,
   saveContentDraftV3,
-  saveSectionEditsV3,
-  saveRecommendationContentV3,
-  generateStrategyV3,
-  uploadContextFileV3,
-  type StrategyPlan
+  saveSectionEditsV3
 } from '../api/recommendationsV3Api';
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
@@ -43,15 +39,18 @@ import { RecommendationsTableV3 } from '../components/RecommendationsV3/Recommen
 import { OpportunityStrategyCard } from '../components/RecommendationsV3/components/OpportunityStrategyCard';
 import { StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
 import { ContentStructureInlineEditor } from '../components/RecommendationsV3/components/ContentStructureInlineEditor';
-import { getTemplateForAction, getContentTemplates } from '../components/RecommendationsV3/data/structure-templates';
+import { PlanReviewModal } from '../components/RecommendationsV3/components/PlanReviewModal';
+import { PlanReviewInline } from '../components/RecommendationsV3/components/PlanReviewInline';
+
+import { getTemplateForAction } from '../components/RecommendationsV3/data/structure-templates';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
 import { EffortFilter } from '../components/RecommendationsV3/components/EffortFilter';
 import { ContentTypeFilter } from '../components/RecommendationsV3/components/ContentTypeFilter';
-import { ContentSectionRenderer, SectionTypeBadge, UnifiedContentRenderer } from '../components/RecommendationsV3/components/ContentSectionRenderer';
+import { ContentSectionRenderer, SectionTypeBadge } from '../components/RecommendationsV3/components/ContentSectionRenderer';
 import { SEOScoreCard, ExportModal } from '../components/RecommendationsV3/components/SEOScoreCard';
 import { AEOScoreBadge } from '../components/RecommendationsV3/components/ContentAnalysisTools';
-import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle, IconPlus, IconMinus, IconDownload, IconRobot, IconRefresh, IconPaperclip, IconLoader2, IconFileText, IconCopy } from '@tabler/icons-react';
+import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle, IconPlus, IconMinus, IconDownload, IconRobot } from '@tabler/icons-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface RecommendationsV3Props {
@@ -131,7 +130,6 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     return Array.from(types).sort();
   }, [allRecommendations]);
   const [generatingContentIds, setGeneratingContentIds] = useState<Set<string>>(new Set()); // Track which recommendations are generating content
-  const [uploadingContextRecId, setUploadingContextRecId] = useState<string | null>(null);
   const [hasGeneratedContentForStep3, setHasGeneratedContentForStep3] = useState(false); // Drives Step 3 "attention" animation after generating content
   const [hasCompletedForStep4, setHasCompletedForStep4] = useState(false); // Drives Step 4 "attention" animation after marking completed
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -167,9 +165,15 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   // Custom Structure State (Lifted from Inline Editor)
   const [customizedStructures, setCustomizedStructures] = useState<Map<string, StructureSection[]>>(new Map());
 
-  // Strategy Generation State
-  const [strategyPlans, setStrategyPlans] = useState<Map<string, StrategyPlan>>(new Map());
-  const [generatingStrategyIds, setGeneratingStrategyIds] = useState<Set<string>>(new Set());
+  // Plan Review State
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [currentPlan, setCurrentPlan] = useState<any>(null); // TemplatePlan
+  const [isProcessingPlan, setIsProcessingPlan] = useState(false); // Generating plan or content
+
+  // Per-recommendation plan map (recId -> TemplatePlan) for inline plan review in Step 2
+  const [planMap, setPlanMap] = useState<Map<string, any>>(new Map());
+
+
 
   const [stepCounts, setStepCounts] = useState<Record<number, number>>({});
   const [brandName, setBrandName] = useState<string>(''); // For template customization
@@ -234,9 +238,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   // For display/copy we want real line breaks.
   const unescapeNewlines = useCallback((value: any): any => {
     if (typeof value !== 'string') return value;
-    return value
-      .replace(/\\\\n/g, '\n')
-      .replace(/\\n/g, '\n');
+    return value.replace(/\\n/g, '\n');
   }, []);
 
   // Helper: Extract visible text content from structured content (V3/V4) for scoring
@@ -616,67 +618,6 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     selectBrand(newBrandId);
   }, [selectedBrandId, selectBrand]);
 
-  // Handle context file upload
-  const handleUploadContext = async (recId: string, file: File) => {
-    if (uploadingContextRecId === recId) return;
-    
-    // Validations
-    if (file.size > 5 * 1024 * 1024) {
-      alert('File size exceeds 5MB limit');
-      return;
-    }
-
-    setUploadingContextRecId(recId);
-    
-    try {
-      const response = await uploadContextFileV3(recId, file);
-      
-      if (response.success && response.data?.file) {
-         const newFile = response.data.file;
-         
-         // Update strategy plans state
-         setStrategyPlans(prev => {
-           const next = new Map(prev);
-           // Get existing plan or create a dummy structure if it doesn't exist locally yet
-           const existingPlan = next.get(recId) || {
-              recommendationId: recId,
-              contentType: 'article', // Default
-              primaryEntity: '',
-              targetChannel: '',
-              brandContext: { name: brandName || '' },
-              structure: [],
-              strategicGuidance: {
-                keyFocus: '',
-                aeoTargets: [],
-                toneGuidelines: '',
-                differentiation: ''
-              },
-              contextFiles: []
-           };
-
-           // Add file to arrays
-           const updatedFiles = [...(existingPlan.contextFiles || []), newFile];
-           
-           next.set(recId, {
-             ...existingPlan,
-             contextFiles: updatedFiles
-           });
-           
-           return next;
-         });
-         
-         console.log(`✅ [RecommendationsV3] Context file uploaded: ${file.name}`);
-      } else {
-        setError(response.error || 'Failed to upload context file');
-      }
-    } catch (err: any) {
-      console.error('Error uploading context file:', err);
-      setError(err.message || 'Failed to upload context file');
-    } finally {
-      setUploadingContextRecId(null);
-    }
-  };
-
   // Load latest generation on mount or when brand changes
   useEffect(() => {
     if (!selectedBrandId) return;
@@ -840,6 +781,124 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   // Note: Approval now happens automatically when user changes status to "approved" via dropdown
   // The handleStatusChange function handles updating the status, which automatically sets is_approved = true
+
+
+  // The handleStatusChange function handles updating the status, which automatically sets is_approved = true
+
+  /**
+   * Handle "Generate Strategy" Action (Step 2 Entry)
+   * 1. Generates a Plan (Step 1 of Generation) - OR fetches existing unless forced
+   * 2. Opens Review Modal
+   */
+  const handleGenerateStrategy = async (rec: RecommendationV3, force = false) => {
+    if (!rec.id) return;
+
+    // Mark this specific recommendation as generating
+    setGeneratingContentIds(prev => new Set(prev).add(rec.id!));
+
+    try {
+      const { generateTemplatePlan } = await import('../api/recommendationsV3Api');
+
+      console.log(`🧠 [RecommendationsV3] Generating Plan for ${rec.id} (Force: ${force})`);
+      const response = await generateTemplatePlan(rec.id, { force });
+
+      if (response.success && response.data) {
+        // Store plan in per-recommendation map
+        setPlanMap(prev => {
+          const next = new Map(prev);
+          next.set(rec.id!, response.data);
+          return next;
+        });
+        // Auto-expand the row to show the inline plan
+        setTargetExpandedId(rec.id!);
+      } else {
+        setError(response.error || 'Failed to generate plan');
+      }
+    } catch (err: any) {
+      console.error('Plan generation error:', err);
+      setError(err.message || 'Failed to generate plan');
+    } finally {
+      setGeneratingContentIds(prev => {
+        const next = new Set(prev);
+        next.delete(rec.id!);
+        return next;
+      });
+    }
+  };
+
+  /**
+   * Handle "Approve & Write" Action (Step 2 -> Step 3)
+   * Called from inline PlanReviewInline component (or legacy modal).
+   * Accepts a recId and reads plan from planMap.
+   */
+  const handleApprovePlan = async (recId?: string) => {
+    // Support both new (recId) and legacy (currentPlan) flows
+    const resolvedRecId = recId || currentPlan?.recommendationId;
+    const resolvedPlan = recId ? planMap.get(recId) : currentPlan;
+    if (!resolvedRecId || !resolvedPlan) return;
+
+    // Mark this recommendation as generating
+    setGeneratingContentIds(prev => new Set(prev).add(resolvedRecId));
+
+    try {
+      const { generateContentFromPlan } = await import('../api/recommendationsV3Api');
+      console.log(`✍️ [RecommendationsV3] Generating Content from Plan for ${resolvedRecId}`);
+
+      const response = await generateContentFromPlan(resolvedRecId, resolvedPlan);
+
+      if (response.success) {
+        console.log(`✅ [RecommendationsV3] Content generated successfully!`);
+        // Close legacy modal if it was open
+        setIsPlanModalOpen(false);
+        setCurrentPlan(null);
+
+        // Store the generated content in contentMap so Step 3 can display it
+        if (response.data) {
+          const newContentMap = new Map(contentMap);
+          try {
+            let contentData = response.data;
+            if (typeof contentData.content === 'string') {
+              try {
+                contentData = { ...contentData, content: JSON.parse(contentData.content) };
+              } catch { /* keep as string */ }
+            }
+            const innerContent = contentData.content || contentData;
+            newContentMap.set(resolvedRecId, innerContent);
+            setContentMap(newContentMap);
+            console.log(`📊 [RecommendationsV3] Stored generated content in contentMap for ${resolvedRecId}`);
+          } catch (err) {
+            console.error('Error storing generated content:', err);
+          }
+        }
+
+        // Optimistic update - mark as content generated
+        setRecommendations(prev => prev.map(r =>
+          r.id === resolvedRecId ? { ...r, isContentGenerated: true } : r
+        ));
+
+        // Flag that content was generated so Step 3 tab gets attention animation
+        setHasGeneratedContentForStep3(true);
+
+        // Navigate to Step 3 (Refine) and expand the newly generated content
+        setTimeout(() => {
+          setTargetExpandedId(resolvedRecId);
+          setCurrentStep(3);
+          persistStep(3, selectedBrandId);
+        }, 600);
+      } else {
+        alert(`Error: ${response.error}`);
+      }
+    } catch (err: any) {
+      console.error('Content generation error:', err);
+      alert('Failed to generate content');
+    } finally {
+      setGeneratingContentIds(prev => {
+        const next = new Set(prev);
+        next.delete(resolvedRecId);
+        return next;
+      });
+    }
+  };
 
   // Handle generate content for all approved recommendations (Step 2 → Step 3)
   const handleGenerateContentBulk = async () => {
@@ -1176,188 +1235,36 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   // Render inline structure editor for Step 2
   const renderStep2ExpandedContent = (recommendation: RecommendationV3) => {
-    console.log(`[RecommendationsV3Step2] Rendering Editor for ${recommendation.id}`, {
-      competitorsOriginal: recommendation.competitors_target,
-      competitorsMapped: recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || [],
-      brandName
-    });
+    const recId = recommendation.id!;
+    const existingPlan = planMap.get(recId);
 
-    const strategyPlan = strategyPlans.get(recommendation.id!);
-    const isGeneratingStrategy = generatingStrategyIds.has(recommendation.id!);
-
-    return (
-      <div className="space-y-4">
-        {/* Context Upload Section */}
-        <div className="mb-6 bg-slate-50 border border-slate-200 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <IconPaperclip size={16} />
-              Context Documents
-            </h4>
-            <label className={`cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors ${uploadingContextRecId === recommendation.id ? 'opacity-50 cursor-not-allowed' : ''}`}>
-              {uploadingContextRecId === recommendation.id ? (
-                <>
-                  <IconLoader2 size={14} className="animate-spin" />
-                  Uploading...
-                </>
-              ) : (
-                <>
-                  <IconPlus size={14} />
-                  Add Document
-                </>
-              )}
-              <input
-                type="file"
-                className="hidden"
-                accept=".pdf,.txt,.docx,.md"
-                disabled={uploadingContextRecId === recommendation.id}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleUploadContext(recommendation.id!, file);
-                  e.target.value = ''; // Reset
-                }}
-              />
-            </label>
-          </div>
-          
-          {strategyPlan?.contextFiles && strategyPlan.contextFiles.length > 0 ? (
-             <div className="space-y-2">
-               {strategyPlan.contextFiles.map((file: any) => (
-                 <div key={file.id} className="flex items-center justify-between bg-white border border-slate-200 rounded p-2 text-xs">
-                   <div className="flex items-center gap-2 overflow-hidden">
-                     <IconFileText size={14} className="text-slate-400 shrink-0" />
-                     <span className="truncate text-slate-600">{file.name}</span>
-                   </div>
-                   <span className="text-slate-400 text-[10px]">{new Date(file.uploadedAt).toLocaleDateString()}</span>
-                 </div>
-               ))}
-             </div>
-          ) : (
-            <p className="text-xs text-slate-500 italic">
-              Upload PDF, DOCX, or TXT files to provide context for content generation.
-            </p>
-          )}
+    // No plan generated yet — show an empty-state hint
+    if (!existingPlan) {
+      return (
+        <div className="px-8 py-10 text-center">
+          <p className="text-sm text-slate-400">
+            Click <span className="font-semibold text-indigo-500">Generate Strategy</span> to create a content plan for this recommendation.
+          </p>
         </div>
-
-        {/* Strategy Generation Section - Minimal Centered Design */}
-        {!strategyPlan && (
-          <div className="-mt-2 bg-gradient-to-br from-cyan-50 via-teal-50 to-cyan-50 border-2 border-t-0 border-cyan-200 rounded-b-xl p-8 text-center">
-            <p className="text-sm text-gray-600 mb-4">
-              AI will analyze your recommendation and generate an optimized content structure
-            </p>
-            <button
-              onClick={() => handleGenerateStrategy(recommendation)}
-              disabled={isGeneratingStrategy}
-              className="inline-flex items-center gap-2.5 px-6 py-3 bg-gradient-to-r from-cyan-500 to-teal-500 text-white text-sm font-bold rounded-xl hover:from-cyan-600 hover:to-teal-600 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 active:scale-95"
-            >
-              {isGeneratingStrategy ? (
-                <>
-                  <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Generating Strategy...</span>
-                </>
-              ) : (
-                <>
-                  <IconRobot size={18} />
-                  <span>Generate Content Strategy</span>
-                </>
-              )}
-            </button>
-          </div>
-        )}
-
-
-
-
-
-        {/* Structure Editor - Only visible AFTER strategy generation */}
-        {strategyPlan ? (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <ContentStructureInlineEditor
-                recommendationId={recommendation.id!}
-                contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
-                initialSections={customizedStructures.get(recommendation.id!)}
-                competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || []}
-                brandName={brandName}
-                onChange={(sections) => {
-                    setCustomizedStructures(prev => {
-                    const next = new Map(prev);
-                    next.set(recommendation.id!, sections);
-                    return next;
-                    });
-                }}
-                onSave={async (sections) => {
-                    setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
-                    try {
-                    const res = await saveContentDraftV3(recommendation.id!, sections);
-                    if (!res.success) {
-                        throw new Error(res.error || 'Failed to save content structure');
-                    }
-                    invalidateCache(new RegExp(`recommendations-v3/${recommendation.id!}/content`));
-                    } finally {
-                    setGeneratingContentIds(prev => {
-                        const next = new Set(prev);
-                        next.delete(recommendation.id!);
-                        return next;
-                    });
-                    }
-                }}
-                isSaving={generatingContentIds.has(recommendation.id!)}
-                />
-            </div>
-        ) : null}
-      </div>
-    );
-  };
-
-  // Handle generate strategy for a recommendation (enriches templates with LLM guidance)
-  const handleGenerateStrategy = async (recommendation: RecommendationV3) => {
-    if (!recommendation.id || generatingStrategyIds.has(recommendation.id)) return;
-
-    const contentType = getTemplateForAction(recommendation.action, recommendation.assetType);
-    if (!contentType) return;
-
-    setGeneratingStrategyIds(prev => new Set(prev).add(recommendation.id!));
-    setError(null);
-
-    try {
-      console.log(`🧠 [RecommendationsV3] Generating strategy for ${recommendation.id} (${contentType})...`);
-
-      const templates = getContentTemplates({
-        brandName: brandName,
-        competitors: recommendation.competitors_target?.map((c: any) => 
-          typeof c === 'string' ? c : c.name
-        ).filter(Boolean) || []
-      });
-
-      const templateSections = templates[contentType];
-      if (!templateSections) {
-        throw new Error(`No template found for content type: ${contentType}`);
-      }
-
-      const response = await generateStrategyV3(recommendation.id, {
-        templateSections,
-        contentType
-      });
-
-      if (response.success && response.data) {
-        console.log(`✅ [RecommendationsV3] Strategy generated successfully`);
-        setStrategyPlans(prev => new Map(prev).set(recommendation.id!, response.data!));
-
-        // Optionally, pre-populate customized structures with enriched sections
-        setCustomizedStructures(prev => new Map(prev).set(recommendation.id!, response.data!.structure));
-      } else {
-        setError(response.error || 'Failed to generate strategy');
-      }
-    } catch (err: any) {
-      console.error('Error generating strategy:', err);
-      setError(err.message || 'Failed to generate strategy');
-    } finally {
-      setGeneratingStrategyIds(prev => {
-        const next = new Set(prev);
-        next.delete(recommendation.id!);
-        return next;
-      });
+      );
     }
+
+    // Plan exists — render inline review
+    return (
+      <PlanReviewInline
+        plan={existingPlan}
+        onApprove={() => handleApprovePlan(recId)}
+        onRegenerate={() => handleGenerateStrategy(recommendation, true)}
+        isProcessing={generatingContentIds.has(recId)}
+        onPlanUpdated={(updatedPlan) => {
+          setPlanMap(prev => {
+            const next = new Map(prev);
+            next.set(recId, updatedPlan);
+            return next;
+          });
+        }}
+      />
+    );
   };
 
   // Handle generate content for single recommendation (Trigger)
@@ -1551,34 +1458,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
     setContentMap(prev => {
       const next = new Map(prev);
-      // Resolve existing content: Look in map first, then fallback to recommendations list
-      let existing = next.get(recommendationId);
-      
-      if (!existing) {
-        const originalRec = recommendations.find(r => r.id === recommendationId);
-        if (originalRec && (originalRec as any).content) {
-            existing = (originalRec as any).content;
-            // Parse if string
-            if (typeof existing === 'string' && existing.startsWith('{')) {
-                try {
-                    existing = JSON.parse(existing);
-                } catch (e) {
-                    // keep as string
-                }
-            }
-        }
-      }
+      const existing = next.get(recommendationId);
 
       if (typeof existing === 'object' && existing !== null) {
-        // Handle v5.0 (Unified Content)
-        if (existing.version === '5.0') {
-           next.set(recommendationId, {
-             ...existing,
-             content: editBuffer
-           });
-        }
         // If it's the v2.0 format, we need to update deep inside
-        else if (existing.version === '2.0' && existing.publishableContent) {
+        if (existing.version === '2.0' && existing.publishableContent) {
           next.set(recommendationId, {
             ...existing,
             publishableContent: {
@@ -1595,8 +1479,6 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           next.set(recommendationId, editBuffer);
         }
       } else {
-        // Fallback: If we couldn't find a structure, save as string
-        // Note: This might cause v5.0 to downgrade if originalRec lookup failed, but that shouldn't happen for valid recs
         next.set(recommendationId, editBuffer);
       }
       return next;
@@ -1604,33 +1486,17 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     setEditingId(null);
   };
 
-  const handleRegenerateContent = async (recParam?: any, feedbackParam?: string) => {
-    const rec = recParam || selectedRecommendationForRegen;
-    let feedback = feedbackParam || feedbackText;
+  const handleRegenerateContent = async () => {
+    if (!selectedRecommendationForRegen?.id || !feedbackText.trim()) return;
 
-    if (!rec?.id) return;
-
-    // If no explicit feedback, but we have section feedback for this rec, concatenate it
-    if (!feedback.trim()) {
-      const recSectionFeedback = sectionFeedback.get(rec.id);
-      if (recSectionFeedback) {
-        feedback = Array.from(recSectionFeedback.entries())
-          .filter(([_, f]) => f.trim().length > 0)
-          .map(([title, f]) => `[${title}]: ${f}`)
-          .join('\n');
-      }
-    }
-
-    if (!feedback.trim()) return;
-
-    const recommendationId = rec.id;
+    const recommendationId = selectedRecommendationForRegen.id;
     setRegeneratingId(recommendationId);
-    if (showFeedbackModal) setShowFeedbackModal(false);
+    setShowFeedbackModal(false);
 
     try {
       console.log(`🔄 [RecommendationsV3] Regenerating content for ${recommendationId}...`);
 
-      const response = await regenerateContentV3(recommendationId, feedback.trim());
+      const response = await regenerateContentV3(recommendationId, feedbackText.trim());
 
       if (response.success && response.data) {
         console.log(`✅ [RecommendationsV3] Content regenerated successfully`);
@@ -1660,12 +1526,6 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       setRegeneratingId(null);
       setFeedbackText('');
       setSelectedRecommendationForRegen(null);
-      // Clear section feedback for this rec after success (optional, but consistent with v4.0)
-      setSectionFeedback(prev => {
-        const next = new Map(prev);
-        next.delete(recommendationId);
-        return next;
-      });
     }
   };
 
@@ -1993,10 +1853,19 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                     <RecommendationsTableV3
                       recommendations={recommendations}
                       showActions={true}
-                      onAction={isColdStart ? handleGenerateGuide : handleGenerateContent}
-                      actionLabel={isColdStart ? 'Generate Guide' : 'Generate'}
-                      actionType={isColdStart ? 'generate-guide' : 'generate-content'}
-                      generatedLabel={isColdStart ? 'Guide Ready' : 'Generated'}
+                      onAction={isColdStart ? handleGenerateGuide : (rec) => {
+                        // If plan already exists, just expand the row; otherwise generate
+                        if (rec.id && planMap.has(rec.id)) {
+                          setTargetExpandedId(rec.id);
+                        } else {
+                          handleGenerateStrategy(rec);
+                        }
+                      }}
+                      actionLabel={isColdStart ? 'Generate Guide' : (rec) =>
+                        rec.id && planMap.has(rec.id) ? 'View Plan' : 'Generate Strategy'
+                      }
+                      actionType={isColdStart ? 'generate-guide' : 'generate-strategy'}
+                      generatedLabel={isColdStart ? 'Guide Ready' : 'Plan Ready'}
                       generatingContentIds={generatingContentIds}
                       onStopTracking={(id) => {
                         if (confirm('Stop tracking this recommendation? It will be removed from your view.')) {
@@ -2383,36 +2252,27 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                     // Strategy 1: Content is already an object
                                     if (typeof content === 'object' && content !== null) {
-                                      // Check if it's already a full v5.0 object
-                                      if (content.version === '5.0') {
-                                        parsedContent = content;
-                                      } 
-                                      else if (content.content) {
+                                      if (content.content) {
                                         // Content is in .content property
                                         if (typeof content.content === 'string') {
                                           rawContent = content.content;
                                           try {
-                                            // Try to parse the inner content string as JSON (Unified Format often comes as stringified JSON inside .content)
-                                            const innerParsed = JSON.parse(content.content);
-                                            if (innerParsed && (innerParsed.version === '5.0' || innerParsed.version === '4.0')) {
-                                              parsedContent = innerParsed;
-                                            } else {
-                                              // If parsing succeeded but it's not a versioned object, it might be just the raw markdown string that happened to be valid JSON (unlikely but possible)
-                                              // OR it's a v5 object where .content is just the markdown string.
-                                              // If the parent object has version='5.0', we should have caught it above.
-                                              // If we are here, parent doesn't have version='5.0'.
-                                              // Let's assume if we parsed an object with version, use it. Otherwise, fall back.
-                                              parsedContent = null; 
-                                            }
+                                            parsedContent = JSON.parse(content.content);
                                           } catch {
-                                            parsedContent = null; 
+                                            // Try to extract JSON from string
+                                            const jsonMatch = content.content.match(/\{[\s\S]*\}/);
+                                            if (jsonMatch) {
+                                              try {
+                                                parsedContent = JSON.parse(jsonMatch[0]);
+                                              } catch {
+                                                parsedContent = null;
+                                              }
+                                            }
                                           }
                                         } else {
                                           parsedContent = content.content;
                                         }
                                       } else {
-                                        // Content is an object but no .content and no .version='5.0'?
-                                        // Might be v4.0 directly
                                         parsedContent = content;
                                       }
                                     } else if (typeof content === 'string') {
@@ -2420,12 +2280,6 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       rawContent = content;
                                       try {
                                         parsedContent = JSON.parse(content);
-                                        // Handle double-stringified JSON
-                                        if (typeof parsedContent === 'string') {
-                                          try {
-                                            parsedContent = JSON.parse(parsedContent);
-                                          } catch (e) { /* ignore */ }
-                                        }
                                       } catch {
                                         // Try to extract JSON object from text
                                         const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -2433,150 +2287,77 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                           try {
                                             parsedContent = JSON.parse(jsonMatch[0]);
                                           } catch {
-                                            // v4.0 Recovery
+                                            // v4.0 Recovery: Try to fix truncated JSON by closing brackets
                                             if (content.includes('"version":"4.0"') || content.includes('"version": "4.0"')) {
                                               try {
+                                                // Robust V4 Recovery
+                                                // 1. Extract the text following "sections": [
                                                 const sectionsStartMatch = content.match(/"sections"\s*:\s*\[([\s\S]*)/);
+
                                                 if (sectionsStartMatch) {
                                                   const sectionsStr = sectionsStartMatch[1];
                                                   const sections: any[] = [];
+
+                                                  // 2. Match individual object blocks { ... } non-greedily
+                                                  // Note: This simple regex assumes no nested braces within content (escaped braces are fine)
+                                                  // If content has nested objects, this might be brittle, but standard V4 schema is flat.
+                                                  // We look for { "id": ... } structure roughly
                                                   const objectBlockRegex = /\{[\s\S]*?\}(?=\s*,|\s*\]|\s*$)/g;
                                                   const potentialBlocks = sectionsStr.match(objectBlockRegex) || [];
+
                                                   for (const block of potentialBlocks) {
                                                     try {
-                                                      sections.push(JSON.parse(block));
+                                                      // Try to parse the individual block as JSON first
+                                                      const validBlock = JSON.parse(block);
+                                                      sections.push(validBlock);
                                                     } catch {
+                                                      // If individual block checks fail, regex extract fields 
                                                       const idMatch = block.match(/"id"\s*:\s*"([^"]+)"/);
+                                                      const titleMatch = block.match(/"title"\s*:\s*"([^"]+)"/);
+                                                      // Content match is tricky due to escaped quotes. 
+                                                      // Look for "content": "..." pattern
                                                       const contentMatch = block.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+                                                      const typeMatch = block.match(/"sectionType"\s*:\s*"([^"]+)"/);
+
                                                       if (idMatch && contentMatch) {
                                                         sections.push({
                                                           id: idMatch[1],
-                                                          title: (block.match(/"title"\s*:\s*"([^"]+)"/) || [])[1] || 'Section',
+                                                          title: titleMatch ? titleMatch[1] : 'Section',
                                                           content: contentMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
-                                                          sectionType: (block.match(/"sectionType"\s*:\s*"([^"]+)"/) || [])[1] || 'strategies'
+                                                          sectionType: typeMatch ? typeMatch[1] : 'strategies'
                                                         });
                                                       }
                                                     }
                                                   }
+
                                                   if (sections.length > 0) {
+                                                    // Extract title if present
+                                                    const titleMatch = content.match(/"contentTitle"\s*:\s*"([^"]+)"/);
                                                     parsedContent = {
                                                       version: '4.0',
-                                                      contentTitle: (content.match(/"contentTitle"\s*:\s*"([^"]+)"/) || [])[1] || 'Content (Recovered)',
+                                                      contentTitle: titleMatch ? titleMatch[1] : 'Content (Recovered)',
                                                       sections,
                                                       callToAction: '',
                                                       requiredInputs: []
                                                     };
+                                                  } else {
+                                                    // Fallback: If no objects matched, try matching strictly by "id" presence
+                                                    // This catches cases where the brace matching failed (e.g. truncated end)
+                                                    // Logic: Find "id": "..." and take context around it? 
+                                                    // Actually simpler: Just accept null if recovery failed this hard.
+                                                    parsedContent = null;
                                                   }
                                                 }
-                                              } catch (e) { console.warn('v4.0 recovery failed:', e); }
+                                              } catch (e) {
+                                                console.warn('v4.0 recovery failed:', e);
+                                                parsedContent = null;
+                                              }
+                                            } else {
+                                              parsedContent = null;
                                             }
                                           }
                                         }
                                       }
-                                    }
-
-                                    // Handle v5.0 format (Unified Content - New System)
-                                    if (parsedContent && parsedContent.version === '5.0') {
-                                      const v5Content = parsedContent as any;
-                                      const contentStr = v5Content.content || '';
-                                      const contentTitle = v5Content.contentTitle || 'Generated Content';
-                                      
-                                      const highlightFillIns = (text: string) => {
-                                        if (!text) return text;
-                                        const cleanText = text.replace(/<span class="fill-in-placeholder">/g, '').replace(/<\/span>/g, '');
-                                        return cleanText.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
-                                      };
-
-                                      return (
-                                        <div className="space-y-4">
-                                          {/* Section Header */}
-                                          <div className="flex items-center justify-between px-1">
-                                            <div className="flex items-center gap-2">
-                                              <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
-                                              <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Generated Content</h4>
-                                            </div>
-                                            
-                                            <div className="flex items-center gap-2">
-                                              <button
-                                                onClick={() => handleRegenerateContent(rec)}
-                                                disabled={regeneratingId === rec.id || !Array.from(sectionFeedback.get(rec.id!)?.values() || []).some(f => f.trim().length > 0)}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                                                  regeneratingId === rec.id || !Array.from(sectionFeedback.get(rec.id!)?.values() || []).some(f => f.trim().length > 0)
-                                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                                    : 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-700 hover:to-indigo-700 shadow-sm active:scale-95'
-                                                }`}
-                                              >
-                                                {regeneratingId === rec.id ? (
-                                                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                ) : (
-                                                  <IconSparkles size={14} />
-                                                )}
-                                                Refine with Feedback
-                                              </button>
-
-                                              <button
-                                                onClick={() => navigator.clipboard.writeText(unescapeNewlines(contentStr))}
-                                                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 transition-all active:scale-95 flex items-center gap-1.5"
-                                              >
-                                                <IconCopy size={14} />
-                                                Copy
-                                              </button>
-                                              
-                                              {regeneratingId === rec.id && (
-                                                <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 animate-pulse">
-                                                  <div className="w-3 h-3 border-2 border-amber-700 border-t-transparent rounded-full animate-spin mr-2" />
-                                                  Regenerating...
-                                                </span>
-                                              )}
-                                            </div>
-                                          </div>
-
-                                          <UnifiedContentRenderer 
-                                            content={unescapeNewlines(contentStr)} 
-                                            highlightFillIns={highlightFillIns} 
-                                            onContentChange={async (newContent: string) => {
-                                              try {
-                                                const result = await saveRecommendationContentV3(rec.id!, newContent);
-                                                if (result.success && result.data?.content) {
-                                                  setContentMap(prev => {
-                                                    const next = new Map(prev);
-                                                    next.set(rec.id!, result.data!.content);
-                                                    return next;
-                                                  });
-                                                  invalidateCache(new RegExp(`recommendations-v3/${rec.id}/content`));
-                                                }
-                                              } catch (err) { console.error('Failed to save section update:', err); }
-                                            }}
-                                            sectionFeedback={sectionFeedback.get(rec.id!) || new Map()}
-                                            onFeedbackChange={(sectionTitle, feedback) => {
-                                              setSectionFeedback(prev => {
-                                                const next = new Map(prev);
-                                                const recMap = new Map(next.get(rec.id!) || new Map());
-                                                recMap.set(sectionTitle, feedback);
-                                                next.set(rec.id!, recMap);
-                                                return next;
-                                              });
-                                            }}
-                                          />
-
-                                          {v5Content.requiredInputs && v5Content.requiredInputs.length > 0 && (
-                                            <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl">
-                                              <p className="text-[12px] font-bold text-amber-900 mb-2 flex items-center gap-2">
-                                                <IconAlertCircle size={15} />
-                                                Action Required Before Publishing:
-                                              </p>
-                                              <ul className="space-y-1">
-                                                {v5Content.requiredInputs.map((input: string, idx: number) => (
-                                                  <li key={idx} className="text-[12px] text-amber-800 flex items-start gap-2">
-                                                    <div className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 shrink-0"></div>
-                                                    {input}
-                                                  </li>
-                                                ))}
-                                              </ul>
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
                                     }
 
                                     // Handle v4.0 format (sectioned content with interactive refinement)
@@ -2747,18 +2528,15 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                           if (result.success && result.data?.content) {
                                             console.log('[Save Section] Successfully saved section edits');
-                                            
-                                            // Invalidate cache to ensure fresh content is fetched next time
-                                            invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
-
-                                            // Update the contentMap with the saved content to prevent loading state
+                                            // Update contentMap with the saved content
                                             setContentMap(prev => {
                                               const next = new Map(prev);
-                                              if (result.data?.content) {
-                                                next.set(recId, result.data.content);
-                                              }
+                                              next.set(recId, result.data!.content);
                                               return next;
                                             });
+
+                                            // Invalidate cache to ensure fresh content is fetched on reload
+                                            invalidateCache(new RegExp(`recommendations-v3/${recId}/content`));
 
                                             // Clear title edits for this recommendation since they're now saved
                                             setSectionTitleEdits(prev => {
@@ -2794,216 +2572,215 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       const hasFeedback = Array.from(recFeedback.values()).some(f => f.trim().length > 0) || refs.trim().length > 0;
 
                                       return (
-                                        <div className="space-y-4">
-                                          {/* Unified Canvas - All sections in one container */}
+                                        <div className="space-y-0">
+                                          {/* ═══ Unified Document Canvas ═══ */}
                                           <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                                            <div className="p-8 md:p-10">
-                                              {/* Refine with Feedback Button - Top Right */}
-                                              <div className="flex justify-end mb-6">
+
+                                            {/* Document Header Bar */}
+                                            <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-slate-200 px-8 py-4 flex items-center justify-between">
+                                              <div>
+                                                <h3 className="text-[20px] font-bold text-slate-900 leading-tight">{contentTitle}</h3>
+                                                <p className="text-[12px] text-slate-400 mt-1">{sections.length} sections · {brandName || 'Brand'}</p>
+                                              </div>
+                                              <div className="flex items-center gap-3">
+                                                <button
+                                                  onClick={() => {
+                                                    // Collect all section content for clipboard
+                                                    const fullText = sections.map((s: any) => `## ${s.title}\n\n${s.content}`).join('\n\n---\n\n');
+                                                    navigator.clipboard.writeText(`# ${contentTitle}\n\n${fullText}${callToAction ? `\n\n---\n\n${callToAction}` : ''}`);
+                                                  }}
+                                                  className="px-3 py-1.5 text-[12px] font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <IconDownload size={14} />
+                                                  Copy All
+                                                </button>
                                                 <button
                                                   onClick={handleRefine}
                                                   disabled={isRefining || !hasFeedback}
-                                                  className={`px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2 ${isRefining || !hasFeedback
+                                                  className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-all shadow-sm hover:shadow-md active:scale-[0.98] flex items-center gap-2 ${isRefining || !hasFeedback
                                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                                    : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3] border border-transparent'
+                                                    : 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white hover:from-[#7c3aed] hover:to-[#c026d3]'
                                                     }`}
                                                 >
                                                   {isRefining ? (
                                                     <>
-                                                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                                       Refining...
                                                     </>
                                                   ) : (
                                                     <>
-                                                      <IconSparkles size={16} />
+                                                      <IconSparkles size={14} />
                                                       Refine with Feedback
                                                     </>
                                                   )}
                                                 </button>
                                               </div>
+                                            </div>
+
+                                            {/* Document Body - Continuous Canvas */}
+                                            <div className="px-8 md:px-12 lg:px-16 py-8 max-w-none prose-slate">
                                               {sections.map((section: any, idx: number) => {
                                                 const editedContent = recEdits.get(section.id) || section.content;
                                                 const feedback = recFeedback.get(section.id) || '';
                                                 const isEditingSection = editingId === `${recId}_${section.id}`;
 
                                                 return (
-                                                  <div 
-                                                    key={section.id} 
-                                                    className={`bg-white border-2 rounded-xl transition-all duration-200 ${
-                                                      isEditingSection 
-                                                        ? 'border-indigo-300 shadow-lg shadow-indigo-100' 
-                                                        : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
-                                                    } ${idx > 0 ? 'mt-6' : ''}`}
-                                                  >
-                                                    {/* Section Header */}
-                                                    <div className={`px-6 py-4 border-b-2 ${isEditingSection ? 'border-indigo-100 bg-indigo-50' : 'border-slate-100 bg-slate-50'}`}>
-                                                      <div className="flex items-center justify-between gap-4">
-                                                        <div className="flex items-center gap-3 flex-1">
-                                                          <div className={`flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold ${
-                                                            isEditingSection 
-                                                              ? 'bg-indigo-600 text-white' 
-                                                              : 'bg-slate-200 text-slate-600'
-                                                          }`}>
-                                                            {String(idx + 1).padStart(2, '0')}
-                                                          </div>
-                                                          {isEditingSection ? (
-                                                            <input
-                                                              type="text"
-                                                              value={recTitleEdits.get(section.id) ?? section.title}
-                                                              onChange={(e) => updateSectionTitleEdit(section.id, e.target.value)}
-                                                              className="text-lg font-bold text-slate-900 bg-white border-2 border-indigo-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 flex-1"
-                                                              placeholder="Section title"
-                                                            />
-                                                          ) : (
-                                                            <h2 className="text-lg font-bold text-slate-900">
-                                                              {recTitleEdits.get(section.id) ?? section.title}
-                                                            </h2>
-                                                          )}
-                                                        </div>
-                                                        
-                                                        {/* Action Buttons */}
-                                                        <div className="flex items-center gap-2">
-                                                          <button
-                                                            onClick={() => {
-                                                              const sectionKey = `${recId}_${section.id}`;
-                                                              setActiveFeedbackSection(activeFeedbackSection === sectionKey ? null : sectionKey);
-                                                            }}
-                                                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                                                              feedback.trim().length > 0 
-                                                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' 
-                                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                                            }`}
-                                                            title="Add Feedback"
-                                                          >
-                                                            <IconMessageCircle size={14} />
-                                                            <span>{feedback.trim().length > 0 ? 'Feedback' : 'Comment'}</span>
-                                                          </button>
-                                                          <button
-                                                            onClick={() => {
-                                                              if (isEditingSection) {
-                                                                handleSaveSection(section.id);
-                                                              } else {
-                                                                setEditingId(`${recId}_${section.id}`);
-                                                              }
-                                                            }}
-                                                            disabled={isSavingSection(section.id)}
-                                                            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                                                              isSavingSection(section.id)
-                                                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                                                : isEditingSection
-                                                                  ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-md'
-                                                                  : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md'
-                                                            }`}
-                                                          >
-                                                            {isSavingSection(section.id) ? (
-                                                              <>
-                                                                <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                                                <span>Saving...</span>
-                                                              </>
-                                                            ) : isEditingSection ? (
-                                                              <>
-                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                                </svg>
-                                                                <span>Save Changes</span>
-                                                              </>
-                                                            ) : (
-                                                              <>
-                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                                </svg>
-                                                                <span>Edit</span>
-                                                              </>
-                                                            )}
-                                                          </button>
-                                                        </div>
+                                                  <div key={section.id} className="group relative" id={`section-${section.id}`}>
+                                                    {/* Section Divider (between sections, not before first) */}
+                                                    {idx > 0 && (
+                                                      <div className="my-8 border-t border-slate-100" />
+                                                    )}
+
+                                                    {/* Section Header Row */}
+                                                    <div className="flex items-start justify-between gap-4 mb-4">
+                                                      <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                                                        <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex-shrink-0 pt-1">
+                                                          {String(idx + 1).padStart(2, '0')}
+                                                        </span>
+                                                        {isEditingSection ? (
+                                                          <input
+                                                            type="text"
+                                                            value={recTitleEdits.get(section.id) ?? section.title}
+                                                            onChange={(e) => updateSectionTitleEdit(section.id, e.target.value)}
+                                                            className="text-[18px] font-bold text-slate-900 bg-white border-b-2 border-[#00bcdc] focus:outline-none w-full pb-1"
+                                                            placeholder="Section title"
+                                                          />
+                                                        ) : (
+                                                          <h2 className="text-[18px] font-bold text-slate-900 leading-snug">{recTitleEdits.get(section.id) ?? section.title}</h2>
+                                                        )}
                                                       </div>
 
-                                                      {/* Feedback Popover */}
-                                                      {activeFeedbackSection === `${recId}_${section.id}` && (
-                                                        <div className="mt-4 bg-amber-50 border-2 border-amber-200 rounded-lg p-4 animate-in fade-in slide-in-from-top-2 duration-200">
-                                                          <div className="flex items-center justify-between mb-2">
-                                                            <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                                                              <IconMessageCircle size={14} />
-                                                              Add your feedback
-                                                            </span>
-                                                            <button
-                                                              onClick={() => setActiveFeedbackSection(null)}
-                                                              className="text-amber-900 hover:bg-amber-100 p-1 rounded-md"
-                                                            >
-                                                              <IconX size={14} />
-                                                            </button>
-                                                          </div>
-                                                          <textarea
-                                                            className="w-full p-3 bg-white border-2 border-amber-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 min-h-[80px]"
-                                                            placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
-                                                            autoFocus
-                                                            value={feedback}
-                                                            onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
-                                                          />
-                                                        </div>
+                                                      {/* Section Actions - Visible on hover */}
+                                                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0">
+                                                        <button
+                                                          onClick={() => {
+                                                            const sectionKey = `${recId}_${section.id}`;
+                                                            setActiveFeedbackSection(activeFeedbackSection === sectionKey ? null : sectionKey);
+                                                          }}
+                                                          className={`p-1.5 rounded-md transition-colors relative ${feedback.trim().length > 0
+                                                            ? 'text-amber-600 bg-amber-50 opacity-100'
+                                                            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                                            }`}
+                                                          title="Add feedback for this section"
+                                                        >
+                                                          <IconMessageCircle size={15} />
+                                                          {feedback.trim().length > 0 && (
+                                                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full" />
+                                                          )}
+                                                        </button>
+                                                        <button
+                                                          onClick={() => {
+                                                            if (isEditingSection) {
+                                                              handleSaveSection(section.id);
+                                                            } else {
+                                                              setEditingId(`${recId}_${section.id}`);
+                                                            }
+                                                          }}
+                                                          disabled={isSavingSection(section.id)}
+                                                          className={`px-2 py-1 text-[11px] font-medium rounded-md transition-colors ${isSavingSection(section.id)
+                                                            ? 'text-slate-300 cursor-not-allowed'
+                                                            : isEditingSection
+                                                              ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 opacity-100'
+                                                              : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                                            }`}
+                                                        >
+                                                          {isSavingSection(section.id) ? 'Saving...' : isEditingSection ? '✓ Done' : '✎ Edit'}
+                                                        </button>
+                                                      </div>
+                                                      {/* Always-visible feedback indicator when feedback exists */}
+                                                      {feedback.trim().length > 0 && (
+                                                        <span className="flex-shrink-0 text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium group-hover:hidden">
+                                                          Has feedback
+                                                        </span>
                                                       )}
                                                     </div>
 
-                                                    {/* Section Content */}
-                                                    <div className={`p-6 ${isEditingSection ? 'bg-indigo-50/30' : 'bg-white'}`}>
-                                                      <div className="text-base text-slate-700 leading-relaxed">
-                                                        <ContentSectionRenderer
-                                                          section={{
-                                                            id: section.id,
-                                                            title: section.title,
-                                                            content: section.content,
-                                                            sectionType: section.sectionType,
-                                                          }}
-                                                          isEditing={isEditingSection}
-                                                          editedContent={editedContent}
-                                                          onContentChange={(content) => updateSectionEdit(section.id, content)}
-                                                          highlightFillIns={highlightFillIns}
-                                                        />
-                                                      </div>
+                                                    {/* Inline Feedback Panel (slides in below header) */}
+                                                    <AnimatePresence>
+                                                      {activeFeedbackSection === `${recId}_${section.id}` && (
+                                                        <motion.div
+                                                          initial={{ opacity: 0, height: 0 }}
+                                                          animate={{ opacity: 1, height: 'auto' }}
+                                                          exit={{ opacity: 0, height: 0 }}
+                                                          transition={{ duration: 0.2 }}
+                                                          className="mb-4 overflow-hidden"
+                                                        >
+                                                          <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-4">
+                                                            <div className="flex items-center justify-between mb-2">
+                                                              <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Feedback for this section</span>
+                                                              <button
+                                                                onClick={() => setActiveFeedbackSection(null)}
+                                                                className="text-amber-600 hover:bg-amber-100 p-1 rounded"
+                                                              >
+                                                                <IconX size={14} />
+                                                              </button>
+                                                            </div>
+                                                            <textarea
+                                                              className="w-full p-3 bg-white border border-amber-200 rounded-lg text-[13px] text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-transparent"
+                                                              placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
+                                                              autoFocus
+                                                              rows={3}
+                                                              value={feedback}
+                                                              onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
+                                                            />
+                                                            <div className="mt-2 flex justify-end">
+                                                              <button
+                                                                onClick={() => setActiveFeedbackSection(null)}
+                                                                className="px-3 py-1.5 bg-amber-200 text-amber-800 text-[11px] font-bold rounded-lg hover:bg-amber-300 transition-colors"
+                                                              >
+                                                                Done
+                                                              </button>
+                                                            </div>
+                                                          </div>
+                                                        </motion.div>
+                                                      )}
+                                                    </AnimatePresence>
+
+                                                    {/* Section Content - Flowing Document Style */}
+                                                    <div className="pl-8">
+                                                      <ContentSectionRenderer
+                                                        section={{
+                                                          id: section.id,
+                                                          title: section.title,
+                                                          content: section.content,
+                                                          sectionType: section.sectionType,
+                                                        }}
+                                                        isEditing={isEditingSection}
+                                                        editedContent={editedContent}
+                                                        onContentChange={(content) => updateSectionEdit(section.id, content)}
+                                                        highlightFillIns={highlightFillIns}
+                                                      />
                                                     </div>
                                                   </div>
                                                 );
                                               })}
+
+                                              {/* Call to Action - Inline at bottom of document */}
+                                              {callToAction && (
+                                                <>
+                                                  <div className="my-8 border-t border-slate-200" />
+                                                  <div className="bg-emerald-50/50 border border-emerald-200 rounded-lg px-6 py-4">
+                                                    <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-2">Call to Action</p>
+                                                    <p className="text-[14px] text-emerald-800 leading-relaxed">{callToAction}</p>
+                                                  </div>
+                                                </>
+                                              )}
+                                            </div>
+
+                                            {/* Document Footer - References */}
+                                            <div className="border-t border-slate-100 px-8 md:px-12 lg:px-16 py-5 bg-slate-50/50">
+                                              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                                                Additional References (optional)
+                                              </label>
+                                              <textarea
+                                                className="w-full p-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#00bcdc] focus:border-transparent"
+                                                placeholder="Add any additional context, URLs, or reference material for refinement..."
+                                                rows={2}
+                                                value={refs}
+                                                onChange={(e) => updateReferences(e.target.value)}
+                                              />
                                             </div>
                                           </div>
-
-                                          {/* Call to Action */}
-                                          {callToAction && (
-                                            <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg p-4">
-                                              <p className="text-[12px] font-semibold text-[#166534] mb-1">📢 Call to Action</p>
-                                              <p className="text-[13px] text-[#166534]">{callToAction}</p>
-                                            </div>
-                                          )}
-
-                                          {/* Required Inputs
-                                        {requiredInputs.length > 0 && (
-                                          <div className="bg-[#fef3c7] border border-[#fcd34d] rounded-lg p-4">
-                                            <p className="text-[12px] font-semibold text-[#92400e] mb-2">⚠️ Fill in before publishing:</p>
-                                            <ul className="list-disc pl-5 space-y-1">
-                                              {requiredInputs.map((input: string, idx: number) => (
-                                                <li key={idx} className="text-[12px] text-[#92400e]">{input}</li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        )} */}
-
-                                          {/* Global References */}
-                                          <div className="bg-[#f1f5f9] border border-[#cbd5e1] rounded-lg p-4">
-                                            <label className="text-[12px] font-semibold text-[#475569] block mb-2">
-                                              📎 Additional References (optional)
-                                            </label>
-                                            <textarea
-                                              className="w-full p-3 bg-white border border-[#cbd5e1] rounded-lg text-[12px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-1 focus:ring-[#00bcdc]"
-                                              placeholder="Add any additional context, URLs, or reference material..."
-                                              rows={2}
-                                              value={refs}
-                                              onChange={(e) => updateReferences(e.target.value)}
-                                            />
-                                          </div>
-
-
-
 
 
 
@@ -3104,9 +2881,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                     autoFocus
                                                   />
                                                 ) : (
-                                                  <UnifiedContentRenderer 
-                                                    content={unescapeNewlines(publishableContent.content)} 
-                                                    highlightFillIns={highlightFillIns} 
+                                                  <div
+                                                    className="prose prose-sm max-w-none text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans"
+                                                    dangerouslySetInnerHTML={{ __html: highlightFillIns(unescapeNewlines(publishableContent.content)) }}
                                                   />
                                                 )}
 
@@ -3468,31 +3245,16 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       );
                                     } else {
                                       // Fallback: display raw content or JSON
-                                      // Special handling for v5.0 content that fell through (extract .content field)
-                                      let fallbackText = '';
-                                      if (parsedContent && parsedContent.version === '5.0' && parsedContent.content) {
-                                        fallbackText = parsedContent.content;
-                                      } else {
-                                        fallbackText = parsedContent?.raw || rawContent || JSON.stringify(parsedContent, null, 2);
-                                      }
-
-                                      // Auto-detect markdown structure (likely v5.0 content saved as raw string)
-                                      const isMarkdownContent = typeof fallbackText === 'string' && (fallbackText.includes('## ') || fallbackText.includes('[H2]'));
-                                      const shouldUseUnifiedRenderer = (parsedContent && parsedContent.version === '5.0' && parsedContent.content) || isMarkdownContent;
-
+                                      const fallbackText = parsedContent?.raw || rawContent || JSON.stringify(parsedContent, null, 2);
                                       return (
                                         <div className="bg-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6">
                                           <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
                                             <div className="w-1.5 h-1.5 rounded-full bg-[#64748b]"></div>
                                             <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Generated Content</h4>
                                           </div>
-                                          {shouldUseUnifiedRenderer ? (
-                                            <UnifiedContentRenderer content={fallbackText} />
-                                          ) : (
-                                            <pre className="text-[13px] text-[#1a1d29] whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto max-h-96 overflow-y-auto">
-                                              {fallbackText}
-                                            </pre>
-                                          )}
+                                          <pre className="text-[13px] text-[#1a1d29] whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto max-h-96 overflow-y-auto">
+                                            {fallbackText}
+                                          </pre>
                                         </div>
                                       );
                                     }
@@ -3913,6 +3675,25 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             </button>
           </div>
         </div>
+      )}
+      {/* Plan Review Modal — replaced by inline PlanReviewInline in Step 2 rows.
+         Keeping component available for legacy/fallback use but no longer triggered. */}
+      {isPlanModalOpen && currentPlan && (
+        <PlanReviewModal
+          isOpen={isPlanModalOpen}
+          onClose={() => setIsPlanModalOpen(false)}
+          plan={currentPlan}
+          onApprove={() => handleApprovePlan()}
+          onRegenerate={() => {
+            setIsPlanModalOpen(false);
+            if (currentPlan?.recommendationId) {
+              const rec = recommendations.find(r => r.id === currentPlan.recommendationId);
+              if (rec) handleGenerateStrategy(rec, true);
+            }
+          }}
+          isProcessing={isProcessingPlan}
+          onPlanUpdated={(updatedPlan) => setCurrentPlan(updatedPlan)}
+        />
       )}
     </Layout >
   );

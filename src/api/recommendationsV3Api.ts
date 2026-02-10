@@ -670,6 +670,33 @@ export async function regenerateContentV3(
   }
 }
 /**
+ * Save unified recommendation content (v5.0)
+ */
+export async function saveRecommendationContentV3(
+  recommendationId: string,
+  content: string
+): Promise<{ success: boolean; data?: { content: any }; error?: string }> {
+  try {
+    const response = await apiClient.post<{ success: boolean; data?: { content: any }; error?: string }>(
+      `/recommendations-v3/${recommendationId}/content/save-unified`,
+      { content }
+    );
+    if (response && typeof response === 'object' && 'success' in response) {
+      return response as { success: boolean; data?: { content: any }; error?: string };
+    } else if (response && typeof response === 'object' && 'data' in response) {
+      return (response as any).data;
+    }
+    return response as { success: boolean; data?: { content: any }; error?: string };
+  } catch (error: any) {
+    console.error('Error saving unified content:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to save unified content'
+    };
+  }
+}
+
+/**
  * Save content structure draft WITHOUT generating content
  */
 export async function saveContentDraftV3(

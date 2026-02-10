@@ -49,7 +49,7 @@ import { ContentTypeFilter } from '../components/RecommendationsV3/components/Co
 import { ContentSectionRenderer, SectionTypeBadge, UnifiedContentRenderer } from '../components/RecommendationsV3/components/ContentSectionRenderer';
 import { SEOScoreCard, ExportModal } from '../components/RecommendationsV3/components/SEOScoreCard';
 import { AEOScoreBadge } from '../components/RecommendationsV3/components/ContentAnalysisTools';
-import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle, IconPlus, IconMinus, IconDownload, IconRobot } from '@tabler/icons-react';
+import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle, IconPlus, IconMinus, IconDownload, IconRobot, IconRefresh } from '@tabler/icons-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface RecommendationsV3Props {
@@ -1157,39 +1157,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           </div>
 
           {strategyPlan && (
-            <div className="space-y-3 mt-4">
-              {/* Key Focus */}
-              <div className="bg-white rounded-lg p-3 border border-purple-100">
-                <h4 className="text-[13px] font-semibold text-purple-900 mb-1">🎯 Key Focus</h4>
-                <p className="text-[13px] text-gray-700">{strategyPlan.strategicGuidance.keyFocus}</p>
-              </div>
-
-              {/* AEO Targets */}
-              <div className="bg-white rounded-lg p-3 border border-purple-100">
-                <h4 className="text-[13px] font-semibold text-purple-900 mb-2">🔍 AEO Optimization Targets</h4>
-                <div className="flex flex-wrap gap-2">
-                  {strategyPlan.strategicGuidance.aeoTargets.map((target, idx) => (
-                    <span key={idx} className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-[12px] font-medium">
-                      {target}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Tone Guidelines */}
-              <div className="bg-white rounded-lg p-3 border border-purple-100">
-                <h4 className="text-[13px] font-semibold text-purple-900 mb-1">🎭 Tone Guidelines</h4>
-                <p className="text-[13px] text-gray-700">{strategyPlan.strategicGuidance.toneGuidelines}</p>
-              </div>
-
-              {/* Differentiation */}
-              <div className="bg-white rounded-lg p-3 border border-purple-100">
-                <h4 className="text-[13px] font-semibold text-purple-900 mb-1">⚡ Differentiation Strategy</h4>
-                <p className="text-[13px] text-gray-700">{strategyPlan.strategicGuidance.differentiation}</p>
-              </div>
-
-              {/* Regenerate Button */}
-              <button
+            <div className="flex justify-end mt-2">
+               <button
                 onClick={() => {
                   setStrategyPlans(prev => {
                     const next = new Map(prev);
@@ -1199,9 +1168,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                   handleGenerateStrategy(recommendation);
                 }}
                 disabled={isGeneratingStrategy}
-                className="text-[12px] text-purple-600 hover:text-purple-800 font-medium flex items-center gap-1 disabled:opacity-50"
+                className="text-xs text-purple-600 hover:text-purple-800 font-medium flex items-center gap-1 disabled:opacity-50 transition-colors"
+                title="Regenerate Strategy"
               >
-                🔄 Regenerate Strategy
+                <IconRefresh size={14} className={isGeneratingStrategy ? "animate-spin" : ""} />
+                Regenerate Strategy
               </button>
             </div>
           )}

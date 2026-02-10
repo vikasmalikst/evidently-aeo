@@ -121,7 +121,7 @@ export class StrategyGenerationService {
             }
 
             // 6. Save to database
-            await this.saveStrategy(recommendationId, customerId, strategyPlan);
+            await this.saveStrategy(recommendationId, customerId, rec.generation_id, rec.brand_id, strategyPlan);
 
             console.log(`✅ [StrategyService] Strategy generated for ${recommendationId}`);
             return { success: true, data: strategyPlan };
@@ -144,54 +144,41 @@ export class StrategyGenerationService {
     }: any): string {
         const templatesJson = JSON.stringify(templateSections, null, 2);
 
-        return `You are a content strategy expert helping ${brand.name} create an optimized content plan.
+        return `You are a content strategist helping ${brand.name} create content for: "${recommendation.action}".
 
-RECOMMENDATION CONTEXT:
-Action: ${recommendation.action}
-Target Channel: ${recommendation.channel}
-Content Type: ${contentType}
-Primary Query/Topic: ${recommendation.query || recommendation.action}
+**Context:**
+- Brand: ${brand.name}${brand.industry ? ` (${brand.industry})` : ''}
+- Topic/Action: ${recommendation.action}
+- Channel: ${recommendation.channel}
+- Content Type: ${contentType}
 
-BRAND CONTEXT:
-Brand Name: ${brand.name}
-${brand.industry ? `Industry: ${brand.industry}` : ''}
-${brand.description ? `About: ${brand.description}` : ''}
+**Your Task:**
+Enrich the provided template JSON.
+1. Update each section's "title" to be specific and engaging for this topic.
+2. Update each section's "content" by appending 1-2 sentences of strategic guidance relevant to the brand and topic.
 
-TEMPLATE STRUCTURE:
-The content will follow this proven structure:
+**Input Template:**
 ${templatesJson}
 
-${customInstructions ? `\nCUSTOM REQUIREMENTS:\n${customInstructions}\n` : ''}
+**Output Requirements:**
+- Return ONLY valid JSON.
+- Return an ARRAY of objects (same structure as input).
+- Do NOT add new sections.
+- Do NOT remove sections.
+- Use \\n for line breaks in strings.
+- Do NOT include any markdown formatting (like \`\`\`json). Just the raw JSON array.
 
-YOUR TASK:
-Generate a strategic content plan by enriching the template with:
+**Example Output Format:**
+[
+  {
+    "id": "section_id",
+    "title": "New Engaging Title",
+    "content": "Original content description...\\n\\nStrategic Tip: Focus on...",
+    "sectionType": "original_type"
+  }
+]
 
-1. **Key Focus**: What is the #1 thing this content must accomplish?
-2. **AEO Targets**: 3-5 specific entities or topics to emphasize for Answer Engine Optimization
-3. **Tone Guidelines**: How should ${brand.name} sound in this content? (e.g., authoritative, friendly, technical)
-4. **Differentiation**: What makes ${brand.name}'s approach unique compared to competitors?
-5. **Section-Specific Guidance**: For each template section, provide 2-3 bullet points of strategic guidance
-
-Return your response in this JSON format:
-\`\`\`json
-{
-  "strategicGuidance": {
-    "keyFocus": "string",
-    "aeoTargets": ["entity1", "entity2", "entity3"],
-    "toneGuidelines": "string",
-    "differentiation": "string"
-  },
-  "sectionGuidance": [
-    {
-      "sectionId": "string",
-      "sectionTitle": "string",
-      "guidance": ["point 1", "point 2", "point 3"]
-    }
-  ]
-}
-\`\`\`
-
-Focus on actionable, specific guidance. Avoid generic advice.`;
+${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`;
     }
 
     /**
@@ -209,25 +196,45 @@ Focus on actionable, specific guidance. Avoid generic advice.`;
         }
     ): StrategyPlan | null {
         try {
-            // Extract JSON from response
-            const jsonMatch = llmResponse.match(/```json\n([\s\S]*?)\n```/) || llmResponse.match(/{[\s\S]*}/);
+            // Extract JSON from response (look for array)
+            const jsonMatch = llmResponse.match(/\[[\s\S]*\]/);
             if (!jsonMatch) {
-                console.error('❌ No JSON found in LLM response');
+                console.error('❌ No JSON array found in LLM response');
+                console.error('LLM Response:', llmResponse.substring(0, 500));
                 return null;
             }
 
-            const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+            const jsonString = jsonMatch[0];
 
-            // Enrich template sections with LLM guidance
-            const enrichedSections = context.templateSections.map(section => {
-                const sectionGuidance = parsed.sectionGuidance?.find(
-                    (g: any) => g.sectionId === section.id || g.sectionTitle === section.title
-                );
+            console.log('📝 Parsing enriched template JSON array...');
 
-                return {
-                    ...section,
-                    strategicGuidance: sectionGuidance?.guidance || []
-                };
+            let enrichedSections: StructureSection[];
+            try {
+                enrichedSections = JSON.parse(jsonString);
+            } catch (parseError: any) {
+                console.error('❌ JSON parse failed:', parseError.message);
+                console.error('Problematic JSON (first 1000 chars):', jsonString.substring(0, 1000));
+                return null;
+            }
+
+            if (!Array.isArray(enrichedSections)) {
+                console.error('❌ Response is not an array');
+                return null;
+            }
+
+            console.log(`✅ Parsed ${enrichedSections.length} enriched sections`);
+
+            // Use the enriched sections directly, ensuring we keep all original properties if missing
+            const finalSections = context.templateSections.map(original => {
+                const enriched = enrichedSections.find(e => e.id === original.id);
+                if (enriched) {
+                    return {
+                        ...original,
+                        title: enriched.title || original.title,
+                        content: enriched.content || original.content
+                    };
+                }
+                return original;
             });
 
             return {
@@ -238,12 +245,12 @@ Focus on actionable, specific guidance. Avoid generic advice.`;
                 brandContext: {
                     name: context.brand
                 },
-                structure: enrichedSections,
+                structure: finalSections,
                 strategicGuidance: {
-                    keyFocus: parsed.strategicGuidance.keyFocus || '',
-                    aeoTargets: parsed.strategicGuidance.aeoTargets || [],
-                    toneGuidelines: parsed.strategicGuidance.toneGuidelines || '',
-                    differentiation: parsed.strategicGuidance.differentiation || ''
+                    keyFocus: '',
+                    aeoTargets: [],
+                    toneGuidelines: '',
+                    differentiation: ''
                 }
             };
         } catch (error) {
@@ -258,6 +265,8 @@ Focus on actionable, specific guidance. Avoid generic advice.`;
     private async saveStrategy(
         recommendationId: string,
         customerId: string,
+        generationId: string,
+        brandId: string,
         strategy: StrategyPlan
     ): Promise<void> {
         // Delete existing strategy plan for this recommendation (if any)
@@ -267,14 +276,26 @@ Focus on actionable, specific guidance. Avoid generic advice.`;
             .eq('recommendation_id', recommendationId)
             .eq('content_type', 'strategy_plan');
 
-        // Insert new strategy plan
+        // Insert new strategy plan with ALL required fields
         const { error } = await supabaseAdmin
             .from('recommendation_generated_contents')
             .insert({
                 recommendation_id: recommendationId,
                 customer_id: customerId,
+                generation_id: generationId,
+                brand_id: brandId,
+                status: 'generated',
                 content_type: 'strategy_plan',
                 content: JSON.stringify(strategy),
+                model_provider: 'openrouter',
+                model_name: 'meta-llama/llama-3.3-70b-instruct',
+                prompt: 'strategy_enrichment',
+                metadata: {
+                    is_strategy_plan: true,
+                    content_type: strategy.contentType,
+                    has_strategic_guidance: true
+                },
+                created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             });
 
@@ -298,6 +319,18 @@ Focus on actionable, specific guidance. Avoid generic advice.`;
         }
     ): Promise<{ success: boolean; error?: string }> {
         try {
+            // Fetch recommendation to get generation_id
+            const { data: rec, error: recError } = await supabaseAdmin
+                .from('recommendations')
+                .select('generation_id, brand_id')
+                .eq('id', recommendationId)
+                .eq('customer_id', customerId)
+                .single();
+
+            if (recError || !rec) {
+                return { success: false, error: 'Recommendation not found' };
+            }
+
             // Fetch existing strategy
             const { data: existing } = await supabaseAdmin
                 .from('recommendation_generated_contents')
@@ -325,7 +358,7 @@ Focus on actionable, specific guidance. Avoid generic advice.`;
             });
 
             // Save updated strategy
-            await this.saveStrategy(recommendationId, customerId, strategy);
+            await this.saveStrategy(recommendationId, customerId, rec.generation_id, rec.brand_id, strategy);
 
             console.log(`✅ [StrategyService] Added context file: ${file.name}`);
             return { success: true };

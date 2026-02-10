@@ -21,6 +21,8 @@ import { brandDashboardService } from '../services/brand-dashboard';
 import { regenerateContentService } from '../services/recommendations/regenerate-content.service';
 import { graphRecommendationService } from '../services/recommendations/graph-recommendation.service';
 import { competitorCrudService } from '../services/competitor-management/competitor-crud.service';
+import { strategyGenerationService } from '../services/recommendations/strategy-generation.service';
+import multer from 'multer';
 
 const router = express.Router();
 
@@ -2268,6 +2270,117 @@ router.post('/:recommendationId/content/save-sections', authenticateToken, requi
     });
   }
 });
+
+//=============================================================================
+// STRATEGY GENERATION ROUTES
+//=============================================================================
+
+// Multer configuration for file uploads
+const uploadMiddleware = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
+
+/**
+ * POST /api/recommendations-v3/:recommendationId/generate-strategy
+ * 
+ * Generate an enriched content strategy using LLM and frontend templates
+ */
+router.post('/:recommendationId/generate-strategy', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    const { recommendationId } = req.params;
+    const { templateSections, contentType, customInstructions } = req.body;
+
+    if (!templateSections || !contentType) {
+      return res.status(400).json({
+        success: false,
+        error: 'templateSections and contentType are required'
+      });
+    }
+
+    console.log(`🧠 [RecommendationsV3] Generating strategy for ${recommendationId} (${contentType})`);
+
+    const result = await strategyGenerationService.generateStrategy({
+      recommendationId,
+      customerId,
+      templateSections,
+      contentType,
+      customInstructions
+    });
+
+    if (!result.success) {
+      return res.status(500).json(result);
+    }
+
+    return res.json(result);
+  } catch (error: any) {
+    console.error('❌ [Generate Strategy] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to generate strategy'
+    });
+  }
+});
+
+/**
+ * POST /api/recommendations-v3/:recommendationId/upload-context
+ * 
+ * Upload a context file for strategy enrichment
+ */
+router.post('/:recommendationId/upload-context',
+  authenticateToken,
+  requireFeatureEntitlement('recommendations'),
+  uploadMiddleware.single('file'),
+  async (req, res) => {
+    try {
+      const customerId = req.user?.customer_id;
+      if (!customerId) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+
+      const { recommendationId } = req.params;
+      const file = req.file;
+
+      if (!file) {
+        return res.status(400).json({ success: false, error: 'No file uploaded' });
+      }
+
+      console.log(`📂 [RecommendationsV3] Uploading context file: ${file.originalname}`);
+
+      // Parse file content (for now, just use as text)
+      // TODO: Add PDF/DOCX parsing if needed
+      const content = file.buffer.toString('utf-8');
+
+      const result = await strategyGenerationService.addContextFile(
+        recommendationId,
+        customerId,
+        {
+          name: file.originalname,
+          content
+        }
+      );
+
+      if (!result.success) {
+        return res.status(500).json(result);
+      }
+
+      return res.json(result);
+    } catch (error: any) {
+      console.error('❌ [Upload Context] Error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to upload context file'
+      });
+    }
+  }
+);
 
 export default router;
 

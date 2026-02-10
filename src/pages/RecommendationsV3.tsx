@@ -27,7 +27,9 @@ import {
   type RecommendationV3,
   type IdentifiedKPI,
   saveContentDraftV3,
-  saveSectionEditsV3
+  saveSectionEditsV3,
+  generateStrategyV3,
+  type StrategyPlan
 } from '../api/recommendationsV3Api';
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
@@ -39,7 +41,7 @@ import { RecommendationsTableV3 } from '../components/RecommendationsV3/Recommen
 import { OpportunityStrategyCard } from '../components/RecommendationsV3/components/OpportunityStrategyCard';
 import { StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
 import { ContentStructureInlineEditor } from '../components/RecommendationsV3/components/ContentStructureInlineEditor';
-import { getTemplateForAction } from '../components/RecommendationsV3/data/structure-templates';
+import { getTemplateForAction, getContentTemplates } from '../components/RecommendationsV3/data/structure-templates';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
 import { EffortFilter } from '../components/RecommendationsV3/components/EffortFilter';
@@ -161,6 +163,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
   // Custom Structure State (Lifted from Inline Editor)
   const [customizedStructures, setCustomizedStructures] = useState<Map<string, StructureSection[]>>(new Map());
+
+  // Strategy Generation State
+  const [strategyPlans, setStrategyPlans] = useState<Map<string, StrategyPlan>>(new Map());
+  const [generatingStrategyIds, setGeneratingStrategyIds] = useState<Set<string>>(new Set());
 
   const [stepCounts, setStepCounts] = useState<Record<number, number>>({});
   const [brandName, setBrandName] = useState<string>(''); // For template customization
@@ -1111,41 +1117,181 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       competitorsMapped: recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || [],
       brandName
     });
+
+    const strategyPlan = strategyPlans.get(recommendation.id!);
+    const isGeneratingStrategy = generatingStrategyIds.has(recommendation.id!);
+
     return (
-      <ContentStructureInlineEditor
-        recommendationId={recommendation.id!}
-        contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
-        initialSections={customizedStructures.get(recommendation.id!)}
-        competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || []}
-        brandName={brandName}
-        onChange={(sections) => {
-          setCustomizedStructures(prev => {
-            const next = new Map(prev);
-            next.set(recommendation.id!, sections);
-            return next;
-          });
-        }}
-        onSave={async (sections) => {
-          setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
-          try {
-            // Only save to DB, do not generate
-            const res = await saveContentDraftV3(recommendation.id!, sections);
-            if (!res.success) {
-              throw new Error(res.error || 'Failed to save content structure');
-            }
-            // Invalidate cache to ensure fresh content is fetched on reload
-            invalidateCache(new RegExp(`recommendations-v3/${recommendation.id!}/content`));
-          } finally {
-            setGeneratingContentIds(prev => {
-              const next = new Set(prev);
-              next.delete(recommendation.id!);
+      <div className="space-y-4">
+        {/* Strategy Generation Section */}
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4">
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                <IconSparkles size={20} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-[15px] font-bold text-gray-900">AI Strategy Planner</h3>
+                <p className="text-[13px] text-gray-600">Get LLM-powered strategic guidance</p>
+              </div>
+            </div>
+            {!strategyPlan && (
+              <button
+                onClick={() => handleGenerateStrategy(recommendation)}
+                disabled={isGeneratingStrategy}
+                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-[13px] font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isGeneratingStrategy ? (
+                  <>
+                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <IconRobot size={16} />
+                    Generate Strategy
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          {strategyPlan && (
+            <div className="space-y-3 mt-4">
+              {/* Key Focus */}
+              <div className="bg-white rounded-lg p-3 border border-purple-100">
+                <h4 className="text-[13px] font-semibold text-purple-900 mb-1">🎯 Key Focus</h4>
+                <p className="text-[13px] text-gray-700">{strategyPlan.strategicGuidance.keyFocus}</p>
+              </div>
+
+              {/* AEO Targets */}
+              <div className="bg-white rounded-lg p-3 border border-purple-100">
+                <h4 className="text-[13px] font-semibold text-purple-900 mb-2">🔍 AEO Optimization Targets</h4>
+                <div className="flex flex-wrap gap-2">
+                  {strategyPlan.strategicGuidance.aeoTargets.map((target, idx) => (
+                    <span key={idx} className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-[12px] font-medium">
+                      {target}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tone Guidelines */}
+              <div className="bg-white rounded-lg p-3 border border-purple-100">
+                <h4 className="text-[13px] font-semibold text-purple-900 mb-1">🎭 Tone Guidelines</h4>
+                <p className="text-[13px] text-gray-700">{strategyPlan.strategicGuidance.toneGuidelines}</p>
+              </div>
+
+              {/* Differentiation */}
+              <div className="bg-white rounded-lg p-3 border border-purple-100">
+                <h4 className="text-[13px] font-semibold text-purple-900 mb-1">⚡ Differentiation Strategy</h4>
+                <p className="text-[13px] text-gray-700">{strategyPlan.strategicGuidance.differentiation}</p>
+              </div>
+
+              {/* Regenerate Button */}
+              <button
+                onClick={() => {
+                  setStrategyPlans(prev => {
+                    const next = new Map(prev);
+                    next.delete(recommendation.id!);
+                    return next;
+                  });
+                  handleGenerateStrategy(recommendation);
+                }}
+                disabled={isGeneratingStrategy}
+                className="text-[12px] text-purple-600 hover:text-purple-800 font-medium flex items-center gap-1 disabled:opacity-50"
+              >
+                🔄 Regenerate Strategy
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Structure Editor */}
+        <ContentStructureInlineEditor
+          recommendationId={recommendation.id!}
+          contentType={getTemplateForAction(recommendation.action, recommendation.assetType)}
+          initialSections={customizedStructures.get(recommendation.id!)}
+          competitors={recommendation.competitors_target?.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) || []}
+          brandName={brandName}
+          onChange={(sections) => {
+            setCustomizedStructures(prev => {
+              const next = new Map(prev);
+              next.set(recommendation.id!, sections);
               return next;
             });
-          }
-        }}
-        isSaving={generatingContentIds.has(recommendation.id!)}
-      />
+          }}
+          onSave={async (sections) => {
+            setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
+            try {
+              const res = await saveContentDraftV3(recommendation.id!, sections);
+              if (!res.success) {
+                throw new Error(res.error || 'Failed to save content structure');
+              }
+              invalidateCache(new RegExp(`recommendations-v3/${recommendation.id!}/content`));
+            } finally {
+              setGeneratingContentIds(prev => {
+                const next = new Set(prev);
+                next.delete(recommendation.id!);
+                return next;
+              });
+            }
+          }}
+          isSaving={generatingContentIds.has(recommendation.id!)}
+        />
+      </div>
     );
+  };
+
+  // Handle generate strategy for a recommendation (enriches templates with LLM guidance)
+  const handleGenerateStrategy = async (recommendation: RecommendationV3) => {
+    if (!recommendation.id || generatingStrategyIds.has(recommendation.id)) return;
+
+    const contentType = getTemplateForAction(recommendation.action, recommendation.assetType);
+    if (!contentType) return;
+
+    setGeneratingStrategyIds(prev => new Set(prev).add(recommendation.id!));
+    setError(null);
+
+    try {
+      console.log(`🧠 [RecommendationsV3] Generating strategy for ${recommendation.id} (${contentType})...`);
+
+      const templates = getContentTemplates({
+        brandName: brandName,
+        competitors: recommendation.competitors_target?.map((c: any) => 
+          typeof c === 'string' ? c : c.name
+        ).filter(Boolean) || []
+      });
+
+      const templateSections = templates[contentType];
+      if (!templateSections) {
+        throw new Error(`No template found for content type: ${contentType}`);
+      }
+
+      const response = await generateStrategyV3(recommendation.id, {
+        templateSections,
+        contentType
+      });
+
+      if (response.success && response.data) {
+        console.log(`✅ [RecommendationsV3] Strategy generated successfully`);
+        setStrategyPlans(prev => new Map(prev).set(recommendation.id!, response.data!));
+
+        // Optionally, pre-populate customized structures with enriched sections
+        setCustomizedStructures(prev => new Map(prev).set(recommendation.id!, response.data!.structure));
+      } else {
+        setError(response.error || 'Failed to generate strategy');
+      }
+    } catch (err: any) {
+      console.error('Error generating strategy:', err);
+      setError(err.message || 'Failed to generate strategy');
+    } finally {
+      setGeneratingStrategyIds(prev => {
+        const next = new Set(prev);
+        next.delete(recommendation.id!);
+        return next;
+      });
+    }
   };
 
   // Handle generate content for single recommendation (Trigger)

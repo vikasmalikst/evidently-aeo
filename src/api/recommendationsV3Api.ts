@@ -156,6 +156,41 @@ export interface GenerateContentV3Request {
   structureConfig?: any; // StructureConfig type from backend
 }
 
+/**
+ * Strategy generation types
+ */
+export interface StructureSection {
+  id: string;
+  title: string;
+  content: string;
+  sectionType: string;
+  strategicGuidance?: string[];
+}
+
+export interface StrategyPlan {
+  recommendationId: string;
+  contentType: string;
+  primaryEntity: string;
+  targetChannel: string;
+  brandContext: {
+    name: string;
+    competitors?: string[];
+  };
+  structure: StructureSection[];
+  strategicGuidance: {
+    keyFocus: string;
+    aeoTargets: string[];
+    toneGuidelines: string;
+    differentiation: string;
+  };
+  contextFiles?: {
+    id: string;
+    name: string;
+    content: string;
+    uploadedAt: string;
+  }[];
+}
+
 // ============================================================================
 // API FUNCTIONS
 // ============================================================================
@@ -689,3 +724,78 @@ export async function saveSectionEditsV3(
   }
 }
 
+//=============================================================================
+// STRATEGY GENERATION API FUNCTIONS
+//=============================================================================
+
+/**
+ * Generate enriched content strategy using LLM and frontend templates
+ */
+export async function generateStrategyV3(
+  recommendationId: string,
+  data: {
+    templateSections: StructureSection[];
+    contentType: string;
+    customInstructions?: string;
+  }
+): Promise<{ success: boolean; data?: StrategyPlan; error?: string }> {
+  try {
+    const response = await apiClient.post<{ success: boolean; data?: StrategyPlan; error?: string }>(
+      `/recommendations-v3/${recommendationId}/generate-strategy`,
+      data
+    );
+
+    if (response && typeof response === 'object' && 'success' in response) {
+      return response as { success: boolean; data?: StrategyPlan; error?: string };
+    } else if (response && typeof response === 'object' && 'data' in response) {
+      return (response as any).data;
+    }
+    return response as { success: boolean; data?: StrategyPlan; error?: string };
+  } catch (error: any) {
+    console.error('Error generating strategy:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to generate strategy'
+    };
+  }
+}
+
+/**
+ * Upload context file for strategy enrichment
+ */
+export async function uploadContextFileV3(
+  recommendationId: string,
+  file: File
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/upload-context`;
+    const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error: any) {
+    console.error('Error uploading context file:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to upload context file'
+    };
+  }
+}

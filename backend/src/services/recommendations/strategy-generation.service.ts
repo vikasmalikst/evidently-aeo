@@ -341,11 +341,7 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
         try {
             if (mimeType === 'application/pdf') {
                 // eslint-disable-next-line @typescript-eslint/no-var-requires
-                let pdf = require('pdf-parse');
-                // Handle ES module default export if present
-                if (pdf.default) {
-                    pdf = pdf.default;
-                }
+                const pdf = require('pdf-parse/dist/node/cjs/index.cjs');
                 const data = await pdf(buffer);
                 return data.text;
             } else {

@@ -612,18 +612,33 @@ export function UnifiedContentRenderer({
 
   const normalizedContent = React.useMemo(() => {
     if (!content) return '';
-    let processed = content;
     
-    if (processed.trim().startsWith('"') && processed.trim().endsWith('"')) {
+    let processed: any = content;
+
+    // 1. Ensure initial string state or handle object
+    if (typeof processed !== 'string') {
       try {
-        processed = JSON.parse(processed.trim());
+        processed = JSON.stringify(processed);
+      } catch (e) {
+        processed = String(processed);
+      }
+    }
+
+    const safeTrim = (str: any) => (typeof str === 'string' ? str.trim() : '');
+
+    // 2. Unwrap double-quoted strings
+    if (safeTrim(processed).startsWith('"') && safeTrim(processed).endsWith('"')) {
+      try {
+        const parsed = JSON.parse(safeTrim(processed));
+        if (typeof parsed === 'string') processed = parsed;
       } catch (e) {}
     }
 
-    if (processed.trim().startsWith('{')) {
+    // 3. Extract 'content' field from JSON objects
+    if (typeof processed === 'string' && safeTrim(processed).startsWith('{')) {
       try {
         const parsed = JSON.parse(processed);
-        if (parsed.content && typeof parsed.content === 'string') {
+        if (parsed && typeof parsed === 'object' && parsed.content && typeof parsed.content === 'string') {
           processed = parsed.content;
         }
       } catch (e) {
@@ -634,12 +649,17 @@ export function UnifiedContentRenderer({
       }
     }
 
+    // 4. Final safety check before string operations
+    if (typeof processed !== 'string') {
+      processed = String(processed);
+    }
+
     // Handle escaped newlines
     processed = processed
       .replace(/\\\\n/g, '\n')
       .replace(/\\n/g, '\n');
 
-    // Strip leading H1 title if it exists (renders separately in UI or not needed in canvas)
+    // Strip leading H1 title
     processed = processed.replace(/^#\s+.+\n+/, '').trim();
 
     return processed;

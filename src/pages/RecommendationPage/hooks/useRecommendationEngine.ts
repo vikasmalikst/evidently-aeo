@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useManualBrandDashboard } from '../../../../manual-dashboard';
+import { useManualBrandDashboard } from '../../../manual-dashboard';
 import {
     getRecommendationsByStepV3,
     getGenerationV3,
@@ -13,8 +13,8 @@ import {
     type RecommendationV3,
     type IdentifiedKPI,
     type StrategyPlan
-} from '../../../../api/recommendationsV3Api';
-import { fetchRecommendationContentLatest } from '../../../../api/recommendationsApi';
+} from '../../../api/recommendationsV3Api';
+import { fetchRecommendationContentLatest } from '../../../api/recommendationsApi';
 
 export const useRecommendationEngine = (initialStep?: number) => {
     const [searchParams] = useSearchParams();

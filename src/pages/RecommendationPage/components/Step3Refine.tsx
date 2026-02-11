@@ -3,6 +3,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IconMinus, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useRecommendationContext } from '../RecommendationContext';
+import { UnifiedContentRenderer } from '../../../components/RecommendationsV3/components/ContentSectionRenderer';
 import { 
   updateRecommendationStatusV3, 
   completeRecommendationV3, 
@@ -15,6 +16,7 @@ export const Step3Refine: React.FC = () => {
         isColdStart, 
         guideMap, 
         contentMap, 
+        setContentMap,
         expandedRecId, 
         setExpandedRecId, 
         handleStatusChange, 
@@ -167,11 +169,21 @@ export const Step3Refine: React.FC = () => {
                                             ) : <p className="text-sm text-red-500">Guide content not found.</p>
                                         ) : (
                                             <div className="text-sm">
-                                                <p className="mb-4">Content Editor (Placeholder for ContentSectionRenderer)</p>
-                                                {/* In real implementation, we would import KeyContentSectionRenderer/UnifiedContentRenderer here */}
-                                                 <div className="bg-slate-50 p-4 rounded border border-slate-200">
-                                                    Content for {rec.action}
-                                                 </div>
+                                                {rec.id && contentMap.get(rec.id) ? (
+                                                    <UnifiedContentRenderer
+                                                        content={contentMap.get(rec.id)}
+                                                        isEditing={true}
+                                                        onContentChange={(newContent) => {
+                                                            const newMap = new Map(contentMap);
+                                                            newMap.set(rec.id!, newContent);
+                                                            setContentMap(newMap);
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <div className="p-8 text-center text-gray-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                                                        <span className="block mb-2">Loading content...</span>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>

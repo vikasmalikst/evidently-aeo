@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { CompactStepIndicator } from '../../../components/RecommendationsV3/CompactStepIndicator';
+
 import { PremiumTabNavigator } from '../../../components/RecommendationsV3/PremiumTabNavigator';
 import { useRecommendationContext } from '../RecommendationContext';
 
@@ -22,7 +22,7 @@ export const Header: React.FC = () => {
 
             {/* Step Indicator */}
             <div className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden mb-6">
-                <CompactStepIndicator
+                <PremiumTabNavigator
                     currentStep={currentStep}
                     onStepClick={(step) => handleNavigate(step)}
                     counts={{
@@ -33,9 +33,6 @@ export const Header: React.FC = () => {
                     }}
                 />
             </div>
-            
-             {/* Navigation Tabs (if needed as secondary nav) - currently using compact step indicator as primary */}
-             {/* <PremiumTabNavigator ... /> */}
         </div>
     );
 };

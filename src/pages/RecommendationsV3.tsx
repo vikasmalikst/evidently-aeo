@@ -31,8 +31,11 @@ import {
   saveRecommendationContentV3,
   generateStrategyV3,
   uploadContextFileV3,
-  type StrategyPlan
+  type StrategyPlan,
+  createCustomRecommendationV3,
+  deleteContextFileV3
 } from '../api/recommendationsV3Api';
+import { AddCustomRecommendationModal } from '../components/RecommendationsV3/components/AddCustomRecommendationModal';
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
 import { invalidateCache } from '../lib/apiCache';
@@ -132,6 +135,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   }, [allRecommendations]);
   const [generatingContentIds, setGeneratingContentIds] = useState<Set<string>>(new Set()); // Track which recommendations are generating content
   const [uploadingContextRecId, setUploadingContextRecId] = useState<string | null>(null);
+  const [removingContextFileId, setRemovingContextFileId] = useState<string | null>(null);
   const [hasGeneratedContentForStep3, setHasGeneratedContentForStep3] = useState(false); // Drives Step 3 "attention" animation after generating content
   const [hasCompletedForStep4, setHasCompletedForStep4] = useState(false); // Drives Step 4 "attention" animation after marking completed
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -170,6 +174,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   // Strategy Generation State
   const [strategyPlans, setStrategyPlans] = useState<Map<string, StrategyPlan>>(new Map());
   const [generatingStrategyIds, setGeneratingStrategyIds] = useState<Set<string>>(new Set());
+
+  const [showAddCustomModal, setShowAddCustomModal] = useState(false);
+  const [isSubmittingCustom, setIsSubmittingCustom] = useState(false);
 
   const [stepCounts, setStepCounts] = useState<Record<number, number>>({});
   const [brandName, setBrandName] = useState<string>(''); // For template customization
@@ -674,6 +681,43 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       setError(err.message || 'Failed to upload context file');
     } finally {
       setUploadingContextRecId(null);
+    }
+  };
+
+  // Handle context file removal
+  const handleRemoveContextFile = async (recId: string, fileId: string) => {
+    if (removingContextFileId === fileId) return;
+
+    setRemovingContextFileId(fileId);
+    setError(null);
+
+    try {
+      const response = await deleteContextFileV3(recId, fileId);
+
+      if (response.success) {
+        // Update local strategyPlans state to remove the file
+        setStrategyPlans(prev => {
+          const next = new Map(prev);
+          const existingPlan = next.get(recId);
+          if (!existingPlan || !existingPlan.contextFiles) {
+            return next;
+          }
+          const updatedFiles = existingPlan.contextFiles.filter((file: any) => file.id !== fileId);
+          next.set(recId, {
+            ...existingPlan,
+            contextFiles: updatedFiles
+          });
+          return next;
+        });
+        console.log(`✅ [RecommendationsV3] Context file removed: ${fileId}`);
+      } else {
+        setError(response.error || 'Failed to remove context file');
+      }
+    } catch (err: any) {
+      console.error('Error removing context file:', err);
+      setError(err.message || 'Failed to remove context file');
+    } finally {
+      setRemovingContextFileId(null);
     }
   };
 
@@ -1184,6 +1228,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
     const strategyPlan = strategyPlans.get(recommendation.id!);
     const isGeneratingStrategy = generatingStrategyIds.has(recommendation.id!);
+    const hasRealStrategy =
+      !!strategyPlan &&
+      Array.isArray((strategyPlan as any).structure) &&
+      (strategyPlan as any).structure.length > 0;
 
     return (
       <div className="space-y-4">
@@ -1228,7 +1276,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                      <IconFileText size={14} className="text-slate-400 shrink-0" />
                      <span className="truncate text-slate-600">{file.name}</span>
                    </div>
-                   <span className="text-slate-400 text-[10px]">{new Date(file.uploadedAt).toLocaleDateString()}</span>
+                   <div className="flex items-center gap-2">
+                     <span className="text-slate-400 text-[10px]">{new Date(file.uploadedAt).toLocaleDateString()}</span>
+                     <button
+                       type="button"
+                       onClick={() => handleRemoveContextFile(recommendation.id!, file.id)}
+                       disabled={removingContextFileId === file.id || uploadingContextRecId === recommendation.id}
+                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                     >
+                       <IconTrash size={10} />
+                       <span>Remove</span>
+                     </button>
+                   </div>
                  </div>
                ))}
              </div>
@@ -1240,7 +1299,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
         </div>
 
         {/* Strategy Generation Section - Minimal Centered Design */}
-        {!strategyPlan && (
+        {!hasRealStrategy && (
           <div className="-mt-2 bg-gradient-to-br from-cyan-50 via-teal-50 to-cyan-50 border-2 border-t-0 border-cyan-200 rounded-b-xl p-8 text-center">
             <p className="text-sm text-gray-600 mb-4">
               AI will analyze your recommendation and generate an optimized content structure
@@ -1269,8 +1328,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
 
 
-        {/* Structure Editor - Only visible AFTER strategy generation */}
-        {strategyPlan ? (
+        {/* Structure Editor - Only visible AFTER strategy generation (i.e., when we have sections) */}
+        {hasRealStrategy ? (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <ContentStructureInlineEditor
                 recommendationId={recommendation.id!}
@@ -1669,6 +1728,33 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     }
   };
 
+  const handleCreateCustomRecommendation = async (recommendation: Partial<RecommendationV3>) => {
+    if (!generationId) return;
+    
+    setIsSubmittingCustom(true);
+    try {
+      const response = await createCustomRecommendationV3(generationId, recommendation);
+      if (response.success && response.data) {
+        // Optimistically add to the list or just refresh
+        setRecommendations(prev => [response.data!, ...prev]);
+        setAllRecommendations(prev => [response.data!, ...prev]);
+        
+        // Update counts
+        setStepCounts(prev => ({
+          ...prev,
+          1: (prev[1] || 0) + 1
+        }));
+      } else {
+        throw new Error(response.error || 'Failed to create recommendation');
+      }
+    } catch (err: any) {
+      console.error('Error creating custom recommendation:', err);
+      throw err; // Re-throw for modal error handling
+    } finally {
+      setIsSubmittingCustom(false);
+    }
+  };
+
   // Handle select recommendation
   const handleSelect = (id: string, selected: boolean) => {
     setSelectedIds(prev => {
@@ -1936,11 +2022,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                         <StatusFilter value={statusFilter} onChange={setStatusFilter} />
                         <PriorityFilter value={priorityFilter} onChange={setPriorityFilter} />
                         <EffortFilter value={effortFilter} onChange={setEffortFilter} />
-                        <ContentTypeFilter value={contentTypeFilter} onChange={setContentTypeFilter} options={availableContentTypes} />
-                      </CollapsibleFilters>
-                    </div>
+                      <ContentTypeFilter value={contentTypeFilter} onChange={setContentTypeFilter} options={availableContentTypes} />
+                    </CollapsibleFilters>
+                    <button
+                      onClick={() => setShowAddCustomModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-white border border-[#00bcdc] text-[#00bcdc] rounded-lg text-[13px] font-bold hover:bg-[#00bcdc]/5 transition-all shadow-sm active:scale-95 whitespace-nowrap"
+                    >
+                      <IconPlus size={18} />
+                      Add Custom
+                    </button>
                   </div>
-                  <RecommendationsTableV3
+                </div>
+                <RecommendationsTableV3
                     recommendations={recommendations}
                     showCheckboxes={false}
                     showStatusDropdown={true}
@@ -3914,6 +4007,12 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           </div>
         </div>
       )}
+      <AddCustomRecommendationModal
+        isOpen={showAddCustomModal}
+        onClose={() => setShowAddCustomModal(false)}
+        onSubmit={handleCreateCustomRecommendation}
+        isSubmitting={isSubmittingCustom}
+      />
     </Layout >
   );
 };

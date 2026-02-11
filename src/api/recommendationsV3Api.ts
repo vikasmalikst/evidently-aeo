@@ -264,6 +264,25 @@ export async function generateRecommendationsV3(
 }
 
 /**
+ * Add a custom recommendation manually
+ */
+export async function createCustomRecommendationV3(
+  generationId: string,
+  recommendation: Partial<RecommendationV3>
+): Promise<{ success: boolean; data?: RecommendationV3; error?: string }> {
+  try {
+    const response = await apiClient.post(`/recommendations-v3/${generationId}/custom`, recommendation) as any;
+    return response;
+  } catch (error: any) {
+    console.error('❌ [recommendationsV3Api] Error creating custom recommendation:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to create recommendation'
+    };
+  }
+}
+
+/**
  * Get all recommendations for a generation
  */
 export async function getGenerationV3(
@@ -823,6 +842,43 @@ export async function uploadContextFileV3(
     return {
       success: false,
       error: error.message || 'Failed to upload context file'
+    };
+  }
+}
+
+/**
+ * Remove a previously uploaded context file for a recommendation.
+ */
+export async function deleteContextFileV3(
+  recommendationId: string,
+  fileId: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/context-files/${fileId}`;
+    const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Delete failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error: any) {
+    console.error('Error deleting context file:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to delete context file'
     };
   }
 }

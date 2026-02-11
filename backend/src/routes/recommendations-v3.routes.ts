@@ -168,6 +168,49 @@ router.post('/generate', authenticateToken, requireFeatureEntitlement('recommend
 });
 
 /**
+ * POST /api/recommendations-v3/:generationId/custom
+ * 
+ * Add a custom recommendation manually to a generation.
+ */
+router.post('/:generationId/custom', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const { generationId } = req.params;
+    const rec = req.body;
+
+    // Get brandId from generation
+    const { data: generation, error: genError } = await supabaseAdmin
+      .from('recommendation_generations')
+      .select('brand_id, customer_id')
+      .eq('id', generationId)
+      .eq('customer_id', customerId)
+      .single();
+
+    if (genError || !generation) {
+      return res.status(404).json({ success: false, error: 'Generation not found' });
+    }
+
+    const result = await recommendationV3Service.createCustomRecommendation(
+      generationId,
+      generation.brand_id,
+      customerId,
+      rec
+    );
+
+    if (result) {
+      return res.json({ success: true, data: result });
+    } else {
+      return res.status(500).json({ success: false, error: 'Failed to create custom recommendation' });
+    }
+  } catch (error: any) {
+    console.error('❌ [RecommendationsV3 Custom] Error:', error);
+    return res.status(500).json({ success: false, error: error.message || 'Server error' });
+  }
+});
+
+/**
  * GET /api/recommendations-v3/:generationId
  * 
  * Get all recommendations for a generation (all steps).
@@ -2375,6 +2418,53 @@ router.post('/:recommendationId/upload-context',
       return res.status(500).json({
         success: false,
         error: error.message || 'Failed to upload context file'
+      });
+    }
+  }
+);
+
+/**
+ * DELETE /api/recommendations-v3/:recommendationId/context-files/:fileId
+ *
+ * Remove a previously uploaded context file from the strategy plan.
+ */
+router.delete('/:recommendationId/context-files/:fileId',
+  authenticateToken,
+  requireFeatureEntitlement('recommendations'),
+  async (req, res) => {
+    try {
+      const customerId = req.user?.customer_id;
+      if (!customerId) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+
+      const { recommendationId, fileId } = req.params;
+
+      if (!recommendationId || !fileId) {
+        return res.status(400).json({
+          success: false,
+          error: 'recommendationId and fileId are required'
+        });
+      }
+
+      console.log(`🗑️ [RecommendationsV3] Removing context file ${fileId} for recommendation ${recommendationId}`);
+
+      const result = await strategyGenerationService.removeContextFile(
+        recommendationId,
+        customerId,
+        fileId
+      );
+
+      if (!result.success) {
+        return res.status(400).json(result);
+      }
+
+      return res.json(result);
+    } catch (error: any) {
+      console.error('❌ [Remove Context] Error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to remove context file'
       });
     }
   }

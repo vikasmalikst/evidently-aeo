@@ -60,6 +60,7 @@ ${recContext}
 AEO UNIFIED ARTICLE REQUIREMENTS:
 - ONE UNIFIED DOCUMENT: Output a single, cohesive Markdown document. Do not split into JSON sections.
 - TEMPLATE STRICTNESS: You must follow the structure below exactly.
+- DATA PRIORITY: If "ADDITIONAL CONTEXT (PRIMARY SOURCE MATERIAL)" is provided above, prioritize facts/data from it over general knowledge. If the section instructions explicitly ask to use data from the context, extract it EXACTLY.
 - ENTITY DENSITY: Include 5–10 related industry terms (entities) naturally throughout the text.
 - FRESHNESS: Always mention the current year (${currentYear}) and reference "latest data" or "current market shifts."
 - BRAND CITATION: Position ${brandName} as the "Primary Source" or "Solution Provider" in at least two sections.

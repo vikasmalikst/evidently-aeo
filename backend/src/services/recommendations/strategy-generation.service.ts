@@ -79,6 +79,28 @@ export class StrategyGenerationService {
                 .eq('id', rec.brand_id)
                 .single();
 
+            // 2.5 Fetch existing strategy to retrieve uploaded context files
+
+            let existingContextFiles: any[] = [];
+
+            const { data: existingStrategyRow } = await supabaseAdmin
+                .from('recommendation_generated_contents')
+                .select('content')
+                .eq('recommendation_id', recommendationId)
+                .eq('content_type', 'strategy_plan')
+                .maybeSingle();
+
+            if (existingStrategyRow) {
+                try {
+                    const existingPlan = JSON.parse(existingStrategyRow.content) as StrategyPlan;
+                    if (existingPlan.contextFiles && existingPlan.contextFiles.length > 0) {
+                        existingContextFiles = existingPlan.contextFiles;
+                    }
+                } catch (e) {
+                    console.error('⚠️ [StrategyService] Error parsing existing strategy for context:', e);
+                }
+            }
+
             // 3. Build strategy enrichment prompt
             const prompt = this.buildStrategyPrompt({
                 recommendation: rec,
@@ -118,6 +140,11 @@ export class StrategyGenerationService {
 
             if (!strategyPlan) {
                 return { success: false, error: 'Failed to parse strategy response' };
+            }
+
+            // 5.5 Preserve context files
+            if (existingContextFiles.length > 0) {
+                strategyPlan.contextFiles = existingContextFiles;
             }
 
             // 6. Save to database
@@ -175,6 +202,8 @@ ${templatesJson}
     "title": "New Engaging Title",
     "content": "Original content description...\\n\\nStrategic Tip: Focus on...",
     "sectionType": "original_type"
+  }
+]
   }
 ]
 
@@ -341,9 +370,10 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
         try {
             if (mimeType === 'application/pdf') {
                 // eslint-disable-next-line @typescript-eslint/no-var-requires
-                const pdf = require('pdf-parse/dist/node/cjs/index.cjs');
-                const data = await pdf(buffer);
-                return data.text;
+                const { PDFParse } = require('pdf-parse');
+                const parser = new PDFParse({ data: buffer });
+                const result = await parser.getText();
+                return result.text;
             } else {
                 // Assume text/plain or similar
                 return buffer.toString('utf-8');
@@ -467,6 +497,75 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
         } catch (error: any) {
             console.error('❌ Error adding context file:', error);
             return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Remove a previously uploaded context file from a strategy plan.
+     * This is used by the Step 2 UI when the user deletes a document.
+     */
+    async removeContextFile(
+        recommendationId: string,
+        customerId: string,
+        fileId: string
+    ): Promise<{ success: boolean; error?: string }> {
+        try {
+            // Fetch existing strategy plan for this recommendation
+            const { data: existing, error: fetchError } = await supabaseAdmin
+                .from('recommendation_generated_contents')
+                .select('id, content')
+                .eq('recommendation_id', recommendationId)
+                .eq('content_type', 'strategy_plan')
+                .eq('customer_id', customerId)
+                .maybeSingle();
+
+            if (fetchError) {
+                console.error('❌ [StrategyService] Error fetching strategy for context removal:', fetchError);
+                return { success: false, error: 'Failed to load strategy plan' };
+            }
+
+            if (!existing) {
+                return { success: false, error: 'Strategy plan not found' };
+            }
+
+            let strategy: StrategyPlan;
+            try {
+                strategy = JSON.parse(existing.content);
+            } catch (e) {
+                console.error('❌ [StrategyService] Failed to parse existing strategy when removing context file:', e);
+                return { success: false, error: 'Corrupted strategy plan content' };
+            }
+
+            if (!strategy.contextFiles || !Array.isArray(strategy.contextFiles)) {
+                return { success: false, error: 'No context files found for this strategy' };
+            }
+
+            const beforeCount = strategy.contextFiles.length;
+            strategy.contextFiles = strategy.contextFiles.filter(f => f.id !== fileId);
+
+            if (strategy.contextFiles.length === beforeCount) {
+                return { success: false, error: 'Context file not found' };
+            }
+
+            const { error: updateError } = await supabaseAdmin
+                .from('recommendation_generated_contents')
+                .update({
+                    content: JSON.stringify(strategy),
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', existing.id)
+                .eq('customer_id', customerId);
+
+            if (updateError) {
+                console.error('❌ [StrategyService] Error updating strategy after context removal:', updateError);
+                return { success: false, error: 'Failed to update strategy plan' };
+            }
+
+            console.log(`✅ [StrategyService] Removed context file ${fileId} from recommendation ${recommendationId}`);
+            return { success: true };
+        } catch (error: any) {
+            console.error('❌ [StrategyService] Error removing context file:', error);
+            return { success: false, error: error.message || 'Unexpected error removing context file' };
         }
     }
 }

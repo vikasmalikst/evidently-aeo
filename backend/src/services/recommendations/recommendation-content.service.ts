@@ -879,7 +879,11 @@ ${contentStyleGuide}
       newFactoryPrompt = getNewContentPrompt({
         recommendation: recV3ForNew,
         brandContext: brandContextV3ForNew,
-        structureConfig: request.structureConfig
+        structureConfig: request.structureConfig,
+        // Ensure any uploaded context files (PDF/TXT, etc.) are
+        // forwarded into the unified prompt so the LLM can treat
+        // them as primary source material for generation.
+        extraContext: contextFilesContent
       }, assetDetection.asset);
     }
 

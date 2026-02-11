@@ -60,10 +60,14 @@ export interface ConsolidatedAnalysisResult {
     brand: {
       label: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
       score: number; // 1-100 scale: <55 = negative, 55-65 = neutral, >65 = positive
+      positive_sentences?: string[];
+      negative_sentences?: string[];
     };
     competitors: Record<string, {
       label: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
       score: number; // 1-100 scale: <55 = negative, 55-65 = neutral, >65 = positive
+      positive_sentences?: string[];
+      negative_sentences?: string[];
     }>;
   };
   keywords?: GeneratedKeyword[];
@@ -113,6 +117,10 @@ export class ConsolidatedAnalysisService {
    * Get cached analysis from database (provider-agnostic)
    * Also fetches citations from citation_categories table
    */
+  /**
+   * Get cached analysis from database (provider-agnostic)
+   * Also fetches citations from citation_categories table
+   */
   private async getCachedAnalysisFromDB(
     collectorResultId: number,
     citations: string[],
@@ -120,18 +128,27 @@ export class ConsolidatedAnalysisService {
     brandId?: string
   ): Promise<ConsolidatedAnalysisResult | null> {
     try {
+      // Ensure ID is a number
+      const numericId = Number(collectorResultId);
+      if (isNaN(numericId)) {
+        console.warn(`⚠️ Invalid collectorResultId for cache lookup: ${collectorResultId}`);
+        return null;
+      }
+
       const { data, error } = await this.supabase
         .from('consolidated_analysis_cache')
         .select('sentiment, llm_provider, raw_response')
-        .eq('collector_result_id', collectorResultId)
+        .eq('collector_result_id', numericId)
         .maybeSingle();
 
       if (error) {
-        console.warn(`⚠️ Error fetching cached analysis for collector_result ${collectorResultId}:`, error.message);
+        console.warn(`⚠️ Error fetching cached analysis for collector_result ${numericId}:`, error.message);
         return null;
       }
 
       if (!data) {
+        // Silent return for cache miss to avoid log spam, debug only
+        // console.debug(`Cache miss for collector_result ${numericId}`);
         return null;
       }
 
@@ -176,7 +193,7 @@ export class ConsolidatedAnalysisService {
         }
       };
 
-      console.log(`📦 Using cached analysis from DB for collector_result ${collectorResultId} (provider: ${data.llm_provider}, ${Object.keys(citationsMap).length} citations)`);
+      console.log(`📦 Using cached analysis from DB for collector_result ${numericId} (provider: ${data.llm_provider}, ${Object.keys(citationsMap).length} citations)`);
       return cachedResult;
     } catch (error) {
       console.warn(`⚠️ Error fetching cached analysis:`, error instanceof Error ? error.message : error);
@@ -194,20 +211,18 @@ export class ConsolidatedAnalysisService {
     rawResponse?: string
   ): Promise<void> {
     try {
-      // Extract only products and sentiment (citations are stored separately)
+      // Extract only components that exist in the schema
+      // NOTE: 'products' column was removed from schema
       const cacheData = {
         collector_result_id: collectorResultId,
-        products: {
-          brand: result.products?.brand || [],
-          competitors: result.products?.competitors || {},
-        },
+        // products: { ... }, // REMOVED - column does not exist
         sentiment: {
           brand: result.sentiment?.brand || { label: 'NEUTRAL', score: 60 },
           competitors: result.sentiment?.competitors || {},
         },
         llm_provider: llmProvider,
         raw_response: rawResponse || null,
-        // Persist qualitative data
+        // Persist qualitative data if columns exist (they were added in migration)
         keywords: result.keywords || [],
         quotes: result.quotes || [],
         narrative: result.narrative || null
@@ -300,6 +315,72 @@ export class ConsolidatedAnalysisService {
       const result = useOllama
         ? await this.callOllamaAPI(prompt, brandId, options.ollamaConfigOverride)
         : await this.callOpenRouterAPI(prompt);
+
+      // --- MAPPING LOGIC START ---
+      // Map quotes to positive/negative sentences for brand and competitors
+      if (result.quotes && Array.isArray(result.quotes)) {
+        // Helper for fuzzy matching
+        const fuzzyMatch = (text: string, target: string): boolean => {
+          if (!text || !target) return false;
+          const t = text.toLowerCase().trim();
+          const tgt = target.toLowerCase().trim();
+          return t === tgt || t.includes(tgt) || tgt.includes(t);
+        };
+
+        const brandName = options.brandName || 'Brand';
+
+        // Initialize arrays if missing
+        if (!result.sentiment.brand.positive_sentences) result.sentiment.brand.positive_sentences = [];
+        if (!result.sentiment.brand.negative_sentences) result.sentiment.brand.negative_sentences = [];
+
+        // Ensure competitor objects exist and have arrays
+        if (result.sentiment.competitors) {
+          Object.values(result.sentiment.competitors).forEach(comp => {
+            if (comp) {
+              if (!comp.positive_sentences) comp.positive_sentences = [];
+              if (!comp.negative_sentences) comp.negative_sentences = [];
+            }
+          });
+        }
+
+        for (const quote of result.quotes) {
+          if (!quote.text || !quote.entity) continue;
+
+          const isPositive = quote.sentiment === 'POSITIVE';
+          const isNegative = quote.sentiment === 'NEGATIVE';
+
+          if (!isPositive && !isNegative) continue; // Skip neutral quotes for these lists
+
+          // Check if it matches Brand
+          if (fuzzyMatch(quote.entity, brandName) || quote.entity.toLowerCase() === 'brand') {
+            if (isPositive) result.sentiment.brand.positive_sentences!.push(quote.text);
+            if (isNegative) result.sentiment.brand.negative_sentences!.push(quote.text);
+            continue; // Assigned to brand, done with this quote
+          }
+
+          // Check against competitors
+          if (result.sentiment.competitors) {
+            let matched = false;
+            for (const compName of Object.keys(result.sentiment.competitors)) {
+              if (fuzzyMatch(quote.entity, compName)) {
+                const compSentiment = result.sentiment.competitors[compName];
+                if (compSentiment) {
+                  if (isPositive) compSentiment.positive_sentences!.push(quote.text);
+                  if (isNegative) compSentiment.negative_sentences!.push(quote.text);
+                  matched = true;
+                  break;
+                }
+              }
+            }
+            if (matched) continue;
+          }
+
+          // Fallback: If we couldn't match entity strictly, but it contains "competitor" maybe?
+          // For now, if no match, we ignore or maybe default to brand if very unsure? 
+          // Safer to ignore to avoid misattribution.
+        }
+      }
+      // --- MAPPING LOGIC END ---
 
       // Merge cached citations with LLM results
       const mergedCitations: ConsolidatedAnalysisResult['citations'] = {};

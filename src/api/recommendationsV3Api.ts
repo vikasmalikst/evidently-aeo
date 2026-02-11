@@ -190,6 +190,7 @@ export interface StrategyPlan {
     content: string;
     uploadedAt: string;
   }[];
+  researchQueries?: string[];
 }
 
 // ============================================================================

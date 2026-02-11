@@ -288,13 +288,13 @@ export function detectContentAsset(action: string): AssetDetectionResult {
     }
 
     // 5. Comparison Table (Specific Format)
-    const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison', 'versus table', 'vs table', 'comparison'];
+    const explicitComparisonKeywords = ['comparison table'];
     if (explicitComparisonKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'comparison_table', confidence: 'high' };
     }
 
     // 6. EXPLICIT ARTICLE/BLOG (Moved down to avoid masking specific types)
-    const articleKeywords = ['article', 'standard article', 'publish article', 'blog post', 'guest post', 'write article', 'pillar page'];
+    const articleKeywords = ['article', 'standard article', 'publish article', 'blog', 'guest post', 'write article', 'pillar page'];
     if (articleKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'article', confidence: 'high' };
     }

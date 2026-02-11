@@ -29,7 +29,7 @@ export class StrategyPlanner {
                 prompt,
                 maxTokens: 1000,
                 temperature: 0.7, // Slightly higher for creativity in the angle
-                model: 'openai/gpt-oss-20b'
+                model: 'meta-llama/llama-3.3-70b-instruct'
             });
 
             if (!response.response) {

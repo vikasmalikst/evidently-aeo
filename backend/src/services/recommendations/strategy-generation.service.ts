@@ -148,7 +148,7 @@ export class StrategyGenerationService {
                 prompt,
                 maxTokens: 6000, // Reasoning alone takes 3000+, increased to 6000
                 temperature: 0.5,
-                model: 'openai/gpt-oss-20b'
+                model: 'meta-llama/llama-3.3-70b-instruct'
             });
 
             if (!response.response) {
@@ -239,31 +239,40 @@ You are NOT just copying the template. You are customizing every instruction to 
 2. **Update "content":** Replace the generic instructions with specific guidance that forces the writer to address the **Competitor Counter-Strike** and **Hook**. 
    - *Example:* Instead of "Explain X", say "Explain X by contrasting it with [Competitor]'s failure to do Y."
 
+**Task 3: Generate Research Queries (CRITICAL)**
+You must generate exactly 3 web search queries to retrieve real-time facts.
+RULES:
+1. Keep queries SHORT (5-12 words).
+2. Each query must serve a DIFFERENT purpose:
+   - Query 1 (Topic Authority): Recent data, stats, benchmarks for "${recommendation.action}" (include 2026).
+   - Query 2 (Brand Evidence): Facts about ${brand.name} related to this topic (case studies, prices, features).
+   - Query 3 (Competitive Landscape): Comparisons or market context.
+
 **Input Template:**
 ${templatesJson}
 
 **Output Requirements:**
 - Return ONLY valid JSON.
-- Return a JSON object with "structure" (array) and "guidance" (object).
-- Do NOT add new sections.
-- Do NOT remove sections.
+- Return a JSON object with two keys:
+  1. "structure": Array of section objects (same as input)
+  2. "research_queries": Array of exactly 3 strings based on the rules above.
+- Do NOT return a top-level Array.
 - Use \\n for line breaks.
-- JSON only.
 
 **Example Output Format:**
 {
   "structure": [
     {
       "id": "section_id",
-      "title": "Specific Title Targeting [Audience]",
-      "content": "Detailed instruction: Focus on [Hook]...\\n\\nStrategic Tip: Mention data about [Pain Point]...",
+      "title": "Specific Title...",
+      "content": "Detailed instruction...",
       "sectionType": "original_type"
     }
   ],
   "research_queries": [
-    "latest statistics on [Topic] 2026",
-    "[Brand] vs [Competitor] feature comparison",
-    "market trends for [Industry] 2026"
+    "AI translation ROI enterprise statistics 2026",
+    "${brand.name} enterprise features case studies",
+    "${brand.name} vs competitors enterprise comparison"
   ]
 }
 ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`;
@@ -293,15 +302,37 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
             }
 
             const jsonString = jsonMatch[0];
-            console.log('📝 Parsing enriched template JSON...');
+            console.log(`📝 Parsing JSON (Start: ${jsonString.substring(0, 50)}...)`);
 
             let parsed: any;
             try {
                 parsed = JSON.parse(jsonString);
             } catch (parseError: any) {
-                console.error('❌ JSON parse failed:', parseError.message);
-                console.error('Problematic JSON (first 1000 chars):', jsonString.substring(0, 1000));
-                return null;
+                console.warn('⚠️ Standard JSON parse failed, attempting to sanitize...', parseError.message);
+
+                try {
+                    // 1. Remove non-printable control characters (except common whitespace) GLOBALLY
+                    // eslint-disable-next-line no-control-regex
+                    let sanitized = jsonString.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '');
+
+                    // 2. Escape unescaped newlines/tabs ONLY within double quotes
+                    // Regex to match string literals: "..."
+                    sanitized = sanitized.replace(/"((?:[^"\\]|\\.)*)"/g, (match, content) => {
+                        // Replace unescaped newlines with \n, tabs with \t within the string content
+                        const newContent = content
+                            .replace(/(?<!\\)\n/g, '\\n')
+                            .replace(/(?<!\\)\t/g, '\\t')
+                            .replace(/(?<!\\)\r/g, '\\r');
+                        return `"${newContent}"`;
+                    });
+
+                    parsed = JSON.parse(sanitized);
+                    console.log('✅ Sanitized JSON parsed successfully');
+                } catch (retryError: any) {
+                    console.error('❌ Sanitized JSON parse also failed:', retryError.message);
+                    console.error('Problematic JSON snippet:', jsonString.substring(1600, 1800)); // Around the reported error index
+                    return null;
+                }
             }
 
             let enrichedSections: StructureSection[] = [];

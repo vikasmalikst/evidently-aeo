@@ -27,7 +27,8 @@ export const Step1Opportunities: React.FC = () => {
         if (!selectedBrandId) return;
         setIsSubmittingCustom(true);
         try {
-            const response = await createCustomRecommendationV3(selectedBrandId, recommendation);
+            if (!generationId) return;
+            const response = await createCustomRecommendationV3(generationId, recommendation);
             if (response.success) {
                 setShowAddCustomModal(false);
                 // Trigger reload by re-selecting brand or invalidated cache

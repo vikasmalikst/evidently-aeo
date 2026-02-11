@@ -41,36 +41,50 @@ Format: CTA. "We just solved this at [Brand]. Here’s the data: [Link]."
 `;
     }
 
-    return `${systemContext}
+    return `
+You are a Viral Social Media Strategist and Copywriter for ${brandName}.
+Your goal is to write a high-engagement thread that stops the scroll, delivers immediate value, and drives action.
+
+**CONTEXT:**
+- **Brand:** ${brandName}
+- **Task:** Write a social media thread about "${rec.contentFocus || rec.action}"
+- **Year:** ${currentYear}
+- **Goal:** Maximize engagement (likes, retweets, shares) and click-throughs.
+
+**CORE WRITING GUIDELINES (STRICT):**
+1.  **The Hook is Everything:** The first line must be provocative, surprising, or promise a specific benefit. No "Hello everyone" or "Today we are talking about."
+2.  **Write for the Eye:** Use short sentences, line breaks, and emojis (sparingly but effectively) to create "white space."
+3.  **Punchy & Direct:** Remove all passive voice. Use strong verbs.
+4.  **Value-First:** Every post in the thread must stand alone as a valuable insight.
+5.  **The "Slippery Slope":** Each post should naturally lead the reader to the next one.
+
+**DO vs DON'T:**
+- **DO:** "Stop doing X. Do Y instead. Here's why: 🧵"
+- **DON'T:** "In this thread, I will discuss the differences between X and Y."
+- **DO:** "3 steps to fix your ROI:"
+- **DON'T:** "Here are some tips for improving your return on investment."
+
+${systemContext}
 ${recContext}
 
-AEO UNIFIED SOCIAL THREAD REQUIREMENTS:
-- ONE UNIFIED DOCUMENT: Output a single, cohesive Markdown document.
-- TEMPLATE STRICTNESS: Follow the structure exactly.
-- PURPOSE: Explanation first, promotion last. High scrapability by LLMs.
-- TONE: Neutral, expert-led, declarative. NO hype, NO sales superlatives.
-- LENGTH: 180-260 characters per post ideal. Short paragraphs (1-2 lines).
-
-=== THE TEMPLATE ===
+**THE STRUCTURE (MANDATORY):**
 ${template}
 
-=== INSTRUCTIONS ===
-Generate the social media thread following the template above.
-OUTPUT FORMAT (JSON v5.0):
-You must return a VALID JSON object with the following structure.
+**INSTRUCTIONS:**
+Generate the social thread adhering strictly to the structure above.
+- **Tone:** Energetic, Confident, Native to the Platform (Twitter/LinkedIn style).
+- **Voice:** Direct address ("You").
+- **Formatting:** Markdown. Use "---" references to separate posts if needed, but output as one continuous markdown stream.
+
+**OUTPUT FORMAT (JSON v5.0):**
+Return a SINGLE VALID JSON object. The 'content' field must contain the ENTIRE markdown document as a single string.
 
 {
   "version": "5.0",
   "brandName": "${brandName}",
-  "contentTitle": "<Thread Hook / Main Idea>",
-  "content": "<THE FULL MARKDOWN CONTENT HERE - escape newlines as \\\\n>",
+  "contentTitle": "<Viral Hook / Thread Title>",
+  "content": "<FULLMARKDOWN STRING...>",
   "requiredInputs": []
 }
-
-WRITING RULES:
-- Output the FULL content in the 'content' field as a single markdown string.
-- Separate posts clearly (e.g., using horizontal rules "---" or bold headers "Post 1:", "Post 2:").
-- IGNORE LITERAL INSTRUCTIONS: Text starting with "> INSTRUCTIONS" is background guidance for you. Do NOT output this text. Use it to generate the actual content.
-- JSON only.
 `;
 }

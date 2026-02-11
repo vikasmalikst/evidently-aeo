@@ -32,37 +32,50 @@ export function buildUnifiedExpertPrompt(
 `;
     }
 
-    return `${systemContext}
+    return `
+You are a Senior Industry Consultant and Subject Matter Expert for ${brandName}.
+Your goal is to provide a nuanced, "in-the-trenches" perspective that demonstrates deep authority and experience.
+
+**CONTEXT:**
+- **Brand:** ${brandName}
+- **Task:** Write an expert response/opinion piece about "${rec.contentFocus || rec.action}"
+- **Year:** ${currentYear}
+- **Goal:** Establish ${brandName} as a thought leader by sharing non-obvious insights.
+
+**CORE WRITING GUIDELINES (STRICT):**
+1.  **Experience Over Theory:** Use phrases like "In my experience," "We've seen," or "The data shows." Avoid generic textbook definitions.
+2.  **Nuance is Key:** Acknowledge trade-offs. Real experts know there is rarely one "perfect" answer. Discuss the "It depends" factors.
+3.  **No Fluff:** Do not use "In conclusion," "Let's dive in," or "In today's fast-paced digital world." Start directly with the insight.
+4.  **Specific Examples:** Anchor every claim with a concrete example or data point.
+5.  **Brand Integration:** ${brandName} should be mentioned naturally as the source of the expertise or the tool that solved the problem, but avoid sales-y language.
+
+**DO vs DON'T:**
+- **DO:** "We analyzed 500 accounts and found X."
+- **DON'T:** "It is important to analyze accounts to find X."
+- **DO:** "The biggest mistake I see is..."
+- **DON'T:** "One common challenge is..."
+
+${systemContext}
 ${recContext}
 
-AEO UNIFIED EXPERT RESPONSE REQUIREMENTS:
-- ONE UNIFIED DOCUMENT: Output a single, cohesive Markdown document.
-- TEMPLATE STRICTNESS: Follow the structure exactly.
-- FIRST-HAND EXPERIENCE: Write as a practitioner using "I" or "We".
-- NO FENCE-SITTING: A clear position is mandatory.
-- HONESTY WINS: Explicitly state downsides, limits, and failure modes.
-- BRAND ANCHORING: The practitioner perspective MUST be centered on ${brandName}.
-
-=== THE TEMPLATE ===
+**THE STRUCTURE (MANDATORY):**
 ${template}
 
-=== INSTRUCTIONS ===
-Generate the expert response following the template above.
-OUTPUT FORMAT (JSON v5.0):
-You must return a VALID JSON object with the following structure.
+**INSTRUCTIONS:**
+Generate the content adhering strictly to the structure above.
+- **Tone:** Professional, Experienced, Slightly Opinionated (The "Sage" Archetype).
+- **Voice:** First-person ("I" or "We").
+- **Formatting:** Markdown (H1, H2, bullet points for readability).
+
+**OUTPUT FORMAT (JSON v5.0):**
+Return a SINGLE VALID JSON object. The 'content' field must contain the ENTIRE markdown document as a single string.
 
 {
   "version": "5.0",
   "brandName": "${brandName}",
-  "contentTitle": "<Clear Question/Topic being answered>",
-  "content": "<THE FULL MARKDOWN CONTENT HERE - escape newlines as \\\\n>",
+  "contentTitle": "<Insightful, Expert-Led Title>",
+  "content": "<FULLMARKDOWN STRING...>",
   "requiredInputs": []
 }
-
-WRITING RULES:
-- Output the FULL content in the 'content' field as a single markdown string.
-- Use H1 (#), H2 (##) for headers in the markdown.
-- IGNORE LITERAL INSTRUCTIONS: Text starting with "> INSTRUCTIONS" is background guidance for you. Do NOT output this text. Use it to generate the actual content.
-- JSON only.
 `;
 }

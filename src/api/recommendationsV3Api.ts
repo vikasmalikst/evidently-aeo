@@ -787,9 +787,11 @@ export async function generateStrategyV3(
   }
 ): Promise<{ success: boolean; data?: StrategyPlan; error?: string }> {
   try {
+    // Increase timeout to 180s for strategy generation
     const response = await apiClient.post<{ success: boolean; data?: StrategyPlan; error?: string }>(
       `/recommendations-v3/${recommendationId}/generate-strategy`,
-      data
+      data,
+      { timeout: 180000 }
     );
 
     if (response && typeof response === 'object' && 'success' in response) {

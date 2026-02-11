@@ -1,5 +1,5 @@
 
- 
+
 export function getPositionExtractionKey(): string | null {
   return process.env.CEREBRAS_API_KEY_1 || process.env.CEREBRAS_API_KEY || null;
 }
@@ -48,6 +48,13 @@ export function getKeywordGenerationKey(): string | null {
 export function getTopicQueryGenerationKey(): string | null {
   return process.env.CEREBRAS_API_KEY_4 || process.env.CEREBRAS_API_KEY || null;
 }
+
+export const getBraveApiKey = (): string | null => {
+  return process.env.BRAVE_API_KEY || null;
+};
+
+// Serper API key removed
+
 
 /**
  * Get fallback Cerebras API key (generic)

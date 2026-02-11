@@ -54,38 +54,44 @@ export function buildUnifiedArticlePrompt(
         templateToUse = isDeepDive ? deepDiveBlogTemplate : professionalArticleTemplate;
     }
 
-    return `${systemContext}
+    return `
+You are a World-Class Tech Journalist and Content Strategist for ${brandName}.
+Your goal is to write a high-authority, reference-grade article that answers the user's intent immediately and comprehensively.
+
+**CONTEXT:**
+- **Brand:** ${brandName}
+- **Task:** Write an article about "${rec.contentFocus || rec.action}"
+- **Year:** ${currentYear}
+- **Goal:** Win the "Featured Snippet" on AI Search Engines (Perplexity, Google SGE).
+
+**CORE WRITING GUIDELINES (STRICT):**
+1.  **Bottom Line Up Front (BLUF):** Answer the main question in the first paragraph. No "In this article, we will explore..." fluff.
+2.  **Dense & Factual:** Every claim must be supported by logic or data. Avoid adjectives like "game-changing," "revolutionary," or "cutting-edge."
+3.  **Scannable Structure:** Use frequent H2/H3 headers, bullet points, and bold text for key concepts.
+4.  **Brand Positioning:** ${brandName} is the *solution*, not just a participant. Contrast it with outdated methods.
+5.  **Freshness:** Explicitly mention "${currentYear}" trends and data.
+
+${systemContext}
 ${recContext}
 
-AEO UNIFIED ARTICLE REQUIREMENTS:
-- ONE UNIFIED DOCUMENT: Output a single, cohesive Markdown document. Do not split into JSON sections.
-- TEMPLATE STRICTNESS: You must follow the structure below exactly.
-- DATA PRIORITY: If "ADDITIONAL CONTEXT (PRIMARY SOURCE MATERIAL)" is provided above, prioritize facts/data from it over general knowledge. If the section instructions explicitly ask to use data from the context, extract it EXACTLY.
-- ENTITY DENSITY: Include 5–10 related industry terms (entities) naturally throughout the text.
-- FRESHNESS: Always mention the current year (${currentYear}) and reference "latest data" or "current market shifts."
-- BRAND CITATION: Position ${brandName} as the "Primary Source" or "Solution Provider" in at least two sections.
-- FORMATTING: Prioritize fragments, bullet points, and bolded text for "Scannability."
-
-=== THE TEMPLATE ===
+**THE STRUCTURE (MANDATORY):**
 ${templateToUse}
 
-=== INSTRUCTIONS ===
-Generate the content following the template above.
-OUTPUT FORMAT (JSON v5.0):
-You must return a VALID JSON object with the following structure.
+**INSTRUCTIONS:**
+Generate the content adhering strictly to the structure above.
+- **Tone:** Professional, Objective, Authoritative (like a McKinsey report or TechCrunch deep dive).
+- **Voice:** Active, Direct, Concise.
+- **Formatting:** Markdown (H1, H2, H3, **bold**, - bullets).
+
+**OUTPUT FORMAT (JSON v5.0):**
+Return a SINGLE VALID JSON object. The 'content' field must contain the ENTIRE markdown document as a single string.
 
 {
   "version": "5.0",
   "brandName": "${brandName}",
-  "contentTitle": "<Catchy, Click-Worthy Title>",
-  "content": "<THE FULL MARKDOWN CONTENT HERE - escape newlines as \\\\n>",
+  "contentTitle": "<Catchy, SEO-Optimized Title>",
+  "content": "<FULLMARKDOWN STRING...>",
   "requiredInputs": []
 }
-
-WRITING RULES:
-- Output the FULL content in the 'content' field as a single markdown string.
-- Use H1 (#), H2 (##), H3 (###) for headers in the markdown.
-- IGNORE LITERAL INSTRUCTIONS: Text starting with "> INSTRUCTIONS" is background guidance for you. Do NOT output this text. Use it to generate the actual content.
-- JSON only. No text outside the JSON.
 `;
 }

@@ -42,36 +42,46 @@ Format: Call to Action (CTA). Ask a question to spark comments (e.g., "How are y
 `;
     }
 
-    return `${systemContext}
+    return `
+You are an expert Video Scriptwriter & Visual Storyteller for ${brandName}.
+Your goal is to write a highly engaging, retention-focused video script that educates the viewer immediately.
+
+**CONTEXT:**
+- **Brand:** ${brandName}
+- **Topic:** "${rec.contentFocus || rec.action}"
+- **Platform:** YouTube / Shorts / TikTok (Fast-paced, high retention)
+- **Year:** ${currentYear}
+
+**CORE SCRIPTWRITING RULES (STRICT):**
+1.  **The Hook (0-5s):** You must grab attention instantly. No logos, no "Welcome back." Start with the Problem or the Promise.
+2.  **Visual Cues:** You MUST include visual directions in brackets, e.g., **[Visual: Split screen of X vs Y]**. The script is for an editor, not just a narrator.
+3.  **Spoken Word:** Write for the ear, not the eye. Use short sentences, contractions ("don't" not "do not"), and natural rhythm.
+4.  **No Fluff:** Cut the intro. Get to the value immediately.
+5.  **Call to Action:** End with a specific engagement question, not just "Like and Subscribe."
+
+${systemContext}
 ${recContext}
 
-AEO UNIFIED VIDEO SCRIPT REQUIREMENTS:
-- ONE UNIFIED DOCUMENT: Output a single, cohesive Markdown document.
-- TEMPLATE STRICTNESS: Follow the structure exactly.
-- TRANSCRIPT-FIRST: Generate a fluid, spoken-word script designed to be read aloud.
-- SINGLE IDEA ONLY: Focus on one specific answer.
-- TONE: Calm, factual, authoritative (unless specified otherwise in template).
-
-=== THE TEMPLATE ===
+**THE SCRIPT STRUCTURE (MANDATORY):**
 ${template}
 
-=== INSTRUCTIONS ===
-Generate the video script following the template above.
-OUTPUT FORMAT (JSON v5.0):
-You must return a VALID JSON object with the following structure.
+**INSTRUCTIONS:**
+Generate the video script adhering strictly to the structure above.
+- **Tone:** Energetic, Confident, Relatable.
+- **Format:** 
+    - **Header:** [Scene Header]
+    - **Visual:** [Visual Direction]
+    - **Audio:** (Narrator): Spoken words...
+
+**OUTPUT FORMAT (JSON v5.0):**
+Return a SINGLE VALID JSON object. The 'content' field must contain the ENTIRE markdown script as a single string.
 
 {
   "version": "5.0",
   "brandName": "${brandName}",
-  "contentTitle": "<Clear, Searchable Video Title>",
-  "content": "<THE FULL MARKDOWN CONTENT HERE - escape newlines as \\\\n>",
+  "contentTitle": "<Viral Video Title>",
+  "content": "<FULL MARKDOWN SCRIPT STRING...>",
   "requiredInputs": []
 }
-
-WRITING RULES:
-- Output the FULL content in the 'content' field as a single markdown string.
-- Use headers and bold text to separate sections clearly in the markdown.
-- IGNORE LITERAL INSTRUCTIONS: Text starting with "> INSTRUCTIONS" is background guidance for you. Do NOT output this text. Use it to generate the actual content.
-- JSON only.
 `;
 }

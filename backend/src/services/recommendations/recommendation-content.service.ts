@@ -1480,9 +1480,10 @@ ${contentStyleGuide}
       return false;
     }
 
-    // Common required fields - FSA assets (with assetType) don't require recommendationId in the response
+    // Common required fields - FSA assets (with assetType) and v5.0 (Unified) don't require recommendationId in the response
     const isFsaAsset = !!parsed.assetType;
-    if (!isFsaAsset && !parsed.recommendationId) {
+    const isV5 = version === '5.0';
+    if (!isFsaAsset && !isV5 && !parsed.recommendationId) {
       console.warn('[VALIDATION FAIL] Missing recommendationId (non-FSA)');
       return false;
     }

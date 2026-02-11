@@ -615,52 +615,77 @@ export function UnifiedContentRenderer({
     
     let processed: any = content;
 
-    // 1. Ensure initial string state or handle object
-    if (typeof processed !== 'string') {
-      try {
+    // 1. Handle Object Input
+    if (typeof processed === 'object' && processed !== null) {
+      if (processed.content && typeof processed.content === 'string') {
+        processed = processed.content;
+      } else if (processed.publishableContent?.content && typeof processed.publishableContent.content === 'string') {
+        processed = processed.publishableContent.content;
+      } else {
         processed = JSON.stringify(processed);
-      } catch (e) {
-        processed = String(processed);
       }
     }
 
-    const safeTrim = (str: any) => (typeof str === 'string' ? str.trim() : '');
+    if (typeof processed !== 'string') return '';
 
-    // 2. Unwrap double-quoted strings
-    if (safeTrim(processed).startsWith('"') && safeTrim(processed).endsWith('"')) {
-      try {
-        const parsed = JSON.parse(safeTrim(processed));
-        if (typeof parsed === 'string') processed = parsed;
-      } catch (e) {}
-    }
+    const safeTrim = (str: string) => str.trim();
+    let trimmed = safeTrim(processed);
 
-    // 3. Extract 'content' field from JSON objects
-    if (typeof processed === 'string' && safeTrim(processed).startsWith('{')) {
+    // 2. Aggressive JSON Extraction (Handles truncated responses)
+    if (trimmed.includes('"content"') || (trimmed.startsWith('{') && trimmed.includes('version'))) {
       try {
-        const parsed = JSON.parse(processed);
-        if (parsed && typeof parsed === 'object' && parsed.content && typeof parsed.content === 'string') {
-          processed = parsed.content;
-        }
+        // Try direct parse first
+        const parsed = JSON.parse(trimmed);
+        if (parsed.content) processed = parsed.content;
+        else if (parsed.publishableContent?.content) processed = parsed.publishableContent.content;
       } catch (e) {
-        const contentMatch = processed.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-        if (contentMatch) {
-          processed = contentMatch[1];
+        // Truncated/Malformed JSON Recovery
+        // Look for "content": "..."
+        const contentMarker = '"content":';
+        const contentIndex = trimmed.indexOf(contentMarker);
+        if (contentIndex !== -1) {
+          let afterMarker = trimmed.substring(contentIndex + contentMarker.length).trim();
+          if (afterMarker.startsWith('"')) {
+            afterMarker = afterMarker.substring(1);
+            // Find closing quote that isn't escaped
+            let closingQuoteIndex = -1;
+            for (let i = 0; i < afterMarker.length; i++) {
+              if (afterMarker[i] === '"' && (i === 0 || afterMarker[i-1] !== '\\')) {
+                closingQuoteIndex = i;
+                break;
+              }
+            }
+            if (closingQuoteIndex !== -1) {
+              processed = afterMarker.substring(0, closingQuoteIndex);
+            } else {
+              // Truncated - take what we have
+              processed = afterMarker;
+            }
+          }
         }
       }
     }
 
-    // 4. Final safety check before string operations
-    if (typeof processed !== 'string') {
-      processed = String(processed);
+    // 3. Cleanup extracted content
+    if (typeof processed === 'string') {
+      // Handle escaped characters
+      processed = processed
+        .replace(/\\\\n/g, '\n')
+        .replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\');
+
+      // Strip leading H1 title if present
+      processed = processed.replace(/^#\s+.+\n+/, '').trim();
+      
+      // Filter out leading JSON fragments if extraction was partial
+      if (processed.startsWith('{"') || processed.startsWith('{')) {
+          const firstH2 = processed.indexOf('##');
+          if (firstH2 !== -1) {
+              processed = processed.substring(firstH2).trim();
+          }
+      }
     }
-
-    // Handle escaped newlines
-    processed = processed
-      .replace(/\\\\n/g, '\n')
-      .replace(/\\n/g, '\n');
-
-    // Strip leading H1 title
-    processed = processed.replace(/^#\s+.+\n+/, '').trim();
 
     return processed;
   }, [content]);

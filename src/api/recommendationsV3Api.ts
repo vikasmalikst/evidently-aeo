@@ -22,6 +22,7 @@ export interface IdentifiedKPI {
   currentValue?: number;
   targetValue?: number;
   displayOrder: number;
+  targetDate?: string;
 }
 
 export interface CompetitorTarget {
@@ -807,24 +808,25 @@ export async function generateStrategyV3(
 }
 
 /**
- * Upload context file for strategy enrichment
+ * Upload a context file for a recommendation
  */
 export async function uploadContextFileV3(
   recommendationId: string,
   file: File
-): Promise<{ success: boolean; data?: any; error?: string }> {
+): Promise<{ success: boolean; data?: { file: any }; error?: string }> {
   try {
     const formData = new FormData();
     formData.append('file', file);
 
-    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/upload-context`;
+    // Use direct fetch because apiClient might not handle FormData automatically with correct headers
+    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/context-files`;
     const accessToken = apiClient.getAccessToken();
     const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
       },
       body: formData
@@ -832,7 +834,7 @@ export async function uploadContextFileV3(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+      throw new Error(errorData.error || `Request failed with status ${response.status}`);
     }
 
     const data = await response.json();
@@ -841,44 +843,34 @@ export async function uploadContextFileV3(
     console.error('Error uploading context file:', error);
     return {
       success: false,
-      error: error.message || 'Failed to upload context file'
+      error: error.response?.data?.error || error.message || 'Failed to upload context file'
     };
   }
 }
 
 /**
- * Remove a previously uploaded context file for a recommendation.
+ * Delete a context file
  */
 export async function deleteContextFileV3(
   recommendationId: string,
   fileId: string
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
-    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/context-files/${fileId}`;
-    const accessToken = apiClient.getAccessToken();
-    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
-
-    const response = await fetch(url, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
-        ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
-      }
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Delete failed with status ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data;
+    const response = await apiClient.delete<{ success: boolean; data?: any; error?: string }>(
+      `/recommendations-v3/${recommendationId}/context-files/${fileId}`
+    );
+    // apiClient.delete returns the parsed JSON response directly
+    return response;
   } catch (error: any) {
     console.error('Error deleting context file:', error);
     return {
       success: false,
-      error: error.message || 'Failed to delete context file'
+      error: error.response?.data?.error || error.message || 'Failed to delete context file'
     };
   }
 }
+
+
+
+
+

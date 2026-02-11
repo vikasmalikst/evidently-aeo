@@ -6,8 +6,8 @@
  * - Prepare for content generation
  */
 
-import { RecommendationsV3 } from '../RecommendationsV3';
+import { RecommendationPage } from '../RecommendationPage';
 
 export const ActionPlanPage = () => {
-  return <RecommendationsV3 initialStep={2} />;
+  return <RecommendationPage initialStep={2} />;
 };

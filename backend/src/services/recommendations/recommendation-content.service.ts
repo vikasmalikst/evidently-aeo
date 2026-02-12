@@ -927,15 +927,15 @@ ${contentStyleGuide}
     // 1. Try Groq Compound (Primary)
     try {
       console.log('🚀 [RecommendationContentService] Attempting Groq Compound (Primary)...');
-      // Disable native web search because we now provide context via MCP
-      const enableSearch = false;
+      // Enable Active Grounding via our MCP tool-calling loop
+      const enableSearch = true;
 
       const groqResult = await groqCompoundService.generateContent({
         systemPrompt: isColdStartGuide
           ? 'You are a senior marketing consultant and AEO strategist. Generate implementation guides.'
-          : 'You are a senior content strategist. Produce high-quality, grounded content.',
+          : 'You are a senior content strategist. Produce high-quality, grounded content. Use the web_search tool to verify facts.',
         userPrompt: prompt,
-        model: GROQ_MODELS.LLAMA_70B, // Llama 3.3 70B is the top-tier regular model
+        model: GROQ_MODELS.LLAMA_70B,
         temperature: isColdStartGuide ? 0.4 : 0.6,
         maxTokens: 8000,
         jsonMode: false,
@@ -946,7 +946,7 @@ ${contentStyleGuide}
         content = groqResult.content;
         providerUsed = 'openrouter'; // Keep for DB compatibility
         modelUsed = GROQ_MODELS.LLAMA_70B;
-        console.log(`✅ [RecommendationContentService] Groq ${modelUsed} succeeded (Search: MCP Grounded)`);
+        console.log(`✅ [RecommendationContentService] Groq ${modelUsed} succeeded (Active Tools: ${groqResult.executedTools?.length || 0})`);
       }
     } catch (err: any) {
       console.warn(`⚠️ [RecommendationContentService] Groq Compound failed: ${err.message}. Falling back to OpenRouter...`);

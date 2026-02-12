@@ -330,7 +330,6 @@ Return ONLY a JSON array with the personalized recommendations.`;
         confidence: typeof rec.confidence === 'number' ? rec.confidence : 90,
         focusSources: 'owned-site',
         contentFocus: 'Technical Optimization',
-        source: 'domain_audit' as const,
         howToFix: Array.isArray(rec.howToFix) ? rec.howToFix : templates[index]?.howToFix || []
       }));
 
@@ -397,7 +396,6 @@ Return ONLY a JSON array with the personalized recommendations.`;
           confidence: 90, // High confidence because it's based on a hard test result
           focusSources: 'owned-site',
           contentFocus: 'Technical Optimization',
-          source: 'domain_audit', // Mark as domain audit recommendation
           howToFix: howToFix, // Include step-by-step fix instructions
           visibilityScore: context.visibilityIndex !== undefined ? String(Math.round(context.visibilityIndex)) : undefined,
           soa: context.shareOfAnswers !== undefined ? String(Math.round(context.shareOfAnswers * 10) / 10) : undefined,
@@ -896,6 +894,94 @@ Return ONLY a JSON array with the personalized recommendations.`;
 
     } catch (error) {
       console.error('❌ [RecommendationV3Service] Error saving to database:', error);
+      return null;
+    }
+  }
+  /**
+   * Create a single custom recommendation manually
+   */
+  async createCustomRecommendation(
+    generationId: string,
+    brandId: string,
+    customerId: string,
+    rec: Partial<RecommendationV3>
+  ): Promise<RecommendationV3 | null> {
+    try {
+      console.log(`💾 [RecommendationV3Service] Creating custom recommendation for generation: ${generationId}`);
+
+      const insertData = {
+        generation_id: generationId,
+        brand_id: brandId,
+        customer_id: customerId,
+        action: rec.action || 'Custom Action',
+        reason: rec.reason || rec.action || 'Manual Entry',
+        explanation: rec.explanation || rec.reason || rec.action || 'Manually added by user',
+        citation_source: rec.citationSource || 'customer',
+        impact_score: rec.impactScore ? String(rec.impactScore) : null,
+        mention_rate: rec.mentionRate ? String(rec.mentionRate) : null,
+        soa: rec.soa ? String(rec.soa) : null,
+        sentiment: rec.sentiment ? String(rec.sentiment) : null,
+        visibility_score: rec.visibilityScore ? String(rec.visibilityScore) : null,
+        citation_count: rec.citationCount || 0,
+        focus_sources: rec.focusSources || rec.citationSource || 'customer',
+        content_focus: rec.contentFocus || rec.action || 'unspecified',
+        kpi: rec.kpi || 'Unknown',
+        expected_boost: rec.expectedBoost || 'TBD',
+        effort: rec.effort || 'Medium',
+        timeline: rec.timeline || '2-4 weeks',
+        confidence: rec.confidence || 70,
+        priority: rec.priority || 'Medium',
+        focus_area: rec.focusArea || 'visibility',
+        asset_type: rec.assetType,
+        is_approved: false,
+        is_content_generated: false,
+        is_completed: false,
+        metadata: {
+          isManual: true,
+          addedAt: new Date().toISOString()
+        }
+      };
+
+      const { data, error } = await supabaseAdmin
+        .from('recommendations')
+        .insert(insertData)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('❌ [RecommendationV3Service] Error inserting custom recommendation:', error);
+        return null;
+      }
+
+      // Map snake_case to camelCase for the response
+      return {
+        id: data.id,
+        action: data.action,
+        citationSource: data.citation_source,
+        focusArea: data.focus_area,
+        priority: data.priority,
+        effort: data.effort,
+        kpi: data.kpi,
+        reason: data.reason,
+        explanation: data.explanation,
+        impactScore: data.impact_score,
+        mentionRate: data.mention_rate,
+        soa: data.soa,
+        sentiment: data.sentiment,
+        visibilityScore: data.visibility_score,
+        citationCount: data.citation_count,
+        focusSources: data.focus_sources,
+        contentFocus: data.content_focus,
+        expectedBoost: data.expected_boost,
+        timeline: data.timeline,
+        confidence: data.confidence,
+        isApproved: data.is_approved,
+        isContentGenerated: data.is_content_generated,
+        isCompleted: data.is_completed,
+        assetType: data.asset_type
+      };
+    } catch (error) {
+      console.error('❌ [RecommendationV3Service] Error in createCustomRecommendation:', error);
       return null;
     }
   }

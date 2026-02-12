@@ -53,10 +53,8 @@ export interface RecommendationV3 {
 
     // Target competitors for this recommendation
     competitors_target?: string[];
-
-    // Source tracking
-    source?: 'domain_audit' | 'ai_generated';
     howToFix?: string[];  // Step-by-step fix instructions (for domain audit recs)
+    assetType?: string;   // Content Asset Type (e.g. 'article', 'short_video')
 
     // Strategic classification (filled by ranking service)
     strategicRole?: 'Battleground' | 'Stronghold' | 'Opportunity' | 'Standard';
@@ -196,7 +194,7 @@ export type ContentAssetType =
     | 'video_script'         // Long-form YouTube script
     | 'short_video'          // YouTube Shorts, Reels, TikTok
     | 'comparison_table'     // Side-by-side comparison
-    | 'whitepaper'           // Executive report / downloadable guide
+    | 'whitepaper'           // Deep-dive whitepaper or research report
     | 'webinar_recap'        // Event summary with Q&A
     | 'case_study'           // Customer success story template
     | 'linkedin_post'        // Short-form professional post

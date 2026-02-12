@@ -8,7 +8,7 @@ import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
 import { SentimentLandscape2 } from './pages/SentimentLandscape2';
-import { RecommendationsV3 } from './pages/RecommendationsV3';
+
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { OnboardingJSONPage } from './pages/OnboardingJSONPage';

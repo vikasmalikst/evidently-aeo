@@ -6,8 +6,8 @@
  * - Approve/Reject/Pending Review recommendations
  */
 
-import { RecommendationsV3 } from '../RecommendationsV3';
+import { RecommendationPage } from '../RecommendationPage';
 
 export const DiscoverPage = () => {
-  return <RecommendationsV3 initialStep={1} />;
+  return <RecommendationPage initialStep={1} />;
 };

@@ -445,7 +445,33 @@ class RecommendationContentService {
 We track brand performance across AI models (visibility, Share of Answers, sentiment) and citation sources.
 Your content should help the customer's brand improve the targeted KPI by executing the recommendation.\n`;
 
-    const recommendationContext = `Brand\n- Name: ${brand?.name || 'Unknown'}\n- Industry: ${brand?.industry || 'Unknown'}\n- Summary: ${brand?.summary || 'N/A'}\n\nRecommendation\n- Action: ${rec.action}\n- KPI: ${rec.kpi}\n- Focus area: ${rec.focus_area}\n- Priority: ${rec.priority}\n- Effort: ${rec.effort}\n- Timeline: ${rec.timeline}\n- Expected boost: ${rec.expected_boost || 'TBD'}\n\nEvidence & metrics\n- Citation source: ${rec.citation_source}\n- Impact score: ${rec.impact_score}\n- Mention rate: ${rec.mention_rate}\n- Visibility: ${rec.visibility_score}\n- SOA: ${rec.soa}\n- Sentiment: ${rec.sentiment}\n- Citations: ${rec.citation_count}\n\nFocus\n- Focus sources: ${rec.focus_sources}\n- Content focus: ${rec.content_focus}\n\nReason\n${rec.reason}\n\nExplanation\n${rec.explanation}`;
+    // Fetch context files from strategy plan (if any)
+    let contextFilesContent = '';
+    const { data: strategyPlan } = await supabaseAdmin
+      .from('recommendation_generated_contents')
+      .select('content')
+      .eq('recommendation_id', recommendationId)
+      .eq('content_type', 'strategy_plan')
+      .maybeSingle();
+
+    if (strategyPlan) {
+      try {
+        const parsedPlan = JSON.parse(strategyPlan.content);
+        if (parsedPlan.contextFiles && Array.isArray(parsedPlan.contextFiles) && parsedPlan.contextFiles.length > 0) {
+          console.log(`📂 [RecommendationContentService] Found ${parsedPlan.contextFiles.length} context files for generation.`);
+
+          contextFilesContent = `\n\nUPLOADED CONTEXT DOCUMENTS:\nThe following documents were provided by the user to guide this content generation. USE them as primary source material.\n\n`;
+
+          parsedPlan.contextFiles.forEach((file: any, index: number) => {
+            contextFilesContent += `--- DOCUMENT ${index + 1}: ${file.name} ---\n${file.content}\n--- END DOCUMENT ${index + 1} ---\n\n`;
+          });
+        }
+      } catch (e) {
+        console.warn('⚠️ [RecommendationContentService] Failed to parse strategy plan for context files', e);
+      }
+    }
+
+    const recommendationContext = `Brand\n- Name: ${brand?.name || 'Unknown'}\n- Industry: ${brand?.industry || 'Unknown'}\n- Summary: ${brand?.summary || 'N/A'}\n\nRecommendation\n- Action: ${rec.action}\n- KPI: ${rec.kpi}\n- Focus area: ${rec.focus_area}\n- Priority: ${rec.priority}\n- Effort: ${rec.effort}\n- Timeline: ${rec.timeline}\n- Expected boost: ${rec.expected_boost || 'TBD'}\n\nEvidence & metrics\n- Citation source: ${rec.citation_source}\n- Impact score: ${rec.impact_score}\n- Mention rate: ${rec.mention_rate}\n- Visibility: ${rec.visibility_score}\n- SOA: ${rec.soa}\n- Sentiment: ${rec.sentiment}\n- Citations: ${rec.citation_count}\n\nFocus\n- Focus sources: ${rec.focus_sources}\n- Content focus: ${rec.content_focus}\n\nReason\n${rec.reason}\n\nExplanation\n${rec.explanation}${contextFilesContent}`;
 
     // Detect source type
     const detectedSourceType = detectSourceType(rec.citation_source || '');
@@ -853,7 +879,11 @@ ${contentStyleGuide}
       newFactoryPrompt = getNewContentPrompt({
         recommendation: recV3ForNew,
         brandContext: brandContextV3ForNew,
-        structureConfig: request.structureConfig
+        structureConfig: request.structureConfig,
+        // Ensure any uploaded context files (PDF/TXT, etc.) are
+        // forwarded into the unified prompt so the LLM can treat
+        // them as primary source material for generation.
+        extraContext: contextFilesContent
       }, assetDetection.asset);
     }
 
@@ -1450,9 +1480,10 @@ ${contentStyleGuide}
       return false;
     }
 
-    // Common required fields - FSA assets (with assetType) don't require recommendationId in the response
+    // Common required fields - FSA assets (with assetType) and v5.0 (Unified) don't require recommendationId in the response
     const isFsaAsset = !!parsed.assetType;
-    if (!isFsaAsset && !parsed.recommendationId) {
+    const isV5 = version === '5.0';
+    if (!isFsaAsset && !isV5 && !parsed.recommendationId) {
       console.warn('[VALIDATION FAIL] Missing recommendationId (non-FSA)');
       return false;
     }
@@ -1971,6 +2002,72 @@ RULES:
       return updated as any;
     } catch (error) {
       console.error('[SAVE_SECTIONS] Error saving section edits:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Save unified content (v5.0) for a recommendation.
+   * Updates the existing content record in-place.
+   */
+  async saveUnifiedContent(
+    recommendationId: string,
+    customerId: string,
+    content: string
+  ): Promise<RecommendationContentRecord | null> {
+    try {
+      // Fetch the latest content record
+      const { data: existing, error: fetchError } = await supabaseAdmin
+        .from('recommendation_generated_contents')
+        .select('*')
+        .eq('recommendation_id', recommendationId)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (fetchError || !existing) {
+        console.error('[SAVE_UNIFIED] No existing content found for recommendation:', recommendationId);
+        return null;
+      }
+
+      // Parse the existing content to check version or just overwrite
+      let parsedContent: any;
+      try {
+        parsedContent = typeof existing.content === 'string'
+          ? JSON.parse(existing.content)
+          : existing.content;
+      } catch (parseErr) {
+        // Fallback to simple object if parsing fails
+        parsedContent = { version: '5.0', content: '' };
+      }
+
+      // Update content field
+      parsedContent.content = content;
+      // Ensure it's marked as v5.0 if we're saving unified content
+      parsedContent.version = '5.0';
+
+      // Update the same row in the database
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('recommendation_generated_contents')
+        .update({
+          content: JSON.stringify(parsedContent),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id)
+        .eq('customer_id', customerId)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error('[SAVE_UNIFIED] Failed to update content:', updateError);
+        return null;
+      }
+
+      console.log(`✅ [SAVE_UNIFIED] Successfully saved unified content for recommendation ${recommendationId}`);
+      return updated as any;
+    } catch (error) {
+      console.error('[SAVE_UNIFIED] Error saving unified content:', error);
       return null;
     }
   }

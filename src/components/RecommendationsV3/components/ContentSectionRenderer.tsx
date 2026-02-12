@@ -5,8 +5,8 @@
  * Supports the FSA Framework's "Container + Payload" model.
  */
 
-import React, { useState } from 'react';
-import { IconCopy, IconCheck, IconCode, IconCalculator, IconTable, IconFileText, IconVideo } from '@tabler/icons-react';
+import React, { useState, useEffect } from 'react';
+import { IconCopy, IconCheck, IconCode, IconCalculator, IconTable, IconFileText, IconVideo, IconMessageCircle, IconPencil, IconX, IconDeviceFloppy } from '@tabler/icons-react';
 import { MarkdownRenderer, AccordionFAQ, TimelineViewer, VideoScriptRenderer, EditableMarkdown } from './EnhancedRenderers';
 import { LiveCompetitorData } from './LiveCompetitorData';
 import { VisualTableEditor } from './VisualTableEditor';
@@ -594,45 +594,109 @@ export function UnifiedContentRenderer({
   content, 
   highlightFillIns, 
   isEditing = false, 
-  onContentChange 
+  onContentChange,
+  sectionFeedback = new Map(),
+  onFeedbackChange
 }: { 
   content: string; 
   highlightFillIns?: (text: string) => string; 
   isEditing?: boolean; 
-  onContentChange?: (newContent: string) => void; 
+  onContentChange?: (newContent: string) => void;
+  sectionFeedback?: Map<string, string>;
+  onFeedbackChange?: (sectionTitle: string, feedback: string) => void;
 }) {
-  // Normalize content: ensure real newlines (handle escaped \n from JSON)
+  const [activeFeedbackSection, setActiveFeedbackSection] = useState<number | null>(null);
+  const [editingSectionIndex, setEditingSectionIndex] = useState<number | null>(null);
+  const [localSectionEdits, setLocalSectionEdits] = useState<Record<number, string>>({});
+  const [localTitleEdits, setLocalTitleEdits] = useState<Record<number, string>>({});
+
   const normalizedContent = React.useMemo(() => {
     if (!content) return '';
-    let processed = content;
     
-    // Safety check: if content is double-stringified (starts and ends with quote), try to parse it
-    if (processed.startsWith('"') && processed.endsWith('"')) {
-      try {
-        processed = JSON.parse(processed);
-      } catch (e) {
-        // ignore
+    let processed: any = content;
+
+    // 1. Handle Object Input
+    if (typeof processed === 'object' && processed !== null) {
+      if (processed.content && typeof processed.content === 'string') {
+        processed = processed.content;
+      } else if (processed.publishableContent?.content && typeof processed.publishableContent.content === 'string') {
+        processed = processed.publishableContent.content;
+      } else {
+        processed = JSON.stringify(processed);
       }
     }
 
-    // Replace literal backslash-n sequences with real newlines
-    // We do this aggressively to handle double/triple escaping if present
-    return processed
-      .replace(/\\\\n/g, '\n') // Replace \\n with \n
-      .replace(/\\n/g, '\n');  // Replace \n with \n
+    if (typeof processed !== 'string') return '';
+
+    const safeTrim = (str: string) => str.trim();
+    let trimmed = safeTrim(processed);
+
+    // 2. Aggressive JSON Extraction (Handles truncated responses)
+    if (trimmed.includes('"content"') || (trimmed.startsWith('{') && trimmed.includes('version'))) {
+      try {
+        // Try direct parse first
+        const parsed = JSON.parse(trimmed);
+        if (parsed.content) processed = parsed.content;
+        else if (parsed.publishableContent?.content) processed = parsed.publishableContent.content;
+      } catch (e) {
+        // Truncated/Malformed JSON Recovery
+        // Look for "content": "..."
+        const contentMarker = '"content":';
+        const contentIndex = trimmed.indexOf(contentMarker);
+        if (contentIndex !== -1) {
+          let afterMarker = trimmed.substring(contentIndex + contentMarker.length).trim();
+          if (afterMarker.startsWith('"')) {
+            afterMarker = afterMarker.substring(1);
+            // Find closing quote that isn't escaped
+            let closingQuoteIndex = -1;
+            for (let i = 0; i < afterMarker.length; i++) {
+              if (afterMarker[i] === '"' && (i === 0 || afterMarker[i-1] !== '\\')) {
+                closingQuoteIndex = i;
+                break;
+              }
+            }
+            if (closingQuoteIndex !== -1) {
+              processed = afterMarker.substring(0, closingQuoteIndex);
+            } else {
+              // Truncated - take what we have
+              processed = afterMarker;
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Cleanup extracted content
+    if (typeof processed === 'string') {
+      // Handle escaped characters
+      processed = processed
+        .replace(/\\\\n/g, '\n')
+        .replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\');
+
+      // Strip leading H1 title if present
+      processed = processed.replace(/^#\s+.+\n+/, '').trim();
+      
+      // Filter out leading JSON fragments if extraction was partial
+      if (processed.startsWith('{"') || processed.startsWith('{')) {
+          const firstH2 = processed.indexOf('##');
+          if (firstH2 !== -1) {
+              processed = processed.substring(firstH2).trim();
+          }
+      }
+    }
+
+    return processed;
   }, [content]);
 
-  // Split content by H2 headers logic
   const sections = React.useMemo(() => {
     const lines = normalizedContent.split('\n');
     const sections: Array<{ title: string; content: string }> = [];
     
-    // Initial section (before any H2)
     let currentBuffer: string[] = [];
-    let currentTitle = 'Introduction';
-    let hasFoundFirstHeader = false;
+    let currentTitle = '';
     
-    // Helper to push section
     const pushSection = (title: string, buffer: string[]) => {
       if (buffer.length > 0 && buffer.some(l => l.trim())) {
         sections.push({ title, content: buffer.join('\n') });
@@ -642,90 +706,182 @@ export function UnifiedContentRenderer({
     for (const line of lines) {
       const h2Match = line.match(/^##\s+(.+)$/);
       if (h2Match) {
-        // Found a new header
         pushSection(currentTitle, currentBuffer);
         currentTitle = h2Match[1].trim();
         currentBuffer = [];
-        hasFoundFirstHeader = true;
-      } else if (!hasFoundFirstHeader && line.match(/^#\s+(.+)$/)) {
-        // Skip H1 title if present in body (usually handled by metadata)
-        // or treat it as intro title? 
-        // For now, let's ignore H1 as it's usually the document title
       } else {
         currentBuffer.push(line);
       }
     }
-    // Push last section
     pushSection(currentTitle, currentBuffer);
 
     return sections;
-  }, [content]);
+  }, [normalizedContent]);
+
+  useEffect(() => {
+    setLocalSectionEdits({});
+    setLocalTitleEdits({});
+  }, [sections.length]);
 
   if (sections.length === 0) return null;
 
-  if (sections.length === 0) return null;
-
-  // Helper to update a specific section and cascade changes to parent
   const handleSectionUpdate = (index: number, newTitle: string, newContent: string) => {
     const updatedSections = [...sections];
     updatedSections[index] = { title: newTitle, content: newContent };
     
-    // Reconstruct full markdown
-    // We assume the first section might be intro (no H2), but here we enforce H2 for all valid sections
-    // or we just join them with newlines.
-    // Strategy: Re-add "## " before titles.
-    const fullMarkdown = updatedSections.map(s => `## ${s.title}\n\n${s.content}`).join('\n\n');
-    
-    // If there was preamble before the first H2, we might lose it if we don't track it.
-    // However, the current split logic absorbs preamble into the first section if it doesn't have a header?
-    // Let's check the split logic. 
-    // The split logic pushes "Introduction" as first section if text exists before first ##.
-    // If we simply join with `##`, the Introduction gets a `## Introduction` header which might be fine, 
-    // or we might want to check if the original had a header.
-    // For simplicity in v5 Unified, we enforce headers to maintain structure.
+    // Reconstruct markdown: Only add ## if title is non-empty
+    const fullMarkdown = updatedSections.map(s => {
+      const header = s.title.trim() ? `## ${s.title}\n\n` : '';
+      return `${header}${s.content}`;
+    }).join('\n\n');
     
     if (onContentChange) {
       onContentChange(fullMarkdown);
     }
+    setEditingSectionIndex(null);
   };
 
   return (
-    <div className="bg-white border border-[#e2e8f0] rounded-xl shadow-sm p-8 md:p-10 transition-all">
-      {sections.map((section, idx) => (
-        <div key={idx} className={idx > 0 ? 'mt-8' : ''}>
-          {/* Section Header */}
-          <div className="mb-4 group relative">
-             {isEditing ? (
-               <input 
-                 type="text" 
-                 value={section.title}
-                 onChange={(e) => handleSectionUpdate(idx, e.target.value, section.content)}
-                 className="text-[20px] md:text-[22px] font-bold text-[#1e293b] w-full border-b border-dashed border-[#cbd5e1] focus:border-[#0ea5e9] focus:outline-none bg-transparent"
-               />
-             ) : (
-                <h2 className="text-[20px] md:text-[22px] font-bold text-[#1e293b] leading-snug">
-                  {section.title}
-                </h2>
-             )}
-          </div>
+    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      {sections.map((section, idx) => {
+        const isEditingThisSection = editingSectionIndex === idx;
+        const feedback = sectionFeedback.get(section.title) || '';
+        const currentContent = localSectionEdits[idx] ?? section.content;
+        const currentTitle = localTitleEdits[idx] ?? section.title;
+        const hasHeader = section.title.trim().length > 0;
 
-          {/* Section Content */}
-          <div className="text-[16px] text-[#334155] leading-relaxed">
-            {isEditing ? (
-               <EditableMarkdown 
-                 content={section.content} 
-                 onChange={(newVal) => handleSectionUpdate(idx, section.title, newVal)}
-                 className="min-h-[100px]"
-               />
-            ) : (
-                <MarkdownRenderer 
-                  content={section.content} 
-                  highlightFillIns={Boolean(highlightFillIns)} 
-                />
+        return (
+          <div 
+            key={idx} 
+            className={`group transition-all duration-200 ${isEditingThisSection ? 'bg-indigo-50/20' : 'bg-white'}`}
+          >
+            {/* Section Header - Integrated, no grey background */}
+            {(hasHeader || isEditingThisSection) && (
+              <div className="px-5 py-1.5 flex items-center justify-between gap-4 border-b border-transparent group-hover:border-slate-100 transition-colors mt-2">
+                <div className="flex items-center gap-3 flex-1">
+                  {isEditingThisSection ? (
+                    <input 
+                      type="text" 
+                      value={currentTitle}
+                      onChange={(e) => setLocalTitleEdits(prev => ({ ...prev, [idx]: e.target.value }))}
+                      className="text-sm font-bold text-slate-900 bg-white border border-indigo-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 flex-1 shadow-sm"
+                      autoFocus
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-slate-300 w-5">
+                        {String(idx + 1).padStart(2, '0')}
+                      </span>
+                      <h3 className="text-sm font-bold text-slate-900 leading-none">
+                        {section.title}
+                      </h3>
+                    </div>
+                  )}
+                </div>
+
+                {/* Micro Action Buttons - Integrated style */}
+                <div className="flex items-center gap-1.5 transition-opacity opacity-0 group-hover:opacity-100">
+                  <button
+                    onClick={() => setActiveFeedbackSection(activeFeedbackSection === idx ? null : idx)}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-all ${
+                      feedback.trim().length > 0
+                        ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                        : 'text-slate-400 hover:bg-slate-100'
+                    }`}
+                  >
+                    <IconMessageCircle size={12} />
+                    <span>Comment</span>
+                  </button>
+
+                  {isEditingThisSection ? (
+                    <button
+                      onClick={() => handleSectionUpdate(idx, currentTitle, currentContent)}
+                      className="flex items-center gap-1 px-2.5 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-bold hover:bg-emerald-700 transition-all shadow-sm"
+                    >
+                      <IconDeviceFloppy size={12} />
+                      <span>Done</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setEditingSectionIndex(idx)}
+                      className="flex items-center gap-1 px-1.5 py-0.5 text-slate-400 hover:bg-slate-100 rounded text-[10px] font-medium transition-all"
+                    >
+                      <IconPencil size={12} />
+                      <span>Edit</span>
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
+
+            {/* Content Only Mode - Hidden actions on hover */}
+            {!hasHeader && !isEditingThisSection && (
+               <div className="absolute right-5 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5 shadow-sm">
+                    <button
+                      onClick={() => setActiveFeedbackSection(activeFeedbackSection === idx ? null : idx)}
+                      className="p-1 px-1.5 text-[10px] font-medium text-slate-400 hover:text-amber-600 flex items-center gap-1"
+                    >
+                      <IconMessageCircle size={12} />
+                      Comment
+                    </button>
+                    <button
+                      onClick={() => setEditingSectionIndex(idx)}
+                      className="p-1 px-1.5 text-[10px] font-medium text-slate-400 hover:text-indigo-600 flex items-center gap-1"
+                    >
+                      <IconPencil size={12} />
+                      Edit
+                    </button>
+                  </div>
+               </div>
+            )}
+
+            {/* Feedback Popover */}
+            {activeFeedbackSection === idx && (
+              <div className="px-5 pb-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold text-amber-800 flex items-center gap-1">
+                      <IconMessageCircle size={12} />
+                      Feedback
+                    </span>
+                    <button onClick={() => setActiveFeedbackSection(null)} className="text-amber-400 hover:text-amber-600">
+                      <IconX size={12} />
+                    </button>
+                  </div>
+                  <textarea
+                    className="w-full p-2 bg-white border border-amber-200 rounded text-[13px] text-slate-900 placeholder-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-500 min-h-[60px]"
+                    placeholder="Feedback..."
+                    value={feedback}
+                    onChange={(e) => onFeedbackChange?.(section.title, e.target.value)}
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Section Content - Tightened spacing */}
+            <div className={`px-5 relative ${hasHeader || isEditingThisSection ? 'pb-3 pt-2' : 'py-3'}`}>
+              <div className="text-[14px] text-slate-600 leading-relaxed">
+                {isEditingThisSection ? (
+                   <div className="mt-2">
+                    <EditableMarkdown 
+                      content={currentContent} 
+                      onChange={(newVal) => setLocalSectionEdits(prev => ({ ...prev, [idx]: newVal }))}
+                      className="min-h-[60px]"
+                    />
+                   </div>
+                ) : (
+                    <MarkdownRenderer 
+                      content={section.content} 
+                      highlightFillIns={Boolean(highlightFillIns)} 
+                    />
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

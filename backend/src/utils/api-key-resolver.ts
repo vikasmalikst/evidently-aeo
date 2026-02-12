@@ -1,5 +1,5 @@
 
- 
+
 export function getPositionExtractionKey(): string | null {
   return process.env.CEREBRAS_API_KEY_1 || process.env.CEREBRAS_API_KEY || null;
 }

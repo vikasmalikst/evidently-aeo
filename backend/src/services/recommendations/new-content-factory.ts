@@ -24,6 +24,12 @@ export interface NewContentPromptContext {
     recommendation: RecommendationV3;
     brandContext: BrandContextV3;
     structureConfig?: StructureConfig;
+    /**
+     * Additional contextual material that should be treated as
+     * primary source content for generation (e.g. uploaded files).
+     * This is appended to the task context in all unified prompts.
+     */
+    extraContext?: string;
 }
 
 export interface StructureConfig {
@@ -41,7 +47,7 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
     const currentYear = new Date().getFullYear();
 
     const systemContext = buildSystemContext(brandName, currentYear);
-    const recContext = buildRecommendationContext(ctx.recommendation, ctx.brandContext);
+    const recContext = buildRecommendationContext(ctx.recommendation, ctx.brandContext, ctx.extraContext);
 
     switch (assetType) {
         case 'article':
@@ -116,14 +122,25 @@ CONTEXT:
 }
 
 
-function buildRecommendationContext(rec: RecommendationV3, brand: BrandContextV3): string {
-    return `
+function buildRecommendationContext(rec: RecommendationV3, brand: BrandContextV3, extraContext?: string): string {
+    const baseContext = `
 TASK CONTEXT:
 - Brand: ${brand.brandName} (${brand.industry || 'General'})
 - Goal: Execute recommendation "${rec.action}"
 - Target Keyword/Topic: ${rec.contentFocus || rec.action}
 - Target Platform: ${rec.citationSource || 'Owned Blog'}
 `;
+    // If extraContext is provided (e.g. uploaded documents), append it
+    // after the standard task context so the model treats it as primary
+    // source material while keeping prompts backwards compatible.
+    if (extraContext && extraContext.trim().length > 0) {
+        return `${baseContext}
+
+ADDITIONAL CONTEXT (PRIMARY SOURCE MATERIAL):
+${extraContext}`;
+    }
+
+    return baseContext;
 }
 
 // Blog / Standard Article Prompt
@@ -271,19 +288,19 @@ export function detectContentAsset(action: string): AssetDetectionResult {
     }
 
     // 5. Comparison Table (Specific Format)
-    const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison', 'versus table', 'vs table', 'comparison'];
+    const explicitComparisonKeywords = ['comparison table'];
     if (explicitComparisonKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'comparison_table', confidence: 'high' };
     }
 
     // 6. EXPLICIT ARTICLE/BLOG (Moved down to avoid masking specific types)
-    const articleKeywords = ['article', 'standard article', 'publish article', 'blog post', 'guest post', 'write article', 'pillar page', 'resource guide'];
+    const articleKeywords = ['article', 'standard article', 'publish article', 'blog', 'guest post', 'write article', 'pillar page'];
     if (articleKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'article', confidence: 'high' };
     }
 
     // 8. EXPLICIT WHITEPAPER/REPORT
-    const whitepaperKeywords = ['whitepaper', 'white paper', 'research report', 'industry report', 'ebook'];
+    const whitepaperKeywords = ['whitepaper', 'white paper'];
     if (whitepaperKeywords.some(k => actionLower.includes(k))) {
         return { asset: 'whitepaper', confidence: 'high' };
     }

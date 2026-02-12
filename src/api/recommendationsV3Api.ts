@@ -22,6 +22,7 @@ export interface IdentifiedKPI {
   currentValue?: number;
   targetValue?: number;
   displayOrder: number;
+  targetDate?: string;
 }
 
 export interface CompetitorTarget {
@@ -156,6 +157,41 @@ export interface GenerateContentV3Request {
   structureConfig?: any; // StructureConfig type from backend
 }
 
+/**
+ * Strategy generation types
+ */
+export interface StructureSection {
+  id: string;
+  title: string;
+  content: string;
+  sectionType: string;
+  strategicGuidance?: string[];
+}
+
+export interface StrategyPlan {
+  recommendationId: string;
+  contentType: string;
+  primaryEntity: string;
+  targetChannel: string;
+  brandContext: {
+    name: string;
+    competitors?: string[];
+  };
+  structure: StructureSection[];
+  strategicGuidance: {
+    keyFocus: string;
+    aeoTargets: string[];
+    toneGuidelines: string;
+    differentiation: string;
+  };
+  contextFiles?: {
+    id: string;
+    name: string;
+    content: string;
+    uploadedAt: string;
+  }[];
+}
+
 // ============================================================================
 // API FUNCTIONS
 // ============================================================================
@@ -224,6 +260,25 @@ export async function generateRecommendationsV3(
     return {
       success: false,
       error: error.message || 'Failed to generate recommendations'
+    };
+  }
+}
+
+/**
+ * Add a custom recommendation manually
+ */
+export async function createCustomRecommendationV3(
+  generationId: string,
+  recommendation: Partial<RecommendationV3>
+): Promise<{ success: boolean; data?: RecommendationV3; error?: string }> {
+  try {
+    const response = await apiClient.post(`/recommendations-v3/${generationId}/custom`, recommendation) as any;
+    return response;
+  } catch (error: any) {
+    console.error('❌ [recommendationsV3Api] Error creating custom recommendation:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to create recommendation'
     };
   }
 }
@@ -635,6 +690,33 @@ export async function regenerateContentV3(
   }
 }
 /**
+ * Save unified recommendation content (v5.0)
+ */
+export async function saveRecommendationContentV3(
+  recommendationId: string,
+  content: string
+): Promise<{ success: boolean; data?: { content: any }; error?: string }> {
+  try {
+    const response = await apiClient.post<{ success: boolean; data?: { content: any }; error?: string }>(
+      `/recommendations-v3/${recommendationId}/content/save-unified`,
+      { content }
+    );
+    if (response && typeof response === 'object' && 'success' in response) {
+      return response as { success: boolean; data?: { content: any }; error?: string };
+    } else if (response && typeof response === 'object' && 'data' in response) {
+      return (response as any).data;
+    }
+    return response as { success: boolean; data?: { content: any }; error?: string };
+  } catch (error: any) {
+    console.error('Error saving unified content:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to save unified content'
+    };
+  }
+}
+
+/**
  * Save content structure draft WITHOUT generating content
  */
 export async function saveContentDraftV3(
@@ -688,4 +770,109 @@ export async function saveSectionEditsV3(
     };
   }
 }
+
+//=============================================================================
+// STRATEGY GENERATION API FUNCTIONS
+//=============================================================================
+
+/**
+ * Generate enriched content strategy using LLM and frontend templates
+ */
+export async function generateStrategyV3(
+  recommendationId: string,
+  data: {
+    templateSections: StructureSection[];
+    contentType: string;
+    customInstructions?: string;
+  }
+): Promise<{ success: boolean; data?: StrategyPlan; error?: string }> {
+  try {
+    // Increase timeout to 180s for strategy generation
+    const response = await apiClient.post<{ success: boolean; data?: StrategyPlan; error?: string }>(
+      `/recommendations-v3/${recommendationId}/generate-strategy`,
+      data,
+      { timeout: 180000 }
+    );
+
+    if (response && typeof response === 'object' && 'success' in response) {
+      return response as { success: boolean; data?: StrategyPlan; error?: string };
+    } else if (response && typeof response === 'object' && 'data' in response) {
+      return (response as any).data;
+    }
+    return response as { success: boolean; data?: StrategyPlan; error?: string };
+  } catch (error: any) {
+    console.error('Error generating strategy:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to generate strategy'
+    };
+  }
+}
+
+/**
+ * Upload a context file for a recommendation
+ */
+export async function uploadContextFileV3(
+  recommendationId: string,
+  file: File
+): Promise<{ success: boolean; data?: { file: any }; error?: string }> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // Use direct fetch because apiClient might not handle FormData automatically with correct headers
+    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/context-files`;
+    const accessToken = apiClient.getAccessToken();
+    const impersonateCustomerId = apiClient.getImpersonatingCustomerId();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(impersonateCustomerId ? { 'X-Impersonate-Customer': impersonateCustomerId } : {})
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Request failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error: any) {
+    console.error('Error uploading context file:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to upload context file'
+    };
+  }
+}
+
+/**
+ * Delete a context file
+ */
+export async function deleteContextFileV3(
+  recommendationId: string,
+  fileId: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const response = await apiClient.delete<{ success: boolean; data?: any; error?: string }>(
+      `/recommendations-v3/${recommendationId}/context-files/${fileId}`
+    );
+    // apiClient.delete returns the parsed JSON response directly
+    return response;
+  } catch (error: any) {
+    console.error('Error deleting context file:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to delete context file'
+    };
+  }
+}
+
+
+
+
 

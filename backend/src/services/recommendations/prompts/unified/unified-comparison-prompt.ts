@@ -16,7 +16,7 @@ export function buildUnifiedComparisonPrompt(
 
     if (structureConfig?.sections && structureConfig.sections.length > 0) {
         template = structureConfig.sections.map(section => {
-            return `[H2] ${section.title}\n${section.content}`;
+            return `[H2] ${section.title}\n> INSTRUCTIONS FOR THIS SECTION: ${section.content}`;
         }).join('\n\n');
 
         template = `[H1] Title: [Brand] vs. [Competitor A] vs. [Competitor B]: 2026 Comparison\n\n` + template;
@@ -26,12 +26,12 @@ export function buildUnifiedComparisonPrompt(
 [H1] Title: [Brand] vs. [Competitor A] vs. [Competitor B]: 2026 Comparison
 
 [H2] Comparison Matrix
-Description: A Markdown Table comparing features.
+> INSTRUCTIONS: Description: A Markdown Table comparing features.
 Columns: Feature, [Brand], [Competitor A], [Competitor B].
 Rows: 5-7 key features. Use descriptive text in cells (e.g., "Native Integration", "Full Support") rather than just "Yes/No".
 
 [H2] The [Brand] Advantage
-Word Count: 100 words. Tonality: Competitive, assertive.
+> INSTRUCTIONS: Word Count: 100 words. Tonality: Competitive, assertive.
 Format: 3 Bullets highlighting "Unique Selling Propositions" (USPs). Explicitly state: "Unlike [Competitors], [Brand] offers [Feature]."
 `;
     }
@@ -41,36 +41,44 @@ Format: 3 Bullets highlighting "Unique Selling Propositions" (USPs). Explicitly 
         ? competitors.join(', ')
         : "Identify the main competitor(s) directly from the Content Title provided above";
 
-    return `${systemContext}
+    return `
+You are a Senior Product Analyst & Competitive Strategist for ${brandName}.
+Your goal is to create a "Battle Card" style comparison that objectively proves why ${brandName} is the superior choice for specific use cases.
+
+**CONTEXT:**
+- **Brand:** ${brandName}
+- **Competitors:** ${competitorList}
+- **Goal:** Win the "Comparison Snippet" (e.g., table or pros/cons list).
+- **Year:** ${currentYear}
+
+**CORE COMPARISON RULES (STRICT):**
+1.  **Fairness is Credibility:** admit where competitors are "Okay", but immediately pivot to where ${brandName} is "Exceptional."
+2.  **Specific Features:** Never use generic terms like "Better performance." Use "Native Real-time Sync vs. 15-min Delay."
+3.  **The "Kill Shot":** Identify ONE critical flaw in the competitor (e.g., hidden costs, legacy tech) and harp on it gently but firmly.
+4.  **Table Formatting:** Must use valid Markdown for tables. Columns must be aligned.
+
+${systemContext}
 ${recContext}
 
-AEO UNIFIED COMPARISON REQUIREMENTS:
-- ONE UNIFIED DOCUMENT: Output a single, cohesive Markdown document.
-- TEMPLATE ADAPTABILITY: Follow the row structure, but YOU MUST ADD COLUMNS if the Content Title mentions competitors that are missing from the template.
-- FAIRNESS: Compare 5-7 realistic features/criteria in DEPTH.
-- TABLE SYNTAX: The comparison table must be valid MARKDOWN TABLE syntax.
-- COMPETITORS: Compare ${brandName} against the competitors defined in the TEMPLATE structure below. If the template uses placeholders, compare against: ${competitorList}.
-
-=== THE TEMPLATE ===
+**THE COMPARISON STRUCTURE (MANDATORY):**
 ${template}
 
-=== INSTRUCTIONS ===
-Generate the comparison content following the template above.
-OUTPUT FORMAT (JSON v5.0):
-You must return a VALID JSON object with the following structure.
+**INSTRUCTIONS:**
+Generate the comparison content adhering strictly to the structure above.
+- **Tone:** Analytical, Confident, "The Smart Choice."
+- **Format:**
+    - **Header:** H2 for sections.
+    - **Table:** | Feature | ${brandName} | Competitor |
+
+**OUTPUT FORMAT (JSON v5.0):**
+Return a SINGLE VALID JSON object. The 'content' field must contain the ENTIRE markdown document as a single string.
 
 {
   "version": "5.0",
   "brandName": "${brandName}",
-  "contentTitle": "<Descriptive comparison title>",
-  "content": "<THE FULL MARKDOWN CONTENT HERE - escape newlines as \\\\n>",
-  "requiredInputs": ["[FILL_IN: pricing]", "[FILL_IN: competitor features]"]
+  "contentTitle": "<High-Intent Comparison Title>",
+  "content": "<FULL MARKDOWN STRING...>",
+  "requiredInputs": []
 }
-
-WRITING RULES:
-- Output the FULL content in the 'content' field as a single markdown string.
-- Use H1 (#), H2 (##) for headers in the markdown.
-- Ensure the table is properly formatted in markdown.
-- JSON only.
 `;
 }

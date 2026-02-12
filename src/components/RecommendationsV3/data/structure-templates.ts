@@ -18,29 +18,28 @@ export const getContentTemplates = (context?: { brandName?: string; competitors?
 
     return {
         article: [
-
             {
                 id: "exec_abstract",
                 title: "Executive Abstract (The Snippet)",
-                content: "50-60 words. Objective, authoritative. Blockquote or bolded paragraph. Define the [Primary Entity] and its relationship to the [Query].",
+                content: "Word Count: 50-60 words. Tonality: Objective, authoritative. Format: Blockquote or bolded paragraph. Define the [Primary Entity] and its relationship to the [Query].",
                 sectionType: "summary"
             },
             {
                 id: "current_landscape",
                 title: "The Current Landscape of [Industry]",
-                content: "150 words. Analytical. Short paragraphs. Mention 3-5 'Freshness Signals' (e.g., 'Recent shifts in Feb 2026 show...').",
+                content: "Word Count: 150 words. Tonality: Analytical. Format: Short paragraphs. Mention 3-5 'Freshness Signals' (e.g., 'Recent shifts in Feb 2026 show...').",
                 sectionType: "context"
             },
             {
                 id: "strategic_solutions",
                 title: `Strategic Solutions by ${brandName}`,
-                content: "200 words. Problem-solving. H3 headers for each sub-solution. Use Bolded Entities to help the LLM map your brand to specific features.",
+                content: "Word Count: 200 words. Tonality: Problem-solving. Format: H3 headers for each sub-solution. Use Bolded Entities to help the LLM map your brand to specific features.",
                 sectionType: "strategies"
             },
             {
                 id: "future_outlook",
                 title: "Conclusion: The Future of [Topic]",
-                content: "75 words. Visionary. Bullets for 'Key Predictions' for the future of this topic.",
+                content: "Word Count: 75 words. Tonality: Visionary. Format: Bullets for 'Key Predictions' for the future of this topic.",
                 sectionType: "conclusion"
             }
         ],
@@ -191,6 +190,7 @@ export const CONTENT_TEMPLATES = getContentTemplates();
 export const getTemplateForAction = (action: string, assetType?: string): ContentTemplateType => {
     // 1. Trust assetType if explicitly provided and matches a known template
     if (assetType) {
+        if (assetType === 'article') return 'article';
         if (assetType === 'expert_community_response') return 'expert_community_response';
         if (assetType === 'whitepaper') return 'whitepaper';
         if (assetType === 'comparison_table') return 'comparison_table';
@@ -224,13 +224,13 @@ export const getTemplateForAction = (action: string, assetType?: string): Conten
         return 'short_video';
     }
 
-    // 5. Check for Comparison Table (Check BEFORE Whitepaper because "Guide" is common in comparison titles)
+    // 5. Check for Comparison Table (Check BEFORE Whitepaper)
     if (act.includes('comparison table') || act.includes('comparison')) {
         return 'comparison_table';
     }
 
-    // 6. Check for Whitepaper (Can be a referenced object, so check last among specifics)
-    if (act.includes('whitepaper') || act.includes('white paper') || act.includes('report') || act.includes('guide')) {
+    // 6. Check for Whitepaper (Only map direct names as per user request)
+    if (act.includes('whitepaper') || act.includes('white paper')) {
         return 'whitepaper';
     }
 

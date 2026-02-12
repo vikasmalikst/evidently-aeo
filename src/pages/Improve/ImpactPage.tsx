@@ -6,8 +6,8 @@
  * - Track impact of implemented changes
  */
 
-import { RecommendationsV3 } from '../RecommendationsV3';
+import { RecommendationPage } from '../RecommendationPage';
 
 export const ImpactPage = () => {
-  return <RecommendationsV3 initialStep={4} />;
+  return <RecommendationPage initialStep={4} />;
 };

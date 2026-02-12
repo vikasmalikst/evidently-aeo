@@ -104,7 +104,7 @@ export const TableStructureEditor: React.FC<TableStructureEditorProps> = ({ cont
 
     return (
         <div className="w-full overflow-x-auto border border-slate-200 rounded-lg shadow-sm bg-white">
-            <table className="w-full text-sm text-left text-slate-600">
+            <table className="min-w-full border-collapse text-sm text-left text-slate-600">
                 <thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200">
                     <tr>
                         {rows[0].map((header, colIndex) => (
@@ -113,6 +113,7 @@ export const TableStructureEditor: React.FC<TableStructureEditorProps> = ({ cont
                                     <input
                                         type="text"
                                         value={header}
+                                        title={header}
                                         onChange={(e) => handleCellChange(0, colIndex, e.target.value)}
                                         className="bg-transparent font-bold w-full focus:outline-none focus:border-b-2 focus:border-blue-500"
                                     />
@@ -145,6 +146,7 @@ export const TableStructureEditor: React.FC<TableStructureEditorProps> = ({ cont
                                     <input
                                         type="text"
                                         value={cell}
+                                        title={cell}
                                         onChange={(e) => handleCellChange(rowIndex + 1, colIndex, e.target.value)}
                                         className="w-full bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-100 rounded px-1 py-1"
                                     />

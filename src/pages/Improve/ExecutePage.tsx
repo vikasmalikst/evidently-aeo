@@ -6,8 +6,8 @@
  * - AI-assisted content generation
  */
 
-import { RecommendationsV3 } from '../RecommendationsV3';
+import { RecommendationPage } from '../RecommendationPage';
 
 export const ExecutePage = () => {
-  return <RecommendationsV3 initialStep={3} />;
+  return <RecommendationPage initialStep={3} />;
 };

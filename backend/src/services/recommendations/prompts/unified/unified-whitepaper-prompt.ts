@@ -73,12 +73,17 @@ Generate the whitepaper content adhering strictly to the structure above.
 - **Voice:** Third-person ("The report finds," "${brandName} analysis shows").
 - **Formatting:** Markdown (H1, H2, H3, standard academic formatting).
 
+**STRATEGIC RESEARCH LOGIC (STEP 0):**
+Before writing, decide if you need current brand or market data (features, pricing, news, competitors).
+- If YES: Use the 'web_search' tool with focused queries (e.g., "${brandName} latest pricing and features", "${brandName} competitor ${currentYear}").
+- Synthesize findings into the content in the brand's voice.
+
 **GROUNDING RULE (MANDATORY):**
-If VERIFIED RESEARCH DATA is provided in the context above, you MUST:
-1. Cite at least 2 specific data points from the research in your content.
-2. Use inline markdown links [Source Title](URL) from the research citations.
-3. If research data contradicts your training knowledge, DEFER to the research (it is more current).
-4. If no source is available for a claim, use [FILL_IN: source needed] placeholder.
+- For any factual claim (statistics, benchmarks, dates), use web search to verify the latest data.
+- Cite sources inline using markdown links [Source Title](URL) or "according to recent listings".
+- If you cannot verify a claim, use [FILL_IN: source needed].
+- Do NOT invent numbers or facts.
+- Limit web searches to at most 4 per article.
 
 **OUTPUT FORMAT (JSON v5.0):**
 Return a SINGLE VALID JSON object. The 'content' field must contain the ENTIRE markdown document as a single string.

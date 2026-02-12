@@ -6,7 +6,7 @@
  */
 
 import { supabaseAdmin } from '../../config/supabase';
-import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
+import { groqCompoundService } from './groq-compound.service';
 
 // Import templates from frontend (we'll reference them, not duplicate)
 export type ContentTemplateType = 'article' | 'whitepaper' | 'short_video' | 'expert_community_response' | 'podcast' | 'comparison_table' | 'social_media_thread';
@@ -122,26 +122,28 @@ export class StrategyGenerationService {
             console.log('📤 [StrategyService] ========== END STRATEGY PROMPT ==========\n');
 
             // 4. Call LLM for combined strategy enrichment + strategic angle
-            const response = await openRouterCollectorService.executeQuery({
-                collectorType: 'content',
-                prompt,
-                maxTokens: 6000,
+            // Use Groq Llama 3.3 70B with JSON mode for reliability
+            const groqResponse = await groqCompoundService.generateContent({
+                systemPrompt: 'You are a senior content strategist.',
+                userPrompt: prompt,
+                model: 'llama-3.3-70b-versatile',
                 temperature: 0.5,
-                model: 'meta-llama/llama-3.3-70b-instruct'
+                maxTokens: 6000,
+                jsonMode: true // Enforce JSON object response
             });
 
-            if (!response.response) {
+            if (!groqResponse.content) {
                 return { success: false, error: 'LLM returned empty response' };
             }
 
             // Log the full LLM response
             console.log('\n📥 [StrategyService] ========== STRATEGY RESPONSE ==========');
-            console.log(response.response);
+            console.log(groqResponse.content);
             console.log('📥 [StrategyService] ========== END STRATEGY RESPONSE ==========\n');
 
             // 5. Parse strategy plan (now includes strategic angle)
             const strategyPlan = this.parseStrategyResponse(
-                response.response,
+                groqResponse.content,
                 {
                     recommendationId,
                     contentType,
@@ -195,7 +197,7 @@ Your goal is to plan a high-performance piece of content about: "${recommendatio
 - Content Type: ${contentType}
 - Competitors: ${competitors}
 
-You have 3 tasks. Complete ALL of them in a single JSON response.
+You have 2 tasks. Complete ALL of them in a single JSON response.
 
 ---
 
@@ -219,38 +221,14 @@ You are NOT just copying the template. You are customizing every instruction to 
 
 ---
 
-**Task 3: Generate "Ground Truth" Research Queries (CRITICAL)**
-You are preparing a research dossier for a content writer. Your goal is to find the MOST UP-TO-DATE and IMPACTFUL information to make this content authoritative.
-
-**Analyze the Recommendation:** "${recommendation.explanation}"
-**Identify 3-4 Knowledge Gaps.** What data is missing? What claims need proof? What current trends are relevant?
-
-**Generate exactly 3 Search Queries using these specific tactics (pick the 3 most relevant):**
-1.  **Trend Hunter:** Use current year ("2025" or "2026") to find latest stats/benchmarks.
-    *   *Example:* "AI marketing trends 2026 statistics"
-2.  **Voice of Customer:** Use \`site:reddit.com\` or \`site:quora.com\` to find real user discussions/complaints.
-    *   *Example:* "site:reddit.com ${recommendation.action} vs competitors"
-3.  **Competitor Spy:** Look for specific weaknesses or features in competitor offerings.
-    *   *Example:* "[Competitor Name] pricing tier hidden costs"
-4.  **Fact Verifier:** Find third-party validation for specific claims.
-    *   *Example:* "${brand.name} vs [Competitor] latency benchmark"
-
-**Constraint:** 
-- Queries must be formatted for a RAW search engine (Brave Search). 
-- Keep them CONCISE and keyword-heavy. 
-- Do NOT use natural language questions like "What is the..."
-
----
-
 **Input Template:**
 ${templatesJson}
 
 **Output Requirements:**
 - Return ONLY valid JSON.
-- Return a JSON object with THREE keys:
+- Return a JSON object with TWO keys:
   1. "strategic_angle": Object with targetAudience, primaryPainPoint, theHook, competitorCounterStrike
   2. "structure": Array of section objects (same structure as input)
-  3. "research_queries": Array of exactly 3 strings
 - Do NOT return a top-level Array.
 - Use \\n for line breaks.
 
@@ -269,11 +247,6 @@ ${templatesJson}
       "content": "Detailed instruction...",
       "sectionType": "original_type"
     }
-  ],
-  "research_queries": [
-    "enterprise AI adoption stats 2026",
-    "site:reddit.com ${brand.name} integration issues",
-    "${brand.name} vs CompetitorX feature comparison"
   ]
 }
 ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`;
@@ -344,9 +317,9 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                 // Legacy format (just the sections array)
                 enrichedSections = parsed;
             } else if (parsed.structure && Array.isArray(parsed.structure)) {
-                // New format (object with structure + research_queries + strategic_angle)
+                // New format (object with structure + strategic_angle)
                 enrichedSections = parsed.structure;
-                researchQueries = parsed.research_queries || [];
+                // Research queries removed from pipeline
                 strategicAngle = parsed.strategic_angle || null;
             } else {
                 console.error('❌ Invalid JSON structure (neither array nor object with structure)');
@@ -446,8 +419,9 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                 status: 'generated',
                 content_type: 'strategy_plan',
                 content: JSON.stringify(strategy),
+                // Use 'openrouter' as provider label for DB compatibility until 'groq' is added to constraints
                 model_provider: 'openrouter',
-                model_name: 'meta-llama/llama-3.3-70b-instruct',
+                model_name: 'llama-3.3-70b-versatile',
                 prompt: 'strategy_enrichment',
                 metadata: {
                     is_strategy_plan: true,
@@ -582,8 +556,8 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                     status: 'generated',
                     content_type: 'strategy_plan',
                     content: JSON.stringify(strategy),
-                    model_provider: 'openrouter',
-                    model_name: 'meta-llama/llama-3.3-70b-instruct',
+                    model_provider: 'groq',
+                    model_name: 'llama-3.3-70b-versatile',
                     prompt: 'strategy_enrichment',
                     metadata: {
                         is_strategy_plan: true,

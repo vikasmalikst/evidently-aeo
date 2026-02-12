@@ -217,19 +217,7 @@ export const Step2Strategy: React.FC = () => {
                    ) : <p className="text-xs text-slate-500 italic">Upload context files relevant to this recommendation.</p>}
                 </div>
 
-                {/* Strategy Generation Button or Editor */}
-                {!hasRealStrategy ? (
-                     <div className="-mt-2 bg-gradient-to-br from-cyan-50 via-teal-50 to-cyan-50 border-2 border-t-0 border-cyan-200 rounded-b-xl p-8 text-center">
-                        <p className="text-sm text-gray-600 mb-4">AI will analyze recommendation and generate structure</p>
-                        <button 
-                            onClick={() => handleGenerateStrategy(recommendation)}
-                            disabled={isGeneratingStrategy}
-                            className="inline-flex items-center gap-2.5 px-6 py-3 bg-gradient-to-r from-cyan-500 to-teal-500 text-white text-sm font-bold rounded-xl hover:from-cyan-600 hover:to-teal-600 transition-all shadow-lg disabled:opacity-50"
-                        >
-                            {isGeneratingStrategy ? <><IconLoader2 className="animate-spin" size={18} /> Generating Strategy...</> : <><IconRobot size={18} /> Generate Content Strategy</>}
-                        </button>
-                     </div>
-                ) : (
+                {hasRealStrategy && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <ContentStructureInlineEditor
                             recommendationId={recommendation.id!}
@@ -257,6 +245,25 @@ export const Step2Strategy: React.FC = () => {
              </div>
         );
     };
+
+    const getActionType = (rec: RecommendationV3) => {
+        if (isColdStart) return 'generate-guide';
+        const hasStrategy = strategyPlans.has(rec.id!) && Array.isArray((strategyPlans.get(rec.id!) as any).structure);
+        return hasStrategy ? 'generate-content' : 'generate-strategy';
+    };
+
+    const getActionLabel = (rec: RecommendationV3) => {
+        if (isColdStart) return 'Generate Guide';
+        const hasStrategy = strategyPlans.has(rec.id!) && Array.isArray((strategyPlans.get(rec.id!) as any).structure);
+        return hasStrategy ? 'Generate Content' : 'Generate Strategy';
+    };
+
+    const handleAction = (rec: RecommendationV3, action: string) => {
+        if (action === 'generate-guide') handleGenerateGuide(rec, action);
+        else if (action === 'generate-strategy') handleGenerateStrategy(rec);
+        else if (action === 'generate-content') handleGenerateContent(rec, action);
+    };
+
 
     return (
         <motion.div
@@ -291,11 +298,11 @@ export const Step2Strategy: React.FC = () => {
                  <RecommendationsTableV3
                     recommendations={recommendations}
                     showActions={true}
-                    onAction={isColdStart ? handleGenerateGuide : handleGenerateContent}
-                    actionLabel={isColdStart ? 'Generate Guide' : 'Generate'}
-                    actionType={isColdStart ? 'generate-guide' : 'generate-content'}
+                    onAction={handleAction}
+                    customActionLabel={getActionLabel}
+                    customActionType={getActionType}
                     generatedLabel={isColdStart ? 'Guide Ready' : 'Generated'}
-                    generatingContentIds={generatingContentIds}
+                    generatingContentIds={new Set([...generatingContentIds, ...generatingStrategyIds])}
                     onStopTracking={(id) => {
                         if (confirm('Stop tracking?')) handleStatusChange(id, 'removed');
                     }}

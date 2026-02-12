@@ -35,6 +35,8 @@ interface RecommendationsTableV3Props {
   renderExpandedContent?: (recommendation: RecommendationV3) => React.ReactNode;
   onNavigate?: (step: number, recommendationId?: string) => void;
   initialExpandedId?: string | null;
+  customActionLabel?: (recommendation: RecommendationV3) => string;
+  customActionType?: (recommendation: RecommendationV3) => string;
 }
 
 const JourneyTracker = ({
@@ -203,7 +205,9 @@ export const RecommendationsTableV3 = ({
   generatingContentIds = new Set(),
   renderExpandedContent,
   onNavigate,
-  initialExpandedId
+  initialExpandedId,
+  customActionLabel,
+  customActionType
 }: RecommendationsTableV3Props) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(
     initialExpandedId ? new Set([initialExpandedId]) : new Set()
@@ -487,11 +491,14 @@ export const RecommendationsTableV3 = ({
                                   );
                                 }
 
+                                const displayLabel = customActionLabel ? customActionLabel(rec) : actionLabel;
+                                const actionTypeValue = customActionType ? customActionType(rec) : actionType;
+
                                 return (
                                   <motion.button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      onAction(rec, actionType);
+                                      onAction(rec, actionTypeValue);
                                     }}
                                     whileHover={{ scale: 1.05, y: -1 }}
                                     whileTap={{ scale: 0.95 }}
@@ -522,7 +529,7 @@ export const RecommendationsTableV3 = ({
                                     >
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                     </motion.svg>
-                                    <span className="relative">{actionLabel}</span>
+                                    <span className="relative">{displayLabel}</span>
                                   </motion.button>
                                 );
                               })()}

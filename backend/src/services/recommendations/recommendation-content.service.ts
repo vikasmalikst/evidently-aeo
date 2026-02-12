@@ -16,7 +16,6 @@ import {
   NewContentPromptContext,
   StructureConfig
 } from './new-content-factory';
-import { webResearchService } from './web-research.service';
 import { BrandContextV3, RecommendationV3, ContentAssetType } from './recommendation.types';
 
 export type RecommendationContentStatus = 'generated' | 'accepted' | 'rejected';
@@ -467,21 +466,6 @@ Your content should help the customer's brand improve the targeted KPI by execut
             contextFilesContent += `--- DOCUMENT ${index + 1}: ${file.name} ---\n${file.content}\n--- END DOCUMENT ${index + 1} ---\n\n`;
           });
         }
-
-        // --- NEW: Execute Web Research if queries exist ---
-        if (parsedPlan.researchQueries && Array.isArray(parsedPlan.researchQueries) && parsedPlan.researchQueries.length > 0) {
-          console.log(`🔎 [RecommendationContentService] Executing ${parsedPlan.researchQueries.length} research queries...`);
-          const researchResults = await webResearchService.executeResearch(parsedPlan.researchQueries);
-
-          if (researchResults.length > 0) {
-            const researchContext = webResearchService.buildResearchContext(researchResults);
-            // Append to contextFilesContent (or treating it as highest priority context)
-            contextFilesContent += `\n\n${researchContext}\n\n`;
-            console.log(`✅ [RecommendationContentService] Injected research context (${researchResults.length} sources)`);
-          }
-        }
-        // --------------------------------------------------
-
       } catch (e) {
         console.warn('⚠️ [RecommendationContentService] Failed to parse strategy plan for context files', e);
       }

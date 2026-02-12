@@ -217,26 +217,6 @@ export const Step2Strategy: React.FC = () => {
                    ) : <p className="text-xs text-slate-500 italic">Upload context files relevant to this recommendation.</p>}
                 </div>
 
-                {/* Research Queries Display */}
-                {strategyPlan?.researchQueries && strategyPlan.researchQueries.length > 0 && (
-                     <div className="mb-6 bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                        <h4 className="text-sm font-semibold text-indigo-900 flex items-center gap-2 mb-3">
-                           <IconRobot size={16} /> Research Queries (Brave Search)
-                        </h4>
-                        <div className="space-y-2">
-                             {strategyPlan.researchQueries.map((query: string, idx: number) => (
-                                 <div key={idx} className="flex items-start gap-2 text-xs text-indigo-800 bg-white/60 p-2 rounded">
-                                     <span className="font-mono text-indigo-400 select-none">0{idx + 1}</span>
-                                     <span>{query}</span>
-                                 </div>
-                             ))}
-                        </div>
-                        <p className="mt-2 text-[11px] text-indigo-600/80">
-                            * These queries will be executed during content generation to verify facts.
-                        </p>
-                     </div>
-                )}
-
                 {/* Strategy Generation Button or Editor */}
                 {!hasRealStrategy ? (
                      <div className="-mt-2 bg-gradient-to-br from-cyan-50 via-teal-50 to-cyan-50 border-2 border-t-0 border-cyan-200 rounded-b-xl p-8 text-center">

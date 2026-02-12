@@ -41,8 +41,11 @@ export interface StrategyPlan {
         content: string;
         uploadedAt: string;
     }[];
-    researchQueries?: string[];
 }
+
+
+
+// ... (imports remain same)
 
 export class StrategyGenerationService {
     /**
@@ -82,9 +85,7 @@ export class StrategyGenerationService {
                 .single();
 
             // 2.5 Fetch existing strategy to retrieve uploaded context files
-
             let existingContextFiles: any[] = [];
-
             const { data: existingStrategyRow } = await supabaseAdmin
                 .from('recommendation_generated_contents')
                 .select('content')
@@ -103,60 +104,32 @@ export class StrategyGenerationService {
                 }
             }
 
-            // 2.75 Generate Strategic Angle (Audience, Hook, Counter-Strike)
-            // This is the new "Brain" of the operation
-            let strategicAngle;
-            try {
-                // Use the imported strategyPlanner instance directly
-                strategicAngle = await strategyPlanner.generateStrategicAngle(
-                    {
-                        name: brand?.name || 'Brand',
-                        industry: brand?.industry,
-                        competitors: brand?.competitors // Assuming brand object has this, if not we'll need to fetch or defaulting in the service
-                    },
-                    rec.action,
-                    contentType
-                );
-
-                console.log('🔌 [StrategyService] Strategic Angle Generated & Injected:', JSON.stringify(strategicAngle, null, 2));
-
-            } catch (e) {
-                console.warn('⚠️ [StrategyService] Strategy Planner failed, proceeding with defaults', e);
-                strategicAngle = {
-                    targetAudience: 'General Audience',
-                    primaryPainPoint: 'Unspecified',
-                    theHook: 'Standard Industry Perspective'
-                };
-            }
-
-            // 3. Build strategy enrichment prompt
-            const prompt = this.buildStrategyPrompt({
-                recommendation: rec,
-                brand: brand || { name: 'Brand' },
-                templateSections,
+            // 3. Build Unified Prompt
+            const prompt = this.buildUnifiedPrompt({
+                brand: brand || { name: 'Brand', industry: 'Unknown', competitors: [] },
+                topic: rec.action,
                 contentType,
-                customInstructions,
-                strategicAngle // Pass the angle to the prompt builder
+                templateSections
             });
 
-            console.log(`🧠 [StrategyService] Generating strategy for ${recommendationId} (${contentType})`);
-            console.log('📋 [StrategyService] Full Prompt Preview (First 500 chars):', prompt.substring(0, 500));
+            console.log(`🧠 [StrategyService] Generating UNIFIED strategy for ${recommendationId} (${contentType})`);
 
             // 4. Call LLM for strategy enrichment
             const response = await openRouterCollectorService.executeQuery({
                 collectorType: 'content',
                 prompt,
-                maxTokens: 6000, // Reasoning alone takes 3000+, increased to 6000
-                temperature: 0.5,
-                model: 'meta-llama/llama-3.3-70b-instruct'
+                maxTokens: 6000,
+                temperature: 0.7, // Higher temp for creativity in angle
+                model: 'openai/gpt-oss-20b' // Using consistent model
             });
 
             if (!response.response) {
                 return { success: false, error: 'LLM returned empty response' };
             }
 
-            // 5. Parse strategy plan
-            const strategyPlan = this.parseStrategyResponse(
+            // 5. Parse Unified Response
+            console.log('🤖 [StrategyService] Raw LLM Response:', response.response);
+            const strategyPlan = this.parseUnifiedResponse(
                 response.response,
                 {
                     recommendationId,
@@ -167,17 +140,6 @@ export class StrategyGenerationService {
                     channel: rec.channel
                 }
             );
-
-            if (strategyPlan && strategicAngle) {
-                // Attach the strategic angle to the plan object if your interface supports it
-                // For now, we'll embed it into the "strategicGuidance" field as a summary
-                strategyPlan.strategicGuidance = {
-                    keyFocus: strategicAngle.theHook,
-                    aeoTargets: [strategicAngle.targetAudience],
-                    toneGuidelines: `Address pain point: ${strategicAngle.primaryPainPoint}`,
-                    differentiation: strategicAngle.competitorCounterStrike || ''
-                };
-            }
 
             if (!strategyPlan) {
                 return { success: false, error: 'Failed to parse strategy response' };
@@ -201,87 +163,71 @@ export class StrategyGenerationService {
     }
 
     /**
-     * Build the LLM prompt for strategy enrichment
+     * Build the Unified Logic Prompt
      */
-    private buildStrategyPrompt({
-        recommendation,
+    private buildUnifiedPrompt({
         brand,
-        templateSections,
+        topic,
         contentType,
-        customInstructions,
-        strategicAngle
+        templateSections
     }: any): string {
+        const competitors = (brand.competitors || []).join(', ') || 'Standard Industry Competitors';
         const templatesJson = JSON.stringify(templateSections, null, 2);
 
-        // Incorporate the strategic angle into the prompt context
-        const angleContext = strategicAngle ? `
-**STRATEGIC DIRECTION (CRITICAL):**
-- **Target Audience:** ${strategicAngle.targetAudience}
-- **Primary Pain Point:** ${strategicAngle.primaryPainPoint}
-- **The Hook (Unique Angle):** ${strategicAngle.theHook}
-${strategicAngle.competitorCounterStrike ? `- **Competitor Counter-Strike:** ${strategicAngle.competitorCounterStrike}` : ''}
-` : '';
-
         return `You are a World-Class Content Strategist for ${brand.name}.
-Your goal is to plan a high-performance piece of content about: "${recommendation.action}".
+Your goal is to plan a high-performance piece of content about: "${topic}" (${contentType}).
 
-**Context:**
-- Brand: ${brand.name}${brand.industry ? ` (${brand.industry})` : ''}
-- Channel: ${recommendation.channel}
-- Content Type: ${contentType}
-${angleContext}
+You must perform two distinct steps in a single output:
+1. **STRATEGIC PLANNING:** Define the target audience, their pain points, and a unique hook.
+2. **EXECUTION PLANNING:** Rewrite the provided content structure to align perfectly with that strategy.
 
-**Your Task:**
-Rewrite the provided content structure to align with the **STRATEGIC DIRECTION** above. 
-You are NOT just copying the template. You are customizing every instruction to hit the specific Audience and Hook defined above.
+**Brand Context:**
+- Name: ${brand.name}
+- Industry: ${brand.industry || 'Unknown Industry'}
+- Competitors: ${competitors}
 
-1. **Update "title":** Make it specific to the ${strategicAngle?.targetAudience || 'audience'} and promise to solve the "${strategicAngle?.primaryPainPoint || 'pain point'}".
-2. **Update "content":** Replace the generic instructions with specific guidance that forces the writer to address the **Competitor Counter-Strike** and **Hook**. 
-   - *Example:* Instead of "Explain X", say "Explain X by contrasting it with [Competitor]'s failure to do Y."
+**Step 1: Strategic Angle (The "Brain")**
+Analyze the topic and brand to define:
+- **Target Audience:** Be hyper-specific (e.g., "Budget-conscious renovators", not "Homeowners").
+- **Primary Pain Point:** What strictly KEEPS THEM UP AT NIGHT regarding this topic?
+- **The Hook:** What is the unique, contrarian, or "insider" perspective ${brand.name} can take?
+- **Competitor Counter-Strike:** How do competitors (${competitors}) usually fail at this? How does ${brand.name} succeed?
 
-**Task 3: Generate Research Queries (CRITICAL)**
-You must generate exactly 3 web search queries to retrieve real-time facts.
-RULES:
-1. Keep queries SHORT (5-12 words).
-2. Each query must serve a DIFFERENT purpose:
-   - Query 1 (Topic Authority): Recent data, stats, benchmarks for "${recommendation.action}" (include 2026).
-   - Query 2 (Brand Evidence): Facts about ${brand.name} related to this topic (case studies, prices, features).
-   - Query 3 (Competitive Landscape): Comparisons or market context.
+**Step 2: Execution Plan (The "Hands")**
+Rewrite the provided content structure template below.
+- **Rules:**
+  - You are NOT just copying the template. You are customizing every instruction to hit the specific Audience and Hook defined in Step 1.
+  - **IMPORTANT:** If a section is a 'comparison_table', the 'content' field MUST be a valid Markdown table (using | separators). Do NOT write a paragraph describing the table. Write the actual table.
+  - Use \\n for line breaks.
 
 **Input Template:**
 ${templatesJson}
 
 **Output Requirements:**
-- Return ONLY valid JSON.
-- Return a JSON object with two keys:
-  1. "structure": Array of section objects (same as input)
-  2. "research_queries": Array of exactly 3 strings based on the rules above.
-- Do NOT return a top-level Array.
-- Use \\n for line breaks.
-
-**Example Output Format:**
+Return a SINGLE JSON object with this exact schema:
 {
-  "structure": [
+  "strategic_angle": {
+    "targetAudience": "...",
+    "primaryPainPoint": "...",
+    "theHook": "...",
+    "competitorCounterStrike": "..."
+  },
+  "sections": [
     {
       "id": "section_id",
-      "title": "Specific Title...",
+      "title": "Optimized Title...",
       "content": "Detailed instruction...",
       "sectionType": "original_type"
     }
-  ],
-  "research_queries": [
-    "AI translation ROI enterprise statistics 2026",
-    "${brand.name} enterprise features case studies",
-    "${brand.name} vs competitors enterprise comparison"
   ]
 }
-${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`;
+`;
     }
 
     /**
-     * Parse LLM response into StrategyPlan
+     * Parse Unified LLM response into StrategyPlan
      */
-    private parseStrategyResponse(
+    private parseUnifiedResponse(
         llmResponse: string,
         context: {
             recommendationId: string;
@@ -293,68 +239,30 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
         }
     ): StrategyPlan | null {
         try {
-            // Updated to look for JSON object OR array (legacy fallback)
-            const jsonMatch = llmResponse.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+            // Extract JSON from response
+            const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
             if (!jsonMatch) {
-                console.error('❌ No JSON found in LLM response');
-                console.error('LLM Response:', llmResponse.substring(0, 500));
+                console.error('❌ No JSON object found in LLM response');
                 return null;
             }
 
             const jsonString = jsonMatch[0];
-            console.log(`📝 Parsing JSON (Start: ${jsonString.substring(0, 50)}...)`);
+            const parsed = JSON.parse(jsonString);
 
-            let parsed: any;
-            try {
-                parsed = JSON.parse(jsonString);
-            } catch (parseError: any) {
-                console.warn('⚠️ Standard JSON parse failed, attempting to sanitize...', parseError.message);
-
-                try {
-                    // 1. Remove non-printable control characters (except common whitespace) GLOBALLY
-                    // eslint-disable-next-line no-control-regex
-                    let sanitized = jsonString.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '');
-
-                    // 2. Escape unescaped newlines/tabs ONLY within double quotes
-                    // Regex to match string literals: "..."
-                    sanitized = sanitized.replace(/"((?:[^"\\]|\\.)*)"/g, (match, content) => {
-                        // Replace unescaped newlines with \n, tabs with \t within the string content
-                        const newContent = content
-                            .replace(/(?<!\\)\n/g, '\\n')
-                            .replace(/(?<!\\)\t/g, '\\t')
-                            .replace(/(?<!\\)\r/g, '\\r');
-                        return `"${newContent}"`;
-                    });
-
-                    parsed = JSON.parse(sanitized);
-                    console.log('✅ Sanitized JSON parsed successfully');
-                } catch (retryError: any) {
-                    console.error('❌ Sanitized JSON parse also failed:', retryError.message);
-                    console.error('Problematic JSON snippet:', jsonString.substring(1600, 1800)); // Around the reported error index
-                    return null;
-                }
-            }
-
-            let enrichedSections: StructureSection[] = [];
-            let researchQueries: string[] = [];
-
-            if (Array.isArray(parsed)) {
-                // Legacy format (just the sections array)
-                enrichedSections = parsed;
-            } else if (parsed.structure && Array.isArray(parsed.structure)) {
-                // New format (object with structure + research_queries)
-                enrichedSections = parsed.structure;
-                researchQueries = parsed.research_queries || [];
-            } else {
-                console.error('❌ Invalid JSON structure (neither array nor object with structure)');
+            if (!parsed.strategic_angle || !parsed.sections) {
+                console.error('❌ Invalid JSON structure: missing strategic_angle or sections');
                 return null;
             }
 
-            console.log(`✅ Parsed ${enrichedSections.length} enriched sections and ${researchQueries.length} research queries`);
+            const { strategic_angle, sections } = parsed;
+            console.log('📦 [StrategyService] Parsed Sections:', JSON.stringify(sections, null, 2));
+            console.log('📦 [StrategyService] Parsed Angle:', JSON.stringify(strategic_angle, null, 2));
 
-            // Use the enriched sections directly, ensuring we keep all original properties if missing
+            // Map enriched sections to original IDs
+            console.log('🔍 [StrategyService] Mapping sections...');
             const finalSections = context.templateSections.map(original => {
-                const enriched = enrichedSections.find(e => e.id === original.id);
+                const enriched = sections.find((e: any) => e.id === original.id);
+                console.log(`   🔸 Checking ID: "${original.id}" -> Found match? ${!!enriched}`);
                 if (enriched) {
                     return {
                         ...original,
@@ -374,12 +282,11 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                     name: context.brand
                 },
                 structure: finalSections,
-                researchQueries: researchQueries.length > 0 ? researchQueries : undefined,
                 strategicGuidance: {
-                    keyFocus: '',
-                    aeoTargets: [],
-                    toneGuidelines: '',
-                    differentiation: ''
+                    keyFocus: strategic_angle.theHook || 'Strategic Focus',
+                    aeoTargets: [strategic_angle.targetAudience || 'Target Audience'],
+                    toneGuidelines: `Address pain point: ${strategic_angle.primaryPainPoint || 'Pain Point'} `,
+                    differentiation: strategic_angle.competitorCounterStrike || ''
                 }
             };
         } catch (error) {
@@ -410,7 +317,7 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
             try {
                 const existingPlan = JSON.parse(existing.content);
                 if (existingPlan.contextFiles && Array.isArray(existingPlan.contextFiles) && existingPlan.contextFiles.length > 0) {
-                    console.log(`📦 [StrategyService] Preserving ${existingPlan.contextFiles.length} context files`);
+                    console.log(`📦[StrategyService] Preserving ${existingPlan.contextFiles.length} context files`);
                     // If the new strategy doesn't have context files (it shouldn't), copy them over
                     if (!strategy.contextFiles) {
                         strategy.contextFiles = existingPlan.contextFiles;
@@ -460,7 +367,7 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
             throw error;
         }
 
-        console.log(`✅ [StrategyService] Saved strategy for ${recommendationId}`);
+        console.log(`✅[StrategyService] Saved strategy for ${recommendationId}`);
     }
 
     /**
@@ -591,7 +498,7 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                     updated_at: new Date().toISOString()
                 });
 
-            console.log(`✅ [StrategyService] Added context file: ${file.name}`);
+            console.log(`✅[StrategyService] Added context file: ${file.name}`);
             return { success: true, data: { file: newFile } };
 
         } catch (error: any) {
@@ -661,7 +568,7 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                 return { success: false, error: 'Failed to update strategy plan' };
             }
 
-            console.log(`✅ [StrategyService] Removed context file ${fileId} from recommendation ${recommendationId}`);
+            console.log(`✅[StrategyService] Removed context file ${fileId} from recommendation ${recommendationId}`);
             return { success: true };
         } catch (error: any) {
             console.error('❌ [StrategyService] Error removing context file:', error);

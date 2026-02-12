@@ -1087,24 +1087,23 @@ ${contentStyleGuide}
     try {
       let cleaned = raw.trim();
 
-      // Remove markdown code blocks
-      const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (jsonBlockMatch) {
-        cleaned = jsonBlockMatch[1].trim();
-      } else {
-        // Try removing just the markers
-        if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-        if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-        if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
-        cleaned = cleaned.trim();
-      }
+      // Robust markdown code block extraction
+      const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/g;
+      const matches = Array.from(cleaned.matchAll(jsonBlockRegex));
 
-      const parsed = JSON.parse(cleaned);
-      if (this.isValidGeneratedContent(parsed)) {
-        return this.normalizeGeneratedContent(parsed);
+      for (const match of matches) {
+        try {
+          const potentialJson = match[1].trim();
+          const parsed = JSON.parse(potentialJson);
+          if (this.isValidGeneratedContent(parsed)) {
+            return this.normalizeGeneratedContent(parsed);
+          }
+        } catch {
+          // Continue to next match
+        }
       }
-    } catch {
-      // Continue to next strategy
+    } catch (e) {
+      console.warn('[PARSE] Strategy 2 failed:', (e as Error).message);
     }
 
     // Strategy 3: Extract JSON object from text (find first { ... } block)
@@ -1437,11 +1436,13 @@ ${contentStyleGuide}
       return false;
     }
 
-    // Common required fields - FSA assets (with assetType) and v5.0 (Unified) don't require recommendationId in the response
+    // Common required fields - FSA assets (with assetType), v4.0 (Refinement), and v5.0 (Unified)
+    // don't require recommendationId in the response (they are grounded by the session)
     const isFsaAsset = !!parsed.assetType;
     const isV5 = version === '5.0';
-    if (!isFsaAsset && !isV5 && !parsed.recommendationId) {
-      console.warn('[VALIDATION FAIL] Missing recommendationId (non-FSA)');
+    const isV4 = version === '4.0';
+    if (!isFsaAsset && !isV5 && !isV4 && !parsed.recommendationId) {
+      console.warn('[VALIDATION FAIL] Missing recommendationId');
       return false;
     }
     if (!parsed.brandName) {

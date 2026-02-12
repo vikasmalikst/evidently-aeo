@@ -7,6 +7,7 @@
 
 import { supabaseAdmin } from '../../config/supabase';
 import { groqCompoundService } from './groq-compound.service';
+import { mcpSearchService } from '../data-collection/mcp-search.service';
 
 import { RecommendationV3, TemplatePlan, StrategyPlan, BrandContextV3, ContextFile, StructureSection, ContentTemplateType } from './recommendation.types';
 import { getContentTemplates, detectContentType } from './content-templates';
@@ -73,13 +74,27 @@ export class StrategyGenerationService {
                 ? brand.competitors.join(', ')
                 : 'standard industry alternatives';
 
+            // 2.8 MCP Web Search (Market Context)
+            let researchContext = '';
+            try {
+                const searchQuery = `${brand.name} ${rec.action} trends ${new Date().getFullYear()}`;
+                console.log(`🔎 [StrategyService] Searching MCP: "${searchQuery}"`);
+                const searchResults = await mcpSearchService.quickSearch(searchQuery, 3);
+                researchContext = mcpSearchService.formatContext(searchResults);
+                if (researchContext) console.log('✅ [StrategyService] MCP Search context acquired');
+            } catch (err) {
+                console.warn('⚠️ [StrategyService] MCP Search failed, proceeding without web context');
+            }
+
+            // 3. Build strategy enrichment prompt
             const prompt = this.buildStrategyPrompt({
                 recommendation: rec,
                 brand: brand || { name: 'Brand' },
                 templateSections,
                 contentType,
                 customInstructions,
-                competitors
+                competitors,
+                researchContext
             });
 
             console.log(`🧠 [StrategyService] Generating strategy + angle for ${recommendationId} (${contentType})`);
@@ -150,7 +165,8 @@ export class StrategyGenerationService {
         templateSections,
         contentType,
         customInstructions,
-        competitors
+        competitors,
+        researchContext
     }: any): string {
         const templatesJson = JSON.stringify(templateSections, null, 2);
 
@@ -162,6 +178,8 @@ Your goal is to plan a high-performance piece of content about: "${recommendatio
 - Channel: ${recommendation.channel}
 - Content Type: ${contentType}
 - Competitors: ${competitors}
+
+${researchContext ? `**LATEST MARKET RESEARCH (Use this to ground your strategy):**\n${researchContext}\n` : ''}
 
 You have 2 tasks. Complete ALL of them in a single JSON response.
 

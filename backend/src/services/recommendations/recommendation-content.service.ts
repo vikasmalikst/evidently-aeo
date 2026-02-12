@@ -15,7 +15,7 @@ import {
   NewContentPromptContext,
   StructureConfig
 } from './new-content-factory';
-// webResearchService removed - Groq Compound handles search natively
+import { mcpSearchService } from '../data-collection/mcp-search.service';
 import { BrandContextV3, RecommendationV3, ContentAssetType } from './recommendation.types';
 
 export type RecommendationContentStatus = 'generated' | 'accepted' | 'rejected';
@@ -458,10 +458,30 @@ Your content should help the customer's brand improve the targeted KPI by execut
           });
         }
 
-        // --- WEB RESEARCH REMOVED ---
-        // Groq Compound now handles web research natively during generation.
-        // We no longer execute explicit Brave Search queries here.
-        // ----------------------------
+        // --- NEW: Execute Web Research if queries exist ---
+        if (parsedPlan.researchQueries && Array.isArray(parsedPlan.researchQueries) && parsedPlan.researchQueries.length > 0) {
+          console.log(`🔎 [RecommendationContentService] Executing ${parsedPlan.researchQueries.length} research queries via MCP...`);
+
+          let researchContext = '';
+          for (const query of parsedPlan.researchQueries) {
+            try {
+              // Using Quick Search (SearXNG) for speed and reliability
+              const results = await mcpSearchService.quickSearch(query, 3);
+              const formatted = mcpSearchService.formatContext(results);
+              if (formatted) {
+                researchContext += formatted + '\n\n';
+              }
+            } catch (err) {
+              console.warn(`⚠️ [RecommendationContentService] Failed research for query: "${query}"`, err);
+            }
+          }
+
+          if (researchContext.length > 0) {
+            // Append to contextFilesContent (or treating it as highest priority context)
+            contextFilesContent += `\n\n### LATEST MARKET RESEARCH (MCP Verified):\n${researchContext}\n\n`;
+            console.log(`✅ [RecommendationContentService] Injected research context`);
+          }
+        }
 
       } catch (e) {
         console.warn('⚠️ [RecommendationContentService] Failed to parse strategy plan for context files', e);

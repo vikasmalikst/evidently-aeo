@@ -8,43 +8,8 @@
 import { supabaseAdmin } from '../../config/supabase';
 import { groqCompoundService } from './groq-compound.service';
 
-// Import templates from frontend (we'll reference them, not duplicate)
-export type ContentTemplateType = 'article' | 'whitepaper' | 'short_video' | 'expert_community_response' | 'podcast' | 'comparison_table' | 'social_media_thread';
-
-export interface StructureSection {
-    id: string;
-    title: string;
-    content: string;
-    sectionType: string;
-}
-
-export interface StrategyPlan {
-    recommendationId: string;
-    contentType: ContentTemplateType;
-    primaryEntity: string;
-    targetChannel: string;
-    brandContext: {
-        name: string;
-        competitors?: string[];
-    };
-    structure: StructureSection[];
-    strategicGuidance: {
-        keyFocus: string;
-        aeoTargets: string[];
-        toneGuidelines: string;
-        differentiation: string;
-    };
-    contextFiles?: {
-        id: string;
-        name: string;
-        content: string;
-        uploadedAt: string;
-    }[];
-}
-
-
-
-// ... (imports remain same)
+import { RecommendationV3, TemplatePlan, StrategyPlan, BrandContextV3, ContextFile, StructureSection, ContentTemplateType } from './recommendation.types';
+import { getContentTemplates, detectContentType } from './content-templates';
 
 export class StrategyGenerationService {
     /**
@@ -179,14 +144,14 @@ export class StrategyGenerationService {
     /**
      * Build the Unified Logic Prompt
      */
-    private buildUnifiedPrompt({
+    private buildStrategyPrompt({
+        recommendation,
         brand,
-        topic,
+        templateSections,
         contentType,
         customInstructions,
         competitors
     }: any): string {
-        const competitors = (brand.competitors || []).join(', ') || 'Standard Industry Competitors';
         const templatesJson = JSON.stringify(templateSections, null, 2);
 
         return `You are a World-Class Content Strategist for ${brand.name}.
@@ -256,7 +221,7 @@ ${templatesJson}
     /**
      * Parse Unified LLM response into StrategyPlan
      */
-    private parseUnifiedResponse(
+    private parseStrategyResponse(
         llmResponse: string,
         context: {
             recommendationId: string;
@@ -267,44 +232,46 @@ ${templatesJson}
             channel: string;
         }
     ): StrategyPlan | null {
+        let parsed: any;
+        const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
+
+        if (!jsonMatch) {
+            console.error('❌ No JSON object found in LLM response');
+            return null;
+        }
+
+        const jsonString = jsonMatch[0];
+
         try {
-            // Extract JSON from response
-            const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                console.error('❌ No JSON object found in LLM response');
+            parsed = JSON.parse(jsonString);
+        } catch (error) {
+            console.warn('⚠️ Initial JSON parse failed, attempting sanitization:', error);
+            try {
+                // 1. Remove non-printable control characters (except common whitespace) GLOBALLY
+                // eslint-disable-next-line no-control-regex
+                let sanitized = jsonString.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '');
+
+                // 2. Escape unescaped newlines/tabs ONLY within double quotes
+                // Regex to match string literals: "..."
+                sanitized = sanitized.replace(/"((?:[^"\\]|\\.)*)"/g, (match, content) => {
+                    // Replace unescaped newlines with \n, tabs with \t within the string content
+                    const newContent = content
+                        .replace(/(?<!\\)\n/g, '\\n')
+                        .replace(/(?<!\\)\t/g, '\\t')
+                        .replace(/(?<!\\)\r/g, '\\r');
+                    return `"${newContent}"`;
+                });
+
+                parsed = JSON.parse(sanitized);
+                console.log('✅ Sanitized JSON parsed successfully');
+            } catch (retryError: any) {
+                console.error('❌ Sanitized JSON parse also failed:', retryError.message);
                 return null;
             }
+        }
 
-            const jsonString = jsonMatch[0];
-            const parsed = JSON.parse(jsonString);
-
-                try {
-                    // 1. Remove non-printable control characters (except common whitespace) GLOBALLY
-                    // eslint-disable-next-line no-control-regex
-                    let sanitized = jsonString.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '');
-
-                    // 2. Escape unescaped newlines/tabs ONLY within double quotes
-                    // Regex to match string literals: "..."
-                    sanitized = sanitized.replace(/"((?:[^"\\]|\\.)*)"/g, (match, content) => {
-                        // Replace unescaped newlines with \n, tabs with \t within the string content
-                        const newContent = content
-                            .replace(/(?<!\\)\n/g, '\\n')
-                            .replace(/(?<!\\)\t/g, '\\t')
-                            .replace(/(?<!\\)\r/g, '\\r');
-                        return `"${newContent}"`;
-                    });
-
-                    parsed = JSON.parse(sanitized);
-                    console.log('✅ Sanitized JSON parsed successfully');
-                } catch (retryError: any) {
-                    console.error('❌ Sanitized JSON parse also failed:', retryError.message);
-                    console.error('Problematic JSON snippet:', jsonString.substring(1600, 1800)); // Around the reported error index
-                    return null;
-                }
-            }
-
+        try {
             let enrichedSections: StructureSection[] = [];
-            let researchQueries: string[] = [];
             let strategicAngle: any = null;
 
             if (Array.isArray(parsed)) {
@@ -320,12 +287,12 @@ ${templatesJson}
                 return null;
             }
 
-            console.log(`✅ Parsed ${enrichedSections.length} enriched sections, ${researchQueries.length} research queries, angle: ${strategicAngle ? 'yes' : 'no'}`);
+            console.log(`✅ Parsed ${enrichedSections.length} enriched sections, angle: ${strategicAngle ? 'yes' : 'no'}`);
 
             // Map enriched sections to original IDs
             console.log('🔍 [StrategyService] Mapping sections...');
             const finalSections = context.templateSections.map(original => {
-                const enriched = sections.find((e: any) => e.id === original.id);
+                const enriched = enrichedSections.find((e: any) => e.id === original.id);
                 console.log(`   🔸 Checking ID: "${original.id}" -> Found match? ${!!enriched}`);
                 if (enriched) {
                     return {
@@ -354,7 +321,7 @@ ${templatesJson}
                 }
             };
         } catch (error) {
-            console.error('❌ Error parsing strategy response:', error);
+            console.error('❌ Error processing parsed strategy:', error);
             return null;
         }
     }

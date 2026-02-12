@@ -7,7 +7,7 @@
 
 import { supabaseAdmin } from '../../config/database';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
-import { groqCompoundService } from './groq-compound.service';
+import { groqCompoundService, GROQ_MODELS } from './groq-compound.service';
 import {
   detectContentAsset,
   detectPlatform,
@@ -927,14 +927,15 @@ ${contentStyleGuide}
     // 1. Try Groq Compound (Primary)
     try {
       console.log('🚀 [RecommendationContentService] Attempting Groq Compound (Primary)...');
-      const enableSearch = !isColdStartGuide;
+      // Disable native web search because we now provide context via MCP
+      const enableSearch = false;
 
       const groqResult = await groqCompoundService.generateContent({
         systemPrompt: isColdStartGuide
           ? 'You are a senior marketing consultant and AEO strategist. Generate implementation guides.'
           : 'You are a senior content strategist. Produce high-quality, grounded content.',
         userPrompt: prompt,
-        model: 'groq/compound',
+        model: GROQ_MODELS.LLAMA_70B, // Llama 3.3 70B is the top-tier regular model
         temperature: isColdStartGuide ? 0.4 : 0.6,
         maxTokens: 8000,
         jsonMode: false,
@@ -943,9 +944,9 @@ ${contentStyleGuide}
 
       if (groqResult.content) {
         content = groqResult.content;
-        providerUsed = 'openrouter'; // Use 'openrouter' label for DB compatibility
-        modelUsed = 'groq/compound';
-        console.log(`✅ [RecommendationContentService] Groq Compound succeeded (Search: ${enableSearch ? 'Active' : 'N/A'})`);
+        providerUsed = 'openrouter'; // Keep for DB compatibility
+        modelUsed = GROQ_MODELS.LLAMA_70B;
+        console.log(`✅ [RecommendationContentService] Groq ${modelUsed} succeeded (Search: MCP Grounded)`);
       }
     } catch (err: any) {
       console.warn(`⚠️ [RecommendationContentService] Groq Compound failed: ${err.message}. Falling back to OpenRouter...`);

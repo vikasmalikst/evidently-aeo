@@ -927,8 +927,6 @@ ${contentStyleGuide}
     // 1. Try Groq Compound (Primary)
     try {
       console.log('🚀 [RecommendationContentService] Attempting Groq Compound (Primary)...');
-      // Enable native web search for content generation (but not for guides or clean drafts if preferred)
-      // We generally enable it to fulfill the "Grounding Rule".
       const enableSearch = !isColdStartGuide;
 
       const groqResult = await groqCompoundService.generateContent({
@@ -936,10 +934,10 @@ ${contentStyleGuide}
           ? 'You are a senior marketing consultant and AEO strategist. Generate implementation guides.'
           : 'You are a senior content strategist. Produce high-quality, grounded content.',
         userPrompt: prompt,
-        model: 'groq/compound', // Use the compound model
+        model: 'groq/compound',
         temperature: isColdStartGuide ? 0.4 : 0.6,
         maxTokens: 8000,
-        jsonMode: false, // Compound doesn't support json_object mode with tools usually, but we rely on prompt instruction
+        jsonMode: false,
         enableWebSearch: enableSearch
       });
 
@@ -947,33 +945,29 @@ ${contentStyleGuide}
         content = groqResult.content;
         providerUsed = 'openrouter'; // Use 'openrouter' label for DB compatibility
         modelUsed = 'groq/compound';
-        console.log('✅ [RecommendationContentService] Groq Compound succeeded');
-      } else {
-        console.warn('⚠️ [RecommendationContentService] Groq Compound returned empty content');
+        console.log(`✅ [RecommendationContentService] Groq Compound succeeded (Search: ${enableSearch ? 'Active' : 'N/A'})`);
       }
-
-    } catch (e: any) {
-      console.error('❌ [RecommendationContentService] Groq Compound failed:', e.message || e);
-      console.log('🔄 [RecommendationContentService] Falling back to OpenRouter...');
+    } catch (err: any) {
+      console.warn(`⚠️ [RecommendationContentService] Groq Compound failed: ${err.message}. Falling back to OpenRouter...`);
     }
 
-    // 2. Fallback to OpenRouter if Groq failed
+    // 2. Fallback to OpenRouter
     if (!content) {
       try {
-        const or = await openRouterCollectorService.executeQuery({
-          collectorType: 'content',
-          prompt,
-          maxTokens: isColdStartGuide ? 2600 : 8000,
-          temperature: isColdStartGuide ? 0.4 : 0.6,
-          topP: 0.9,
-          // Fallback does NOT use web search to ensure reliability if primary failed
-          enableWebSearch: false
-        });
-        content = or.response;
+        console.log('🚀 [RecommendationContentService] Attempting OpenRouter Fallback...');
         providerUsed = 'openrouter';
-        modelUsed = or.model_used;
-      } catch (e) {
-        console.error('❌ [RecommendationContentService] OpenRouter fallback failed:', e);
+        modelUsed = 'meta-llama/llama-3.3-70b-instruct';
+
+        const result = await openRouterCollectorService.executeQuery({
+          systemPrompt: 'You are a senior content strategist. Produce high-quality, grounded content.',
+          prompt: prompt,
+          model: modelUsed,
+          maxTokens: 5000
+        });
+        content = result.response;
+        console.log('✅ [RecommendationContentService] OpenRouter fallback succeeded');
+      } catch (err: any) {
+        console.error('❌ [RecommendationContentService] All providers failed:', err.message);
       }
     }
 
@@ -983,7 +977,7 @@ ${contentStyleGuide}
 
     // Log the response received
     console.log('\n📥 [RecommendationContentService] ========== RESPONSE ==========');
-    console.log(`Provider: ${providerUsed || 'unknown'}, Model: ${modelUsed || 'unknown'}`);
+    console.log(`Provider: ${providerUsed || 'unknown'}, Model: ${modelUsed || 'unknown'} `);
     console.log(content);
     console.log('📥 [RecommendationContentService] ========== END RESPONSE ==========\n');
 
@@ -997,7 +991,7 @@ ${contentStyleGuide}
     const shouldRewriteV2 = !isColdStartGuide && isParsedV2 && this.isLowQualityV2(parsed as any);
     if (shouldRewriteV2) {
       console.warn('⚠️ [RecommendationContentService] Detected low-quality v2 content. Attempting one rewrite pass...');
-      const rewritePrompt = `${projectContext}\n\n${recommendationContext}\n\nYou previously generated JSON but it failed quality requirements.\n\nQUALITY REQUIREMENTS (must satisfy all):\n- Do NOT invent any customer/org/community names (no \"Tech Club\" style names). Only mention the brand and the target source domain.\n- Do NOT invent metrics or specific results. If missing, add to requiredInputs.\n- Must be publishable and structured with headings: TL;DR, Why this matters, Step-by-step, Checklist, Common mistakes, FAQs, CTA.\n- Must be Markdown and escape newlines as \\\\n in JSON strings.\n- Keep the same JSON v2.0 schema.\n\nHere is the previous JSON:\n${JSON.stringify(parsed, null, 2)}\n\nReturn ONLY the corrected JSON object.`;
+      const rewritePrompt = `${projectContext} \n\n${recommendationContext} \n\nYou previously generated JSON but it failed quality requirements.\n\nQUALITY REQUIREMENTS(must satisfy all): \n - Do NOT invent any customer / org / community names(no \"Tech Club\" style names). Only mention the brand and the target source domain.\n- Do NOT invent metrics or specific results. If missing, add to requiredInputs.\n- Must be publishable and structured with headings: TL;DR, Why this matters, Step-by-step, Checklist, Common mistakes, FAQs, CTA.\n- Must be Markdown and escape newlines as \\\\n in JSON strings.\n- Keep the same JSON v2.0 schema.\n\nHere is the previous JSON:\n${JSON.stringify(parsed, null, 2)}\n\nReturn ONLY the corrected JSON object.`;
 
       try {
         const orRewrite = await openRouterCollectorService.executeQuery({

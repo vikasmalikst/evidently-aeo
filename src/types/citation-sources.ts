@@ -12,12 +12,14 @@ export interface SourceData {
     topics: string[];
     prompts: string[];
     pages: string[];
+    topPages?: Array<{ url: string, count: number }>;
     value?: number;
     visibility?: number;
 }
 
 export interface EnhancedSource {
     name: string;
+    topPages?: Array<{ url: string, count: number }>;
     type: string;
     mentionRate: number; // %
     soa: number; // %
@@ -41,4 +43,19 @@ export interface SourceAttributionResponse {
     avgSentiment: number;
     avgSentimentChange: number;
     availableModels?: string[];
+}
+
+export interface NumericFilter {
+    operator: 'gt' | 'lt' | 'eq' | 'range' | null;
+    value?: number;
+    min?: number;
+    max?: number;
+}
+
+export interface NumericFilters {
+    valueScore: NumericFilter;    // Impact
+    mentionRate: NumericFilter;   // Mention
+    soa: NumericFilter;           // SOA
+    sentiment: NumericFilter;     // Sentiment
+    citations: NumericFilter;     // Citations
 }

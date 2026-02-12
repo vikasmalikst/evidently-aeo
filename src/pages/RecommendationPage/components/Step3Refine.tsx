@@ -1,9 +1,11 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IconMinus, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useRecommendationContext } from '../RecommendationContext';
 import { UnifiedContentRenderer } from '../../../components/RecommendationsV3/components/ContentSectionRenderer';
+import { AEOScoreBadge } from '../../../components/RecommendationsV3/components/ContentAnalysisTools';
+import { ContentAnalysisSidebar } from './ContentAnalysisSidebar';
 import { 
   updateRecommendationStatusV3, 
   completeRecommendationV3, 
@@ -22,8 +24,21 @@ export const Step3Refine: React.FC = () => {
         handleStatusChange, 
         setCurrentStep,
         setError,
-        setRecommendations 
+        setRecommendations,
+        brandName
     } = useRecommendationContext();
+
+    const [scorePanel, setScorePanel] = useState<{
+        isOpen: boolean;
+        content: string;
+        brandName?: string;
+        contentType?: string;
+    }>({
+        isOpen: false,
+        content: '',
+        brandName: '',
+        contentType: 'article'
+    });
 
     // Helper: Safely parse JSON
     const safeJsonParse = (value: any): any => {
@@ -36,6 +51,41 @@ export const Step3Refine: React.FC = () => {
             return safeJsonParse(raw.content);
         }
         return safeJsonParse(raw);
+    };
+
+    // Helper to extract clean text content for analysis
+    const extractVisibleContent = (content: any): string => {
+        if (!content) return '';
+        if (typeof content === 'string') {
+            // Check if it's JSON
+            if (content.trim().startsWith('{')) {
+                 const parsed = safeJsonParse(content);
+                 if (parsed && typeof parsed === 'object') {
+                     return extractVisibleContent(parsed);
+                 }
+            }
+            return content;
+        }
+        if (typeof content === 'object') {
+            if (content.content && typeof content.content === 'string') {
+                return extractVisibleContent(content.content);
+            }
+            // If sections array
+            if (Array.isArray(content.sections)) {
+                return content.sections.map((s: any) => `${s.title}\n${s.content}`).join('\n\n');
+            }
+        }
+        return '';
+    };
+
+    const getTemplateForAction = (rec: RecommendationV3): string => {
+        if (rec.assetType) return rec.assetType;
+        const action = rec.action.toLowerCase();
+        if (action.includes('video')) return 'short_video';
+        if (action.includes('article') || action.includes('blog')) return 'article';
+        if (action.includes('whitepaper') || action.includes('guide')) return 'whitepaper';
+        if (action.includes('comparison')) return 'comparison_table';
+        return 'article';
     };
 
     const handleToggleComplete = async (rec: RecommendationV3) => {
@@ -101,6 +151,10 @@ export const Step3Refine: React.FC = () => {
                      {recommendations.map(rec => {
                          const guideRaw = rec.id ? guideMap.get(rec.id) : null;
                          const guideObj = extractGuideObject(guideRaw);
+                         const content = rec.id ? contentMap.get(rec.id) : null;
+                         const visibleContent = extractVisibleContent(content);
+                         const hasContent = !!visibleContent && visibleContent.length > 50;
+
                          // Logic for displaying guide vs content
                          // For cold start we show guide, for normal we show content editor
                          
@@ -133,6 +187,23 @@ export const Step3Refine: React.FC = () => {
                                          
                                          {!rec.isCompleted ? (
                                              <div className="flex items-center gap-2">
+                                                 {/* AEO Score Badge */}
+                                                 {!isColdStart && hasContent && (
+                                                     <div className="mr-2" onClick={(e) => e.stopPropagation()}>
+                                                         <AEOScoreBadge
+                                                             content={visibleContent}
+                                                             brandName={brandName}
+                                                             contentType={getTemplateForAction(rec)}
+                                                             onClick={() => setScorePanel({
+                                                                 isOpen: true,
+                                                                 content: visibleContent,
+                                                                 brandName: brandName,
+                                                                 contentType: getTemplateForAction(rec)
+                                                             })}
+                                                         />
+                                                     </div>
+                                                 )}
+
                                                  <button 
                                                     onClick={(e) => { e.stopPropagation(); if(confirm('Stop tracking?')) handleStatusChange(rec.id!, 'removed'); }}
                                                     className="p-1.5 text-gray-400 hover:text-red-500 rounded-md"
@@ -193,6 +264,14 @@ export const Step3Refine: React.FC = () => {
                      })}
                  </AnimatePresence>
             </div>
+            
+            <ContentAnalysisSidebar
+                isOpen={scorePanel.isOpen}
+                onClose={() => setScorePanel(prev => ({ ...prev, isOpen: false }))}
+                content={scorePanel.content}
+                brandName={scorePanel.brandName}
+                contentType={scorePanel.contentType}
+            />
         </motion.div>
     );
 };

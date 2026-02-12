@@ -118,7 +118,7 @@ export class StrategyGenerationService {
             const response = await openRouterCollectorService.executeQuery({
                 collectorType: 'content',
                 prompt,
-                maxTokens: 6000,
+                maxTokens: 10000,
                 temperature: 0.7, // Higher temp for creativity in angle
                 model: 'openai/gpt-oss-20b' // Using consistent model
             });

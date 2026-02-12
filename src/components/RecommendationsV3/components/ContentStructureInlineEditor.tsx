@@ -82,7 +82,7 @@ const DraggableSectionItem = ({
                     {/* Use Table Editor for comparison_table sections, otherwise textarea */}
                     {section.sectionType === 'comparison_table' ? (
                         <TableStructureEditor
-                            content={section.content}
+                            content={section.content.includes('|') ? section.content : (CONTENT_TEMPLATES['comparison_table'].find(s => s.id === 'comparison_matrix')?.content || section.content)}
                             onChange={(newContent) => onUpdate(index, 'content', newContent)}
                         />
                     ) : (
@@ -140,7 +140,7 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
 
         // 2. Check for stale comparison table (containing placeholders)
         if (contentType === 'comparison_table') {
-            const tableIndex = template.findIndex(s => s.id === 'table');
+            const tableIndex = template.findIndex(s => s.id === 'comparison_matrix');
             if (tableIndex >= 0) {
                 const currentContent = template[tableIndex].content;
                 const hasPlaceholder = currentContent.includes('[Brand Name]') || currentContent.includes('[Competitor]');
@@ -154,7 +154,7 @@ export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditor
                 // If it still has generic placeholders, override with fresh dynamic content
                 if (hasPlaceholder) {
                     const freshTemplate = templates['comparison_table'];
-                    const freshTable = freshTemplate.find(s => s.id === 'table');
+                    const freshTable = freshTemplate.find(s => s.id === 'comparison_matrix');
 
                     if (freshTable) {
                         console.log(`[ContentStructureInlineEditor] UPGRADING table to dynamic version with brand: ${brandName}`);

@@ -40,8 +40,11 @@ export interface StrategyPlan {
         content: string;
         uploadedAt: string;
     }[];
-    researchQueries?: string[];
 }
+
+
+
+// ... (imports remain same)
 
 export class StrategyGenerationService {
     /**
@@ -81,9 +84,7 @@ export class StrategyGenerationService {
                 .single();
 
             // 2.5 Fetch existing strategy to retrieve uploaded context files
-
             let existingContextFiles: any[] = [];
-
             const { data: existingStrategyRow } = await supabaseAdmin
                 .from('recommendation_generated_contents')
                 .select('content')
@@ -176,16 +177,16 @@ export class StrategyGenerationService {
     }
 
     /**
-     * Build the LLM prompt for strategy enrichment
+     * Build the Unified Logic Prompt
      */
-    private buildStrategyPrompt({
-        recommendation,
+    private buildUnifiedPrompt({
         brand,
-        templateSections,
+        topic,
         contentType,
         customInstructions,
         competitors
     }: any): string {
+        const competitors = (brand.competitors || []).join(', ') || 'Standard Industry Competitors';
         const templatesJson = JSON.stringify(templateSections, null, 2);
 
         return `You are a World-Class Content Strategist for ${brand.name}.
@@ -243,19 +244,19 @@ ${templatesJson}
   "structure": [
     {
       "id": "section_id",
-      "title": "Specific Title...",
+      "title": "Optimized Title...",
       "content": "Detailed instruction...",
       "sectionType": "original_type"
     }
   ]
 }
-${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`;
+`;
     }
 
     /**
-     * Parse LLM response into StrategyPlan
+     * Parse Unified LLM response into StrategyPlan
      */
-    private parseStrategyResponse(
+    private parseUnifiedResponse(
         llmResponse: string,
         context: {
             recommendationId: string;
@@ -267,22 +268,15 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
         }
     ): StrategyPlan | null {
         try {
-            // Updated to look for JSON object OR array (legacy fallback)
-            const jsonMatch = llmResponse.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+            // Extract JSON from response
+            const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
             if (!jsonMatch) {
-                console.error('❌ No JSON found in LLM response');
-                console.error('LLM Response:', llmResponse.substring(0, 500));
+                console.error('❌ No JSON object found in LLM response');
                 return null;
             }
 
             const jsonString = jsonMatch[0];
-            console.log(`📝 Parsing JSON (Start: ${jsonString.substring(0, 50)}...)`);
-
-            let parsed: any;
-            try {
-                parsed = JSON.parse(jsonString);
-            } catch (parseError: any) {
-                console.warn('⚠️ Standard JSON parse failed, attempting to sanitize...', parseError.message);
+            const parsed = JSON.parse(jsonString);
 
                 try {
                     // 1. Remove non-printable control characters (except common whitespace) GLOBALLY
@@ -328,9 +322,11 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
 
             console.log(`✅ Parsed ${enrichedSections.length} enriched sections, ${researchQueries.length} research queries, angle: ${strategicAngle ? 'yes' : 'no'}`);
 
-            // Use the enriched sections directly, ensuring we keep all original properties if missing
+            // Map enriched sections to original IDs
+            console.log('🔍 [StrategyService] Mapping sections...');
             const finalSections = context.templateSections.map(original => {
-                const enriched = enrichedSections.find(e => e.id === original.id);
+                const enriched = sections.find((e: any) => e.id === original.id);
+                console.log(`   🔸 Checking ID: "${original.id}" -> Found match? ${!!enriched}`);
                 if (enriched) {
                     return {
                         ...original,
@@ -350,7 +346,6 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                     name: context.brand
                 },
                 structure: finalSections,
-                researchQueries: researchQueries.length > 0 ? researchQueries : undefined,
                 strategicGuidance: {
                     keyFocus: strategicAngle?.theHook || '',
                     aeoTargets: strategicAngle?.targetAudience ? [strategicAngle.targetAudience] : [],
@@ -386,7 +381,7 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
             try {
                 const existingPlan = JSON.parse(existing.content);
                 if (existingPlan.contextFiles && Array.isArray(existingPlan.contextFiles) && existingPlan.contextFiles.length > 0) {
-                    console.log(`📦 [StrategyService] Preserving ${existingPlan.contextFiles.length} context files`);
+                    console.log(`📦[StrategyService] Preserving ${existingPlan.contextFiles.length} context files`);
                     // If the new strategy doesn't have context files (it shouldn't), copy them over
                     if (!strategy.contextFiles) {
                         strategy.contextFiles = existingPlan.contextFiles;
@@ -437,7 +432,7 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
             throw error;
         }
 
-        console.log(`✅ [StrategyService] Saved strategy for ${recommendationId}`);
+        console.log(`✅[StrategyService] Saved strategy for ${recommendationId}`);
     }
 
     /**
@@ -568,7 +563,7 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                     updated_at: new Date().toISOString()
                 });
 
-            console.log(`✅ [StrategyService] Added context file: ${file.name}`);
+            console.log(`✅[StrategyService] Added context file: ${file.name}`);
             return { success: true, data: { file: newFile } };
 
         } catch (error: any) {
@@ -638,7 +633,7 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                 return { success: false, error: 'Failed to update strategy plan' };
             }
 
-            console.log(`✅ [StrategyService] Removed context file ${fileId} from recommendation ${recommendationId}`);
+            console.log(`✅[StrategyService] Removed context file ${fileId} from recommendation ${recommendationId}`);
             return { success: true };
         } catch (error: any) {
             console.error('❌ [StrategyService] Error removing context file:', error);

@@ -1,9 +1,22 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { IconMinus, IconPlus, IconTrash } from '@tabler/icons-react';
+import { 
+  IconMinus, 
+  IconPlus, 
+  IconTrash, 
+  IconFileText, 
+  IconVideo, 
+  IconTable, 
+  IconSocial, 
+  IconCheck,
+  IconChevronDown,
+  IconChevronUp
+} from '@tabler/icons-react';
 import { useRecommendationContext } from '../RecommendationContext';
 import { UnifiedContentRenderer } from '../../../components/RecommendationsV3/components/ContentSectionRenderer';
+import { AEOScoreBadge } from '../../../components/RecommendationsV3/components/ContentAnalysisTools';
+import { ContentAnalysisSidebar } from './ContentAnalysisSidebar';
 import { 
   updateRecommendationStatusV3, 
   completeRecommendationV3, 
@@ -22,8 +35,21 @@ export const Step3Refine: React.FC = () => {
         handleStatusChange, 
         setCurrentStep,
         setError,
-        setRecommendations 
+        setRecommendations,
+        brandName
     } = useRecommendationContext();
+
+    const [scorePanel, setScorePanel] = useState<{
+        isOpen: boolean;
+        content: string;
+        brandName?: string;
+        contentType?: string;
+    }>({
+        isOpen: false,
+        content: '',
+        brandName: '',
+        contentType: 'article'
+    });
 
     // Helper: Safely parse JSON
     const safeJsonParse = (value: any): any => {
@@ -36,6 +62,65 @@ export const Step3Refine: React.FC = () => {
             return safeJsonParse(raw.content);
         }
         return safeJsonParse(raw);
+    };
+
+    // Helper to extract clean text content for analysis
+    const extractVisibleContent = (content: any): string => {
+        if (!content) return '';
+        if (typeof content === 'string') {
+            // Check if it's JSON
+            if (content.trim().startsWith('{')) {
+                 const parsed = safeJsonParse(content);
+                 if (parsed && typeof parsed === 'object') {
+                     return extractVisibleContent(parsed);
+                 }
+            }
+            return content;
+        }
+        if (typeof content === 'object') {
+            if (content.content && typeof content.content === 'string') {
+                return extractVisibleContent(content.content);
+            }
+            // If sections array
+            if (Array.isArray(content.sections)) {
+                return content.sections.map((s: any) => `${s.title}\n${s.content}`).join('\n\n');
+            }
+        }
+        return '';
+    };
+
+    const getTemplateForAction = (rec: RecommendationV3): string => {
+        if (rec.assetType) return rec.assetType;
+        const action = rec.action.toLowerCase();
+        if (action.includes('video')) return 'short_video';
+        if (action.includes('article') || action.includes('blog')) return 'article';
+        if (action.includes('whitepaper') || action.includes('guide')) return 'whitepaper';
+        if (action.includes('comparison')) return 'comparison_table';
+        return 'article';
+    };
+
+    const getContentIcon = (type: string) => {
+        switch (type) {
+            case 'short_video':
+            case 'video':
+                return <IconVideo size={20} className="text-rose-500" />;
+            case 'comparison_table':
+            case 'table':
+                return <IconTable size={20} className="text-blue-500" />;
+            case 'social':
+            case 'social_post':
+                return <IconSocial size={20} className="text-purple-500" />;
+            case 'whitepaper':
+            case 'guide':
+                return <IconFileText size={20} className="text-orange-500" />;
+            case 'article':
+            default:
+                return <IconFileText size={20} className="text-emerald-500" />;
+        }
+    };
+
+    const cleanActionText = (text: string) => {
+        return text.replace(/^\[.*?\]\s*/, '').trim();
     };
 
     const handleToggleComplete = async (rec: RecommendationV3) => {
@@ -75,7 +160,7 @@ export const Step3Refine: React.FC = () => {
             exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="mb-6">
+            <div className="mb-8">
                 <h2 className="text-[20px] font-bold text-[#0f172a]">Review and Refine</h2>
                 <p className="text-[14px] text-[#64748b] mt-1">
                     {isColdStart 
@@ -96,11 +181,17 @@ export const Step3Refine: React.FC = () => {
             )}
             
             {/* List of Recommendations */}
-            <div className="space-y-6">
+            <div className="space-y-4">
                  <AnimatePresence>
                      {recommendations.map(rec => {
                          const guideRaw = rec.id ? guideMap.get(rec.id) : null;
                          const guideObj = extractGuideObject(guideRaw);
+                         const content = rec.id ? contentMap.get(rec.id) : null;
+                         const visibleContent = extractVisibleContent(content);
+                         const hasContent = !!visibleContent && visibleContent.length > 50;
+                         const contentType = getTemplateForAction(rec);
+                         const isExpanded = expandedRecId === rec.id;
+
                          // Logic for displaying guide vs content
                          // For cold start we show guide, for normal we show content editor
                          
@@ -114,59 +205,103 @@ export const Step3Refine: React.FC = () => {
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, x: 100 }}
-                                className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden"
+                                className={`bg-white border rounded-xl shadow-sm overflow-hidden transition-all duration-200 ${
+                                    isExpanded ? 'border-[#0ea5e9] shadow-md ring-1 ring-[#0ea5e9]/10' : 'border-[#e2e8f0] hover:border-[#cbd5e1]'
+                                }`}
                             >
                                 <div 
-                                    className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4 cursor-pointer hover:bg-[#f1f5f9] transition-colors"
-                                    onClick={() => setExpandedRecId(expandedRecId === rec.id ? null : (rec.id || null))}
+                                    className={`px-5 py-4 cursor-pointer transition-colors ${
+                                        isExpanded ? 'bg-[#f8fafc]' : 'bg-white hover:bg-[#f8fafc]'
+                                    }`}
+                                    onClick={() => setExpandedRecId(isExpanded ? null : (rec.id || null))}
                                 >
-                                    <div className="flex items-start justify-between gap-4">
-                                         <div className="flex items-center gap-3 flex-1">
-                                             <span className="text-[#64748b]">
-                                                {expandedRecId === rec.id ? <IconMinus size={20} /> : <IconPlus size={20} />}
-                                             </span>
-                                             <div className="flex-1">
-                                                <h3 className="text-[16px] font-medium text-[#1a1d29] leading-tight">{rec.action}</h3>
-                                                <p className="text-[12px] text-[#64748b] mt-1">KPI: {rec.kpi} · Effort: {rec.effort}</p>
-                                             </div>
+                                    <div className="flex items-start gap-4">
+                                         {/* Icon Column */}
+                                         <div className="mt-0.5 flex-shrink-0 opacity-80">
+                                             {getContentIcon(contentType)}
                                          </div>
-                                         
+
+                                         {/* Content Column */}
+                                         <div className="flex-1 min-w-0">
+                                            <div className="flex items-start justify-between gap-4">
+                                                <h3 className={`text-[15px] font-medium leading-relaxed pr-8 ${
+                                                    rec.isCompleted ? 'text-[#94a3b8] line-through' : 'text-[#1e293b]'
+                                                }`}>
+                                                    {cleanActionText(rec.action)}
+                                                </h3>
+                                                
+                                                <div className="flex-shrink-0 text-[#94a3b8]">
+                                                    {isExpanded ? <IconChevronUp size={20} /> : <IconChevronDown size={20} />}
+                                                </div>
+                                            </div>
+                                         </div>
+                                    </div>
+
+                                    {/* Action Bar (Only visible when Expanded OR if Completed) */}
+                                    {/* Actually, let's keep actions visible but subtle */}
+                                    <div className="mt-3 flex items-center justify-end gap-2 pl-9">
                                          {!rec.isCompleted ? (
                                              <div className="flex items-center gap-2">
+                                                 {/* AEO Score Badge - Temporarily Hidden
+                                                 {!isColdStart && hasContent && (
+                                                     <div className="mr-2" onClick={(e) => e.stopPropagation()}>
+                                                         <AEOScoreBadge
+                                                             content={visibleContent}
+                                                             brandName={brandName}
+                                                             contentType={contentType}
+                                                             onClick={() => setScorePanel({
+                                                                 isOpen: true,
+                                                                 content: visibleContent,
+                                                                 brandName: brandName,
+                                                                 contentType: contentType
+                                                             })}
+                                                         />
+                                                     </div>
+                                                 )}
+                                                 */}
+
                                                  <button 
                                                     onClick={(e) => { e.stopPropagation(); if(confirm('Stop tracking?')) handleStatusChange(rec.id!, 'removed'); }}
-                                                    className="p-1.5 text-gray-400 hover:text-red-500 rounded-md"
+                                                    className="p-1.5 text-[#94a3b8] hover:text-[#ef4444] hover:bg-[#fee2e2] rounded-lg transition-colors"
+                                                    title="Remove Recommendation"
                                                  >
-                                                     <IconTrash size={18} />
+                                                     <IconTrash size={16} />
                                                  </button>
                                                  <button 
                                                     onClick={(e) => { e.stopPropagation(); handleToggleComplete(rec); }}
-                                                    className="px-3 py-1.5 bg-[#06c686] text-white rounded-md text-[12px] font-semibold hover:bg-[#05a870]"
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#e2e8f0] text-[#64748b] rounded-lg text-[12px] font-medium hover:bg-[#06c686] hover:text-white hover:border-[#06c686] transition-all shadow-sm"
                                                  >
-                                                     Mark as Completed
+                                                     <IconCheck size={14} />
+                                                     <span>Mark Complete</span>
                                                  </button>
                                              </div>
                                          ) : (
-                                              <span className="px-3 py-1 rounded-full text-[11px] font-semibold bg-[#d1fae5] text-[#065f46]">✓ Completed</span>
+                                              <span className="flex items-center gap-1.5 px-3 py-1 bg-[#f0fdf4] text-[#166534] rounded-full text-[12px] font-medium border border-[#bbf7d0]">
+                                                  <IconCheck size={12} stroke={3} />
+                                                  Completed
+                                              </span>
                                          )}
                                     </div>
                                 </div>
                                 
-                                {expandedRecId === rec.id && (
-                                    <div className="p-6">
+                                {isExpanded && (
+                                    <div className="border-t border-[#e2e8f0]">
                                         {/* Content Display Logic */}
                                         {isColdStart ? (
                                             guideObj ? (
-                                                <div className="text-sm">
+                                                <div className="p-6 text-sm">
                                                     {/* Render Guide Object fields - Summary, Plan, etc. */}
-                                                    <p className="font-semibold">Goal: {guideObj?.summary?.goal || 'N/A'}</p>
-                                                    <div className="mt-4">
-                                                        <pre className="whitespace-pre-wrap bg-slate-900 text-slate-200 p-4 rounded text-xs overflow-auto max-h-96">
+                                                    <p className="font-semibold text-[#1e293b] mb-2">Goal: {guideObj?.summary?.goal || 'N/A'}</p>
+                                                    <div className="bg-[#0f172a] rounded-lg overflow-hidden">
+                                                        <div className="flex items-center px-4 py-2 bg-[#1e293b] border-b border-[#334155]">
+                                                            <span className="text-[11px] font-mono text-[#94a3b8]">JSON Data</span>
+                                                        </div>
+                                                        <pre className="p-4 text-[11px] font-mono text-[#e2e8f0] overflow-auto max-h-96 custom-scrollbar">
                                                             {JSON.stringify(guideObj, null, 2)}
                                                         </pre>
                                                     </div>
                                                 </div>
-                                            ) : <p className="text-sm text-red-500">Guide content not found.</p>
+                                            ) : <div className="p-6 text-sm text-[#ef4444]">Guide content not found.</div>
                                         ) : (
                                             <div className="text-sm">
                                                 {rec.id && contentMap.get(rec.id) ? (
@@ -180,8 +315,9 @@ export const Step3Refine: React.FC = () => {
                                                         }}
                                                     />
                                                 ) : (
-                                                    <div className="p-8 text-center text-gray-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                                                        <span className="block mb-2">Loading content...</span>
+                                                    <div className="p-12 flex flex-col items-center justify-center text-center">
+                                                        <div className="w-8 h-8 border-2 border-[#e2e8f0] border-t-[#0ea5e9] rounded-full animate-spin mb-4" />
+                                                        <span className="text-[13px] text-[#64748b]">Loading content...</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -193,6 +329,14 @@ export const Step3Refine: React.FC = () => {
                      })}
                  </AnimatePresence>
             </div>
+            
+            <ContentAnalysisSidebar
+                isOpen={scorePanel.isOpen}
+                onClose={() => setScorePanel(prev => ({ ...prev, isOpen: false }))}
+                content={scorePanel.content}
+                brandName={scorePanel.brandName}
+                contentType={scorePanel.contentType}
+            />
         </motion.div>
     );
 };

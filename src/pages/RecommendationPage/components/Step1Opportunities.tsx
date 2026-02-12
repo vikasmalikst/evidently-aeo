@@ -16,7 +16,7 @@ export const Step1Opportunities: React.FC = () => {
         handleStatusChange, 
         handleNavigate,
         selectedBrandId,
-        selectBrand, // to reload
+        setAllRecommendations,
         setError
     } = useRecommendationContext();
     
@@ -29,12 +29,17 @@ export const Step1Opportunities: React.FC = () => {
         try {
             if (!generationId) return;
             const response = await createCustomRecommendationV3(generationId, recommendation);
-            if (response.success) {
+            if (response.success && response.data) {
                 setShowAddCustomModal(false);
-                // Trigger reload by re-selecting brand or invalidated cache
-                // In v3 architecture, we might just reload the page or trigger a data refresh
-                // For now, simpler to reuse the selectBrand trigger which reloads generation
-                selectBrand(selectedBrandId); 
+                
+                // Manually update state to reflect change immediately without reload
+                // @ts-ignore - The response.data matches RecommendationV3 but might have slight type mismatches from API
+                const newRec = response.data;
+                
+                // Add to allRecommendations - this will trigger the filter effect in useRecommendationEngine
+                // to update the displayed list automatically
+                setAllRecommendations(prev => [newRec, ...prev]);
+                
             } else {
                 setError?.(response.error || 'Failed to create recommendation');
             }

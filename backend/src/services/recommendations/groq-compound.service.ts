@@ -89,8 +89,9 @@ export class GroqCompoundService {
         console.log(`🚀 [GroqCompoundService] Generating with ${model} (Active Grounding: ${enableWebSearch}, JSON: ${jsonMode})`);
 
         let iterations = 0;
-        const maxIterations = 5;
+        const maxIterations = 10;
         const allExecutedTools: any[] = [];
+        let lastMessageContent = '';
 
         while (iterations < maxIterations) {
             iterations++;
@@ -112,6 +113,7 @@ export class GroqCompoundService {
             try {
                 const completion = await this.groq.chat.completions.create(completionParams);
                 const message = completion.choices[0].message;
+                lastMessageContent = message.content || '';
 
                 // Handle Tool Calls
                 if (message.tool_calls && message.tool_calls.length > 0) {
@@ -165,7 +167,12 @@ export class GroqCompoundService {
             }
         }
 
-        throw new Error('Groq tool-calling loop exceeded max iterations');
+        console.warn(`⚠️ [GroqCompoundService] Max iterations (${maxIterations}) reached. Returning best-effort content.`);
+        return {
+            content: lastMessageContent,
+            model: model,
+            executedTools: allExecutedTools
+        };
     }
 }
 

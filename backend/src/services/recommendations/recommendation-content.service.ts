@@ -930,10 +930,21 @@ ${contentStyleGuide}
       // Enable Active Grounding via our MCP tool-calling loop
       const enableSearch = true;
 
+      const groundingStrategy = `
+You are a senior content strategist and expert researcher. 
+Your goal is to produce high-quality, grounded content by leveraging real-time data.
+
+GROUNDING STRATEGY:
+1. GAP ANALYSIS: Identify all factual gaps (current pricing, 2026 regulations, specific competitor names, etc.).
+2. BATCH RESEARCH: Use the web_search tool to verify these gaps. Execute multiple search queries in parallel (in a single tool call) to maximize efficiency.
+3. CONTEXTUAL SYNTHESIS: Integrate results into a neutral, authoritative voice. 
+4. CITE SOURCES: Use markdown links or inline attribution for verified facts.
+`.trim();
+
       const groqResult = await groqCompoundService.generateContent({
         systemPrompt: isColdStartGuide
           ? 'You are a senior marketing consultant and AEO strategist. Generate implementation guides.'
-          : 'You are a senior content strategist. Produce high-quality, grounded content. Use the web_search tool to verify facts.',
+          : groundingStrategy,
         userPrompt: prompt,
         model: GROQ_MODELS.LLAMA_70B,
         temperature: isColdStartGuide ? 0.4 : 0.6,
@@ -960,6 +971,7 @@ ${contentStyleGuide}
         modelUsed = 'meta-llama/llama-3.3-70b-instruct';
 
         const result = await openRouterCollectorService.executeQuery({
+          collectorType: 'content',
           systemPrompt: 'You are a senior content strategist. Produce high-quality, grounded content.',
           prompt: prompt,
           model: modelUsed,

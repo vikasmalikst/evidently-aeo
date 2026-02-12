@@ -103,18 +103,7 @@ export class GroqCompoundService {
 
             // 2. Web Search (Compound models only)
             if (enableWebSearch) {
-                // According to Groq docs, we use 'compound_custom' for configuring tools
-                // But the SDK might support standard 'tools' array if mapping exists.
-                // For 'groq/compound', it enables tools automatically, but we can explicitly request them
-                // to be safe or to restrict them.
-
-                // Docs example: 
-                // compound_custom: { tools: { enabled_tools: ["web_search"] } }
-                // The SDK might require this as a custom property or via 'tools' depending on version.
-                // We'll use the 'extra body' approach for 'compound_custom' to compatibility.
-                // Wait, SDK v0.9+ support. We'll try passing it in the options or check type defs.
-                // Since we can't check type defs easily, we'll cast to any.
-
+                completionParams.tool_choice = 'auto'; // Explicitly allow tools to prevent 400 conflict
                 (completionParams as any).compound_custom = {
                     tools: {
                         enabled_tools: ["web_search"]

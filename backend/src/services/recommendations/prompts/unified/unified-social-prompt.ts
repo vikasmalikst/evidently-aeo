@@ -76,6 +76,13 @@ Generate the social thread adhering strictly to the structure above.
 - **Voice:** Direct address ("You").
 - **Formatting:** Markdown. Use "---" references to separate posts if needed, but output as one continuous markdown stream.
 
+**GROUNDING RULE (MANDATORY):**
+If VERIFIED RESEARCH DATA is provided in the context above, you MUST:
+1. Cite at least 2 specific data points from the research in your content.
+2. Use inline markdown links [Source Title](URL) from the research citations.
+3. If research data contradicts your training knowledge, DEFER to the research (it is more current).
+4. If no source is available for a claim, use [FILL_IN: source needed] placeholder.
+
 **OUTPUT FORMAT (JSON v5.0):**
 Return a SINGLE VALID JSON object. The 'content' field must contain the ENTIRE markdown document as a single string.
 

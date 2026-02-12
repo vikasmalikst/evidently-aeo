@@ -7,7 +7,6 @@
 
 import { supabaseAdmin } from '../../config/supabase';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
-import { strategyPlanner } from './strategy-planner.service';
 
 // Import templates from frontend (we'll reference them, not duplicate)
 export type ContentTemplateType = 'article' | 'whitepaper' | 'short_video' | 'expert_community_response' | 'podcast' | 'comparison_table' | 'social_media_thread';
@@ -103,50 +102,30 @@ export class StrategyGenerationService {
                 }
             }
 
-            // 2.75 Generate Strategic Angle (Audience, Hook, Counter-Strike)
-            // This is the new "Brain" of the operation
-            let strategicAngle;
-            try {
-                // Use the imported strategyPlanner instance directly
-                strategicAngle = await strategyPlanner.generateStrategicAngle(
-                    {
-                        name: brand?.name || 'Brand',
-                        industry: brand?.industry,
-                        competitors: brand?.competitors // Assuming brand object has this, if not we'll need to fetch or defaulting in the service
-                    },
-                    rec.action,
-                    contentType
-                );
+            // 3. Build combined strategy + angle prompt (single LLM call)
+            const competitors = brand?.competitors && brand.competitors.length > 0
+                ? brand.competitors.join(', ')
+                : 'standard industry alternatives';
 
-                console.log('🔌 [StrategyService] Strategic Angle Generated & Injected:', JSON.stringify(strategicAngle, null, 2));
-
-            } catch (e) {
-                console.warn('⚠️ [StrategyService] Strategy Planner failed, proceeding with defaults', e);
-                strategicAngle = {
-                    targetAudience: 'General Audience',
-                    primaryPainPoint: 'Unspecified',
-                    theHook: 'Standard Industry Perspective'
-                };
-            }
-
-            // 3. Build strategy enrichment prompt
             const prompt = this.buildStrategyPrompt({
                 recommendation: rec,
                 brand: brand || { name: 'Brand' },
                 templateSections,
                 contentType,
                 customInstructions,
-                strategicAngle // Pass the angle to the prompt builder
+                competitors
             });
 
-            console.log(`🧠 [StrategyService] Generating strategy for ${recommendationId} (${contentType})`);
-            console.log('📋 [StrategyService] Full Prompt Preview (First 500 chars):', prompt.substring(0, 500));
+            console.log(`🧠 [StrategyService] Generating strategy + angle for ${recommendationId} (${contentType})`);
+            console.log('\n📤 [StrategyService] ========== STRATEGY PROMPT ==========');
+            console.log(prompt);
+            console.log('📤 [StrategyService] ========== END STRATEGY PROMPT ==========\n');
 
-            // 4. Call LLM for strategy enrichment
+            // 4. Call LLM for combined strategy enrichment + strategic angle
             const response = await openRouterCollectorService.executeQuery({
                 collectorType: 'content',
                 prompt,
-                maxTokens: 6000, // Reasoning alone takes 3000+, increased to 6000
+                maxTokens: 6000,
                 temperature: 0.5,
                 model: 'meta-llama/llama-3.3-70b-instruct'
             });
@@ -155,7 +134,12 @@ export class StrategyGenerationService {
                 return { success: false, error: 'LLM returned empty response' };
             }
 
-            // 5. Parse strategy plan
+            // Log the full LLM response
+            console.log('\n📥 [StrategyService] ========== STRATEGY RESPONSE ==========');
+            console.log(response.response);
+            console.log('📥 [StrategyService] ========== END STRATEGY RESPONSE ==========\n');
+
+            // 5. Parse strategy plan (now includes strategic angle)
             const strategyPlan = this.parseStrategyResponse(
                 response.response,
                 {
@@ -167,17 +151,6 @@ export class StrategyGenerationService {
                     channel: rec.channel
                 }
             );
-
-            if (strategyPlan && strategicAngle) {
-                // Attach the strategic angle to the plan object if your interface supports it
-                // For now, we'll embed it into the "strategicGuidance" field as a summary
-                strategyPlan.strategicGuidance = {
-                    keyFocus: strategicAngle.theHook,
-                    aeoTargets: [strategicAngle.targetAudience],
-                    toneGuidelines: `Address pain point: ${strategicAngle.primaryPainPoint}`,
-                    differentiation: strategicAngle.competitorCounterStrike || ''
-                };
-            }
 
             if (!strategyPlan) {
                 return { success: false, error: 'Failed to parse strategy response' };
@@ -209,18 +182,9 @@ export class StrategyGenerationService {
         templateSections,
         contentType,
         customInstructions,
-        strategicAngle
+        competitors
     }: any): string {
         const templatesJson = JSON.stringify(templateSections, null, 2);
-
-        // Incorporate the strategic angle into the prompt context
-        const angleContext = strategicAngle ? `
-**STRATEGIC DIRECTION (CRITICAL):**
-- **Target Audience:** ${strategicAngle.targetAudience}
-- **Primary Pain Point:** ${strategicAngle.primaryPainPoint}
-- **The Hook (Unique Angle):** ${strategicAngle.theHook}
-${strategicAngle.competitorCounterStrike ? `- **Competitor Counter-Strike:** ${strategicAngle.competitorCounterStrike}` : ''}
-` : '';
 
         return `You are a World-Class Content Strategist for ${brand.name}.
 Your goal is to plan a high-performance piece of content about: "${recommendation.action}".
@@ -229,38 +193,75 @@ Your goal is to plan a high-performance piece of content about: "${recommendatio
 - Brand: ${brand.name}${brand.industry ? ` (${brand.industry})` : ''}
 - Channel: ${recommendation.channel}
 - Content Type: ${contentType}
-${angleContext}
+- Competitors: ${competitors}
 
-**Your Task:**
-Rewrite the provided content structure to align with the **STRATEGIC DIRECTION** above. 
-You are NOT just copying the template. You are customizing every instruction to hit the specific Audience and Hook defined above.
+You have 3 tasks. Complete ALL of them in a single JSON response.
 
-1. **Update "title":** Make it specific to the ${strategicAngle?.targetAudience || 'audience'} and promise to solve the "${strategicAngle?.primaryPainPoint || 'pain point'}".
-2. **Update "content":** Replace the generic instructions with specific guidance that forces the writer to address the **Competitor Counter-Strike** and **Hook**. 
+---
+
+**Task 1: Define Strategic Angle**
+Before writing anything, define WHO this content is for and WHY they should care.
+
+1. **Target Audience:** Be hyper-specific (e.g., "Overworked DevOps Engineers at mid-market SaaS companies", NOT "Tech People").
+2. **Primary Pain Point:** What KEEPS THEM UP AT NIGHT regarding "${recommendation.action}"?
+3. **The Hook:** What is the unique, contrarian, or "insider" perspective ${brand.name} can take? Avoid generic "We are better".
+4. **Competitor Counter-Strike:** How do competitors (${competitors}) usually fail at this? How does ${brand.name} succeed where they fail?
+
+---
+
+**Task 2: Rewrite Content Structure**
+Using the Strategic Angle you defined in Task 1, rewrite the provided content structure.
+You are NOT just copying the template. You are customizing every instruction to hit the specific Audience and Hook.
+
+1. **Update "title":** Make it specific to the Target Audience and promise to solve their Pain Point.
+2. **Update "content":** Replace generic instructions with specific guidance that leverages the Hook and Competitor Counter-Strike.
    - *Example:* Instead of "Explain X", say "Explain X by contrasting it with [Competitor]'s failure to do Y."
 
-**Task 3: Generate Research Queries (CRITICAL)**
-You must generate exactly 3 web search queries to retrieve real-time facts.
-RULES:
-1. Keep queries SHORT (5-12 words).
-2. Each query must serve a DIFFERENT purpose:
-   - Query 1 (Topic Authority): Recent data, stats, benchmarks for "${recommendation.action}" (include 2026).
-   - Query 2 (Brand Evidence): Facts about ${brand.name} related to this topic (case studies, prices, features).
-   - Query 3 (Competitive Landscape): Comparisons or market context.
+---
+
+**Task 3: Generate "Ground Truth" Research Queries (CRITICAL)**
+You are preparing a research dossier for a content writer. Your goal is to find the MOST UP-TO-DATE and IMPACTFUL information to make this content authoritative.
+
+**Analyze the Recommendation:** "${recommendation.explanation}"
+**Identify 3-4 Knowledge Gaps.** What data is missing? What claims need proof? What current trends are relevant?
+
+**Generate exactly 3 Search Queries using these specific tactics (pick the 3 most relevant):**
+1.  **Trend Hunter:** Use current year ("2025" or "2026") to find latest stats/benchmarks.
+    *   *Example:* "AI marketing trends 2026 statistics"
+2.  **Voice of Customer:** Use \`site:reddit.com\` or \`site:quora.com\` to find real user discussions/complaints.
+    *   *Example:* "site:reddit.com ${recommendation.action} vs competitors"
+3.  **Competitor Spy:** Look for specific weaknesses or features in competitor offerings.
+    *   *Example:* "[Competitor Name] pricing tier hidden costs"
+4.  **Fact Verifier:** Find third-party validation for specific claims.
+    *   *Example:* "${brand.name} vs [Competitor] latency benchmark"
+
+**Constraint:** 
+- Queries must be formatted for a RAW search engine (Brave Search). 
+- Keep them CONCISE and keyword-heavy. 
+- Do NOT use natural language questions like "What is the..."
+
+---
 
 **Input Template:**
 ${templatesJson}
 
 **Output Requirements:**
 - Return ONLY valid JSON.
-- Return a JSON object with two keys:
-  1. "structure": Array of section objects (same as input)
-  2. "research_queries": Array of exactly 3 strings based on the rules above.
+- Return a JSON object with THREE keys:
+  1. "strategic_angle": Object with targetAudience, primaryPainPoint, theHook, competitorCounterStrike
+  2. "structure": Array of section objects (same structure as input)
+  3. "research_queries": Array of exactly 3 strings
 - Do NOT return a top-level Array.
 - Use \\n for line breaks.
 
 **Example Output Format:**
 {
+  "strategic_angle": {
+    "targetAudience": "Overworked DevOps Engineers at mid-market SaaS",
+    "primaryPainPoint": "Spending 40% of time on manual deployments",
+    "theHook": "The CI/CD pipeline you built is actually slowing you down",
+    "competitorCounterStrike": "Jenkins requires 3x more maintenance overhead"
+  },
   "structure": [
     {
       "id": "section_id",
@@ -270,9 +271,9 @@ ${templatesJson}
     }
   ],
   "research_queries": [
-    "AI translation ROI enterprise statistics 2026",
-    "${brand.name} enterprise features case studies",
-    "${brand.name} vs competitors enterprise comparison"
+    "enterprise AI adoption stats 2026",
+    "site:reddit.com ${brand.name} integration issues",
+    "${brand.name} vs CompetitorX feature comparison"
   ]
 }
 ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`;
@@ -337,20 +338,22 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
 
             let enrichedSections: StructureSection[] = [];
             let researchQueries: string[] = [];
+            let strategicAngle: any = null;
 
             if (Array.isArray(parsed)) {
                 // Legacy format (just the sections array)
                 enrichedSections = parsed;
             } else if (parsed.structure && Array.isArray(parsed.structure)) {
-                // New format (object with structure + research_queries)
+                // New format (object with structure + research_queries + strategic_angle)
                 enrichedSections = parsed.structure;
                 researchQueries = parsed.research_queries || [];
+                strategicAngle = parsed.strategic_angle || null;
             } else {
                 console.error('❌ Invalid JSON structure (neither array nor object with structure)');
                 return null;
             }
 
-            console.log(`✅ Parsed ${enrichedSections.length} enriched sections and ${researchQueries.length} research queries`);
+            console.log(`✅ Parsed ${enrichedSections.length} enriched sections, ${researchQueries.length} research queries, angle: ${strategicAngle ? 'yes' : 'no'}`);
 
             // Use the enriched sections directly, ensuring we keep all original properties if missing
             const finalSections = context.templateSections.map(original => {
@@ -376,10 +379,10 @@ ${customInstructions ? `\nAdditional instructions: ${customInstructions}` : ''}`
                 structure: finalSections,
                 researchQueries: researchQueries.length > 0 ? researchQueries : undefined,
                 strategicGuidance: {
-                    keyFocus: '',
-                    aeoTargets: [],
-                    toneGuidelines: '',
-                    differentiation: ''
+                    keyFocus: strategicAngle?.theHook || '',
+                    aeoTargets: strategicAngle?.targetAudience ? [strategicAngle.targetAudience] : [],
+                    toneGuidelines: strategicAngle?.primaryPainPoint ? `Address pain point: ${strategicAngle.primaryPainPoint}` : '',
+                    differentiation: strategicAngle?.competitorCounterStrike || ''
                 }
             };
         } catch (error) {

@@ -25,6 +25,7 @@ import {
   type TopicsPromptsConfigV2Row,
   type ArchivedTopicsPromptsV2,
 } from '../../api/promptManagementApi';
+import { QueryTagFilter } from '../../components/common/QueryTagFilter';
 
 export const TopicsPromptsConfigV2 = () => {
   const { selectedBrandId, selectedBrand } = useManualBrandDashboard();
@@ -38,6 +39,7 @@ export const TopicsPromptsConfigV2 = () => {
   const [countries, setCountries] = useState<BrightdataCountry[]>([]);
   const [countriesError, setCountriesError] = useState<string | null>(null);
   const [topicFilter, setTopicFilter] = useState<string>('__ALL__');
+  const [queryTagFilter, setQueryTagFilter] = useState<string[]>([]);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   const [importConfirm, setImportConfirm] = useState<{
     isOpen: boolean;
@@ -138,15 +140,15 @@ export const TopicsPromptsConfigV2 = () => {
     const versions = new Set<string>();
     history.forEach(h => versions.add(h.version_tag));
     return Array.from(versions).sort((a, b) => {
-       const vA = parseInt(a.replace('V', ''), 10) || 0;
-       const vB = parseInt(b.replace('V', ''), 10) || 0;
-       return vB - vA;
+      const vA = parseInt(a.replace('V', ''), 10) || 0;
+      const vB = parseInt(b.replace('V', ''), 10) || 0;
+      return vB - vA;
     });
   }, [history]);
 
   const reconstructedRows = useMemo(() => {
     if (selectedVersion === 'Current') return [];
-    
+
     const targetVer = parseInt(selectedVersion.replace('V', ''), 10);
     if (isNaN(targetVer)) return [];
 
@@ -158,42 +160,57 @@ export const TopicsPromptsConfigV2 = () => {
 
     allTopics.forEach(topic => {
       const archive = history.find(h => h.topic_name.trim() === topic && h.version_tag === selectedVersion);
-      
+
       if (archive) {
-         archive.prompts.forEach((p: any) => {
-             result.push({
-                 id: p.id || `archive-${archive.id}-${Math.random()}`,
-                 topic: archive.topic_name,
-                 prompt: p.query_text || p.text || '',
-                 locale: p.locale,
-                 country: p.country,
-                 version: targetVer,
-                 clientId: `archive-row-${archive.id}-${p.id || Math.random()}`,
-                 isNew: false
-             });
-         });
-         return;
+        archive.prompts.forEach((p: any) => {
+          result.push({
+            id: p.id || `archive-${archive.id}-${Math.random()}`,
+            topic: archive.topic_name,
+            prompt: p.query_text || p.text || '',
+            locale: p.locale,
+            country: p.country,
+            version: targetVer,
+            clientId: `archive-row-${archive.id}-${p.id || Math.random()}`,
+            isNew: false
+          });
+        });
+        return;
       }
 
       const currentRowsForTopic = rows.filter(r => r.topic.trim() === topic);
       if (currentRowsForTopic.length > 0) {
-          const currentVer = currentRowsForTopic[0].version || 1;
-          if (currentVer <= targetVer) {
-              currentRowsForTopic.forEach(r => result.push(r));
-          }
+        const currentVer = currentRowsForTopic[0].version || 1;
+        if (currentVer <= targetVer) {
+          currentRowsForTopic.forEach(r => result.push(r));
+        }
       }
     });
-    
+
     return result;
   }, [selectedVersion, rows, history]);
 
   const displayedRowsSource = selectedVersion === 'Current' ? rows : reconstructedRows;
 
   const filteredRows = useMemo(() => {
-    if (topicFilter === '__ALL__') return displayedRowsSource;
-    const normalized = topicFilter.trim().toLowerCase();
-    return displayedRowsSource.filter(r => r.topic.trim().toLowerCase() === normalized);
-  }, [displayedRowsSource, topicFilter]);
+    let result = displayedRowsSource;
+
+    // 1. Filter by Topic
+    if (topicFilter !== '__ALL__') {
+      const normalized = topicFilter.trim().toLowerCase();
+      result = result.filter(r => r.topic.trim().toLowerCase() === normalized);
+    }
+
+    // 2. Filter by Query Tag (Branded/Neutral)
+    if (queryTagFilter.length > 0) {
+      // queryTagFilter is ['bias'] for Branded, ['blind'] for Neutral
+      // Backend returns 'bias' or 'blind' in r.queryTag
+      // If queryTag is undefined/null, we might want to treat it as Neutral or just not match?
+      // Let's match exact string.
+      result = result.filter(r => r.queryTag && queryTagFilter.includes(r.queryTag));
+    }
+
+    return result;
+  }, [displayedRowsSource, topicFilter, queryTagFilter]);
 
   const topicOptions = useMemo(() => {
     const normalizedToLabel = new Map<string, string>();
@@ -702,6 +719,16 @@ export const TopicsPromptsConfigV2 = () => {
               <div className="w-px h-6 bg-[var(--border-default)] mx-2" />
 
               <div className="flex items-center gap-2">
+                <QueryTagFilter
+                  value={queryTagFilter}
+                  onChange={setQueryTagFilter}
+                  variant="outline"
+                />
+              </div>
+
+              <div className="w-px h-6 bg-[var(--border-default)] mx-2" />
+
+              <div className="flex items-center gap-2">
                 <IconFilter size={16} className="text-[var(--text-caption)]" />
                 <select
                   value={topicFilter}
@@ -721,9 +748,8 @@ export const TopicsPromptsConfigV2 = () => {
                 <button
                   onClick={load}
                   disabled={Boolean(refreshButtonDisabledReason)}
-                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${
-                    refreshButtonDisabledReason ? 'pointer-events-none' : ''
-                  }`}
+                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${refreshButtonDisabledReason ? 'pointer-events-none' : ''
+                    }`}
                 >
                   <IconRefresh size={18} />
                 </button>
@@ -732,9 +758,8 @@ export const TopicsPromptsConfigV2 = () => {
                 <button
                   onClick={() => setIsEditMode(v => !v)}
                   disabled={Boolean(editModeButtonDisabledReason)}
-                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${
-                    isEditMode ? 'border-[var(--accent-primary)]' : ''
-                  } ${editModeButtonDisabledReason ? 'pointer-events-none' : ''}`}
+                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${isEditMode ? 'border-[var(--accent-primary)]' : ''
+                    } ${editModeButtonDisabledReason ? 'pointer-events-none' : ''}`}
                 >
                   <IconPencil size={18} />
                 </button>
@@ -743,9 +768,8 @@ export const TopicsPromptsConfigV2 = () => {
                 <button
                   onClick={handleAddRow}
                   disabled={Boolean(addButtonDisabledReason)}
-                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${
-                    addButtonDisabledReason ? 'pointer-events-none' : ''
-                  }`}
+                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${addButtonDisabledReason ? 'pointer-events-none' : ''
+                    }`}
                 >
                   <IconPlus size={18} />
                 </button>
@@ -754,9 +778,8 @@ export const TopicsPromptsConfigV2 = () => {
                 <button
                   onClick={handleExportCsv}
                   disabled={Boolean(exportButtonDisabledReason)}
-                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${
-                    exportButtonDisabledReason ? 'pointer-events-none' : ''
-                  }`}
+                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${exportButtonDisabledReason ? 'pointer-events-none' : ''
+                    }`}
                 >
                   <IconDownload size={18} />
                 </button>
@@ -765,9 +788,8 @@ export const TopicsPromptsConfigV2 = () => {
                 <button
                   onClick={handleImportClick}
                   disabled={Boolean(importButtonDisabledReason)}
-                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${
-                    importButtonDisabledReason ? 'pointer-events-none' : ''
-                  }`}
+                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${importButtonDisabledReason ? 'pointer-events-none' : ''
+                    }`}
                 >
                   <IconUpload size={18} />
                 </button>
@@ -793,9 +815,8 @@ export const TopicsPromptsConfigV2 = () => {
                   <button
                     onClick={handleSaveClick}
                     disabled={Boolean(saveDisabledReason)}
-                    className={`px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium disabled:opacity-50 ${
-                      saveDisabledReason ? 'pointer-events-none' : ''
-                    }`}
+                    className={`px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium disabled:opacity-50 ${saveDisabledReason ? 'pointer-events-none' : ''
+                      }`}
                   >
                     {isSaving ? 'Saving...' : 'Save changes'}
                   </button>
@@ -862,9 +883,8 @@ export const TopicsPromptsConfigV2 = () => {
                               onChange={(e) => updateRow(row.clientId, { topic: e.target.value })}
                               readOnly={isEditingBlocked}
                               title={isEditingBlocked ? (editBlockedReason ?? undefined) : undefined}
-                              className={`w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm ${
-                                isEditingBlocked ? 'bg-[var(--bg-secondary)]' : 'bg-white'
-                              }`}
+                              className={`w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm ${isEditingBlocked ? 'bg-[var(--bg-secondary)]' : 'bg-white'
+                                }`}
                               placeholder="Topic"
                             />
                           </td>
@@ -874,9 +894,8 @@ export const TopicsPromptsConfigV2 = () => {
                               onChange={(e) => updateRow(row.clientId, { prompt: e.target.value })}
                               readOnly={isEditingBlocked}
                               title={isEditingBlocked ? (editBlockedReason ?? undefined) : undefined}
-                              className={`w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm resize-none overflow-y-auto ${
-                                isEditingBlocked ? 'bg-[var(--bg-secondary)]' : 'bg-white'
-                              }`}
+                              className={`w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm resize-none overflow-y-auto ${isEditingBlocked ? 'bg-[var(--bg-secondary)]' : 'bg-white'
+                                }`}
                               placeholder="Prompt / query"
                             />
                           </td>
@@ -899,9 +918,8 @@ export const TopicsPromptsConfigV2 = () => {
                                     onFocus={() => {
                                       if (countries.length === 0) loadCountries();
                                     }}
-                                    className={`w-full h-12 min-w-[240px] px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm ${
-                                      isEditingBlocked ? 'bg-[var(--bg-secondary)] pointer-events-none' : 'bg-white'
-                                    }`}
+                                    className={`w-full h-12 min-w-[240px] px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm ${isEditingBlocked ? 'bg-[var(--bg-secondary)] pointer-events-none' : 'bg-white'
+                                      }`}
                                   >
                                     {countries.length === 0 ? (
                                       <option value={currentCode}>
@@ -937,9 +955,8 @@ export const TopicsPromptsConfigV2 = () => {
                                 <button
                                   onClick={() => handleDeleteRow(row.clientId)}
                                   disabled={isEditingBlocked}
-                                  className={`h-12 w-12 inline-flex items-center justify-center rounded-lg hover:bg-[var(--bg-secondary)] disabled:opacity-50 ${
-                                    isEditingBlocked ? 'pointer-events-none' : ''
-                                  }`}
+                                  className={`h-12 w-12 inline-flex items-center justify-center rounded-lg hover:bg-[var(--bg-secondary)] disabled:opacity-50 ${isEditingBlocked ? 'pointer-events-none' : ''
+                                    }`}
                                 >
                                   <IconTrash size={18} className="text-[var(--text-caption)]" />
                                 </button>

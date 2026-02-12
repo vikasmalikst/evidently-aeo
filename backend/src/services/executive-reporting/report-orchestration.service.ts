@@ -45,7 +45,8 @@ export class ReportOrchestrationService {
             periodStart,
             periodEnd,
             comparisonStart,
-            comparisonEnd
+            comparisonEnd,
+            request.queryTags
         );
 
         // Step 2: Generate executive summary

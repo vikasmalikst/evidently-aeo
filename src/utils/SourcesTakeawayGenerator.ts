@@ -1,4 +1,4 @@
-import type { SourceData } from '../pages/SearchSourcesR2';
+import type { SourceData } from '../types/citation-sources';
 
 export type TakeawayType = 'critical' | 'opportunity' | 'insight' | 'info';
 

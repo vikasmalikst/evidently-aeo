@@ -6,9 +6,8 @@
  */
 
 import { supabaseAdmin } from '../../config/database';
-import { getCerebrasKey, getCerebrasModel } from '../../utils/api-key-resolver';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
-import { shouldUseOllama, callOllamaAPI } from '../scoring/ollama-client.service';
+import { groqCompoundService } from './groq-compound.service';
 import {
   detectContentAsset,
   detectPlatform,
@@ -16,10 +15,11 @@ import {
   NewContentPromptContext,
   StructureConfig
 } from './new-content-factory';
+// webResearchService removed - Groq Compound handles search natively
 import { BrandContextV3, RecommendationV3, ContentAssetType } from './recommendation.types';
 
 export type RecommendationContentStatus = 'generated' | 'accepted' | 'rejected';
-export type RecommendationContentProvider = 'cerebras' | 'openrouter' | 'ollama';
+export type RecommendationContentProvider = 'groq' | 'openrouter';
 
 export interface GenerateRecommendationContentRequest {
   contentType?: string; // e.g. 'draft', 'blog_intro', 'faq', 'linkedin_post'
@@ -266,16 +266,7 @@ function detectSourceType(domain: string): 'youtube' | 'article_site' | 'collabo
 }
 
 class RecommendationContentService {
-  private cerebrasApiKey: string | null;
-  private cerebrasModel: string;
-
-  constructor() {
-    this.cerebrasApiKey = getCerebrasKey();
-    this.cerebrasModel = getCerebrasModel();
-    if (!this.cerebrasApiKey) {
-      console.warn('⚠️ [RecommendationContentService] CEREBRAS_API_KEY not configured');
-    }
-  }
+  constructor() { }
 
   async getLatestContent(recommendationId: string, customerId: string): Promise<RecommendationContentRecord | null> {
     const { data, error } = await supabaseAdmin
@@ -466,6 +457,12 @@ Your content should help the customer's brand improve the targeted KPI by execut
             contextFilesContent += `--- DOCUMENT ${index + 1}: ${file.name} ---\n${file.content}\n--- END DOCUMENT ${index + 1} ---\n\n`;
           });
         }
+
+        // --- WEB RESEARCH REMOVED ---
+        // Groq Compound now handles web research natively during generation.
+        // We no longer execute explicit Brave Search queries here.
+        // ----------------------------
+
       } catch (e) {
         console.warn('⚠️ [RecommendationContentService] Failed to parse strategy plan for context files', e);
       }
@@ -902,77 +899,61 @@ ${contentStyleGuide}
     console.log(prompt);
     console.log('📤 [RecommendationContentService] ========== END PROMPT ==========\n');
 
-    // Call providers - Ollama (if enabled) → OpenRouter → Cerebras
+    // Call providers - Groq Compound (Primary) → OpenRouter (Fallback)
     let content: string | null = null;
     let providerUsed: RecommendationContentProvider | undefined;
     let modelUsed: string | undefined;
 
-    // Try Ollama first (if enabled for this brand)
-    const useOllama = await shouldUseOllama(rec.brand_id);
-    if (useOllama) {
-      try {
-        console.log('🦙 [RecommendationContentService] Attempting Ollama API (primary for this brand)...');
-        const systemMessage = isColdStartGuide
-          ? 'You are a senior marketing consultant and AEO strategist. Generate implementation guides for recommendations. Respond only with valid JSON, no markdown code blocks, no explanations.'
-          : 'You are a senior marketing consultant and AEO strategist. Generate content for recommendations. Respond only with valid JSON, no markdown code blocks, no explanations.';
-        const ollamaResponse = await callOllamaAPI(systemMessage, prompt, rec.brand_id);
+    // 1. Try Groq Compound (Primary)
+    try {
+      console.log('🚀 [RecommendationContentService] Attempting Groq Compound (Primary)...');
+      // Enable native web search for content generation (but not for guides or clean drafts if preferred)
+      // We generally enable it to fulfill the "Grounding Rule".
+      const enableSearch = !isColdStartGuide;
 
-        // Ollama returns JSON string, may need parsing
-        let parsedContent = ollamaResponse;
+      const groqResult = await groqCompoundService.generateContent({
+        systemPrompt: isColdStartGuide
+          ? 'You are a senior marketing consultant and AEO strategist. Generate implementation guides.'
+          : 'You are a senior content strategist. Produce high-quality, grounded content.',
+        userPrompt: prompt,
+        model: 'groq/compound', // Use the compound model
+        temperature: isColdStartGuide ? 0.4 : 0.6,
+        maxTokens: 8000,
+        jsonMode: false, // Compound doesn't support json_object mode with tools usually, but we rely on prompt instruction
+        enableWebSearch: enableSearch
+      });
 
-        // Remove markdown code blocks if present
-        if (parsedContent.includes('```json')) {
-          parsedContent = parsedContent.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-        } else if (parsedContent.includes('```')) {
-          parsedContent = parsedContent.replace(/```\s*/g, '');
-        }
-
-        // Extract JSON object if wrapped in other text
-        const jsonMatch = parsedContent.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsedContent = jsonMatch[0];
-        }
-
-        content = parsedContent;
-        if (content) {
-          providerUsed = 'ollama';
-          modelUsed = 'ollama'; // Ollama model name is in config, not returned in response
-          console.log('✅ [RecommendationContentService] Ollama API succeeded');
-        } else {
-          console.warn('⚠️ [RecommendationContentService] Ollama returned empty content');
-        }
-      } catch (e: any) {
-        console.error('❌ [RecommendationContentService] Ollama API failed:', e.message || e);
-        console.log('🔄 [RecommendationContentService] Falling back to OpenRouter...');
+      if (groqResult.content) {
+        content = groqResult.content;
+        providerUsed = 'openrouter'; // Use 'openrouter' label for DB compatibility
+        modelUsed = 'groq/compound';
+        console.log('✅ [RecommendationContentService] Groq Compound succeeded');
+      } else {
+        console.warn('⚠️ [RecommendationContentService] Groq Compound returned empty content');
       }
+
+    } catch (e: any) {
+      console.error('❌ [RecommendationContentService] Groq Compound failed:', e.message || e);
+      console.log('🔄 [RecommendationContentService] Falling back to OpenRouter...');
     }
 
-    // Try OpenRouter if Ollama not enabled or failed
+    // 2. Fallback to OpenRouter if Groq failed
     if (!content) {
       try {
         const or = await openRouterCollectorService.executeQuery({
           collectorType: 'content',
           prompt,
-          maxTokens: isColdStartGuide ? 2600 : 8000, // v4.0 needs 4000 for 6 sections
+          maxTokens: isColdStartGuide ? 2600 : 8000,
           temperature: isColdStartGuide ? 0.4 : 0.6,
           topP: 0.9,
+          // Fallback does NOT use web search to ensure reliability if primary failed
           enableWebSearch: false
         });
         content = or.response;
         providerUsed = 'openrouter';
         modelUsed = or.model_used;
       } catch (e) {
-        console.error('❌ [RecommendationContentService] OpenRouter failed, trying Cerebras fallback:', e);
-      }
-    }
-
-    // Fallback to Cerebras if both Ollama and OpenRouter failed
-    if (!content && this.cerebrasApiKey) {
-      const result = await this.callCerebras(prompt);
-      if (result?.content) {
-        content = result.content;
-        providerUsed = 'cerebras';
-        modelUsed = result.model;
+        console.error('❌ [RecommendationContentService] OpenRouter fallback failed:', e);
       }
     }
 
@@ -1070,46 +1051,7 @@ ${contentStyleGuide}
     };
   }
 
-  private async callCerebras(prompt: string): Promise<{ content: string; model: string } | null> {
-    if (!this.cerebrasApiKey) return null;
-
-    try {
-      const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.cerebrasApiKey}`
-        },
-        body: JSON.stringify({
-          model: this.cerebrasModel,
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a senior content strategist. Produce concise, brand-safe drafts optimized for answer engines (AEO).'
-            },
-            { role: 'user', content: prompt }
-          ],
-          max_tokens: 4000, // Increased for v4.0 sectioned content with 6 sections
-          temperature: 0.6
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ [RecommendationContentService] Cerebras API error:', response.status, errorText);
-        return null;
-      }
-
-      const data = (await response.json()) as CerebrasChatResponse;
-      const content = data?.choices?.[0]?.message?.content;
-      if (!content) return null;
-
-      return { content, model: this.cerebrasModel };
-    } catch (e) {
-      console.error('❌ [RecommendationContentService] Cerebras call failed:', e);
-      return null;
-    }
-  }
+  // private callCerebras method removed
 
   private parseGeneratedContentJson(raw: string): GeneratedAnyJson | null {
     if (!raw || typeof raw !== 'string') return null;

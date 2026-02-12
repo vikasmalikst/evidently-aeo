@@ -76,6 +76,18 @@ Generate the social thread adhering strictly to the structure above.
 - **Voice:** Direct address ("You").
 - **Formatting:** Markdown. Use "---" references to separate posts if needed, but output as one continuous markdown stream.
 
+**STRATEGIC RESEARCH LOGIC (STEP 0):**
+Before writing, decide if you need current brand or market data (features, pricing, news, competitors).
+- If YES: Use the 'web_search' tool with focused queries (e.g., "${brandName} latest pricing and features", "${brandName} competitor ${currentYear}").
+- Synthesize findings into the content in the brand's voice.
+
+**GROUNDING RULE (MANDATORY):**
+- For any factual claim (statistics, benchmarks, dates), use web search to verify the latest data.
+- Cite sources inline using markdown links [Source Title](URL) or "according to recent listings".
+- If you cannot verify a claim, use [FILL_IN: source needed].
+- Do NOT invent numbers or facts.
+- Limit web searches to at most 4 per article.
+
 **OUTPUT FORMAT (JSON v5.0):**
 Return a SINGLE VALID JSON object. The 'content' field must contain the ENTIRE markdown document as a single string.
 

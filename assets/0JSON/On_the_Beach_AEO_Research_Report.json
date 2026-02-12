@@ -1,0 +1,489 @@
+{
+  "company_profile": {
+    "company_name": "On the Beach Group plc",
+    "website": "https://www.onthebeach.co.uk/",
+    "industry": "Online Travel Agency (OTA) - Beach Holiday Packages (Flight + Hotel)",
+    "founded": 2004,
+    "headquarters": {
+      "city": "Manchester",
+      "address": "Aeroworks Building, Ancoats",
+      "country": "United Kingdom"
+    },
+    "leadership": {
+      "founder": "Simon Cooper",
+      "current_ceo": "Shaun Morton",
+      "ceo_appointed": "July 2023"
+    },
+    "company_size": "501-1,000 employees (approximately 554-642)",
+    "funding_status": "Public company (Listed on London Stock Exchange: OTB.L, AIM market)",
+    "description": "On the Beach is one of the UK's leading online travel agencies specializing in beach holiday packages, sending nearly 2 million people on holiday annually. The company operates a unique 'online-only' business model focusing on short and medium-haul beach destinations across Europe, with all bookings ATOL protected. Founded from a modest terraced house in Macclesfield in 2004, On the Beach has grown to become a major player in the UK online travel market, competing primarily on price and user-friendly booking experience.",
+    "annual_customers": "Nearly 2 million",
+    "key_certification": "ATOL protected"
+  },
+  "competitors": [
+    {
+      "rank": 1,
+      "company_name": "TUI",
+      "domain": "tui.co.uk",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Leisure/Mass Market",
+      "battle_frequency": "High",
+      "primary_differentiation": "Full-service tour operator, own charter flights, in-resort reps, all-inclusive packages"
+    },
+    {
+      "rank": 2,
+      "company_name": "Jet2holidays",
+      "domain": "jet2holidays.com",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Leisure/Family",
+      "battle_frequency": "High",
+      "primary_differentiation": "Own airline (Jet2.com), excellent customer service, family-focused, airport reps"
+    },
+    {
+      "rank": 3,
+      "company_name": "loveholidays",
+      "domain": "loveholidays.com",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Budget/Mid-range",
+      "battle_frequency": "High",
+      "primary_differentiation": "Direct competitor in online beach holidays, similar price point, often cheaper"
+    },
+    {
+      "rank": 4,
+      "company_name": "Expedia UK",
+      "domain": "expedia.co.uk",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "All segments",
+      "battle_frequency": "High",
+      "primary_differentiation": "Global OTA, loyalty program (Expedia Rewards), comprehensive travel bundles"
+    },
+    {
+      "rank": 5,
+      "company_name": "Booking.com",
+      "domain": "booking.com",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "All segments",
+      "battle_frequency": "High",
+      "primary_differentiation": "Market leader (Booking Holdings), Genius loyalty tiers, massive inventory"
+    },
+    {
+      "rank": 6,
+      "company_name": "TravelRepublic",
+      "domain": "travelrepublic.co.uk",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Budget/Mid-range",
+      "battle_frequency": "Medium-High",
+      "primary_differentiation": "Owned by dnata (Emirates Group), competitive pricing, user-friendly platform"
+    },
+    {
+      "rank": 7,
+      "company_name": "lastminute.com",
+      "domain": "lastminute.com",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Spontaneous travelers",
+      "battle_frequency": "Medium-High",
+      "primary_differentiation": "Last-minute deals specialist, part of Lastminute.com Group, aggressive pricing"
+    },
+    {
+      "rank": 8,
+      "company_name": "First Choice (TUI)",
+      "domain": "firstchoice.co.uk",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Family/All-inclusive",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "TUI brand, all-inclusive specialist, family-focused"
+    },
+    {
+      "rank": 9,
+      "company_name": "easyJet holidays",
+      "domain": "easyjet.com/holidays",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Budget/Leisure",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Airline-backed, ATOL protected, easyJet flights integrated"
+    },
+    {
+      "rank": 10,
+      "company_name": "Sunshine.co.uk",
+      "domain": "sunshine.co.uk",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Beach holidays",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Acquired by On the Beach (2017), sister brand, similar model"
+    },
+    {
+      "rank": 11,
+      "company_name": "Trailfinders",
+      "domain": "trailfinders.com",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Premium/Tailor-made",
+      "battle_frequency": "Low-Medium",
+      "primary_differentiation": "Bespoke service, highest customer satisfaction (87%), long-haul specialist"
+    },
+    {
+      "rank": 12,
+      "company_name": "Thomas Cook (revived)",
+      "domain": "thomascook.com",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Mass market",
+      "battle_frequency": "Low-Medium",
+      "primary_differentiation": "Historic brand (collapsed 2019, revived online), package holidays"
+    },
+    {
+      "rank": 13,
+      "company_name": "Hays Travel",
+      "domain": "haystravel.co.uk",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "All segments",
+      "battle_frequency": "Low",
+      "primary_differentiation": "UK's largest independent, high-street presence, personalized service"
+    },
+    {
+      "rank": 14,
+      "company_name": "Travelbag",
+      "domain": "travelbag.co.uk",
+      "geographic_overlap": "UK-wide",
+      "customer_segment": "Long-haul/Tailor-made",
+      "battle_frequency": "Low",
+      "primary_differentiation": "Established 1979, long-haul specialist, tailor-made holidays"
+    },
+    {
+      "rank": 15,
+      "company_name": "Exoticca",
+      "domain": "exoticca.com",
+      "geographic_overlap": "UK distribution",
+      "customer_segment": "Multi-destination",
+      "battle_frequency": "Low",
+      "primary_differentiation": "Travel tech, exotic multi-destination packages, curated tours"
+    }
+  ],
+  "biased_prompts": {
+    "total_count": 25,
+    "awareness_informational": [
+      {
+        "id": 1,
+        "prompt": "What is On the Beach holidays?",
+        "category": "Awareness"
+      },
+      {
+        "id": 2,
+        "prompt": "Who owns On the Beach company?",
+        "category": "Awareness"
+      },
+      {
+        "id": 3,
+        "prompt": "When was On the Beach founded?",
+        "category": "Awareness"
+      },
+      {
+        "id": 4,
+        "prompt": "Is On the Beach a legit company?",
+        "category": "Awareness"
+      },
+      {
+        "id": 5,
+        "prompt": "Where is On the Beach headquarters?",
+        "category": "Awareness"
+      },
+      {
+        "id": 6,
+        "prompt": "Are On the Beach holidays ATOL protected?",
+        "category": "Awareness"
+      }
+    ],
+    "consideration_evaluation": [
+      {
+        "id": 7,
+        "prompt": "Is On the Beach worth it?",
+        "category": "Consideration"
+      },
+      {
+        "id": 8,
+        "prompt": "On the Beach reviews 2026",
+        "category": "Consideration"
+      },
+      {
+        "id": 9,
+        "prompt": "Are On the Beach holidays any good?",
+        "category": "Consideration"
+      },
+      {
+        "id": 10,
+        "prompt": "On the Beach pros and cons",
+        "category": "Consideration"
+      },
+      {
+        "id": 11,
+        "prompt": "How reliable is On the Beach?",
+        "category": "Consideration"
+      },
+      {
+        "id": 12,
+        "prompt": "On the Beach customer service reviews",
+        "category": "Consideration"
+      },
+      {
+        "id": 13,
+        "prompt": "What makes On the Beach different from other travel agents?",
+        "category": "Consideration"
+      },
+      {
+        "id": 14,
+        "prompt": "Do On the Beach holidays include airport transfers?",
+        "category": "Consideration"
+      }
+    ],
+    "comparison_commercial": [
+      {
+        "id": 15,
+        "prompt": "On the Beach vs TUI which is better",
+        "category": "Comparison"
+      },
+      {
+        "id": 16,
+        "prompt": "On the Beach vs Jet2holidays comparison",
+        "category": "Comparison"
+      },
+      {
+        "id": 17,
+        "prompt": "On the Beach vs loveholidays",
+        "category": "Comparison"
+      },
+      {
+        "id": 18,
+        "prompt": "Is On the Beach cheaper than TUI?",
+        "category": "Comparison"
+      },
+      {
+        "id": 19,
+        "prompt": "On the Beach vs Expedia UK",
+        "category": "Comparison"
+      },
+      {
+        "id": 20,
+        "prompt": "On the Beach vs booking.com for holidays",
+        "category": "Comparison"
+      },
+      {
+        "id": 21,
+        "prompt": "Better than On the Beach alternatives",
+        "category": "Comparison"
+      },
+      {
+        "id": 22,
+        "prompt": "On the Beach vs TravelRepublic",
+        "category": "Comparison"
+      }
+    ],
+    "decision_transactional": [
+      {
+        "id": 23,
+        "prompt": "On the Beach deals and offers 2026",
+        "category": "Decision"
+      },
+      {
+        "id": 24,
+        "prompt": "On the Beach deposit options",
+        "category": "Decision"
+      },
+      {
+        "id": 25,
+        "prompt": "Book On the Beach holiday online",
+        "category": "Decision"
+      }
+    ]
+  },
+  "blind_prompts": {
+    "total_count": 25,
+    "problem_awareness": [
+      {
+        "id": 1,
+        "prompt": "How to book a cheap beach holiday from UK",
+        "category": "Problem"
+      },
+      {
+        "id": 2,
+        "prompt": "What to look for when booking package holidays",
+        "category": "Problem"
+      },
+      {
+        "id": 3,
+        "prompt": "Are online travel agents reliable",
+        "category": "Problem"
+      },
+      {
+        "id": 4,
+        "prompt": "How far in advance to book summer holidays",
+        "category": "Problem"
+      },
+      {
+        "id": 5,
+        "prompt": "Package holiday vs booking separately",
+        "category": "Problem"
+      }
+    ],
+    "solution_education": [
+      {
+        "id": 6,
+        "prompt": "Best online travel agents UK 2026",
+        "category": "Education"
+      },
+      {
+        "id": 7,
+        "prompt": "Cheapest way to book beach holidays",
+        "category": "Education"
+      },
+      {
+        "id": 8,
+        "prompt": "Top package holiday companies UK",
+        "category": "Education"
+      },
+      {
+        "id": 9,
+        "prompt": "What are ATOL protected holidays",
+        "category": "Education"
+      },
+      {
+        "id": 10,
+        "prompt": "Online travel agencies with best deals UK",
+        "category": "Education"
+      },
+      {
+        "id": 11,
+        "prompt": "Beach holiday specialists UK",
+        "category": "Education"
+      }
+    ],
+    "evaluation_consideration": [
+      {
+        "id": 12,
+        "prompt": "How to choose an online travel agent",
+        "category": "Evaluation"
+      },
+      {
+        "id": 13,
+        "prompt": "Online travel agents vs high street travel agents",
+        "category": "Evaluation"
+      },
+      {
+        "id": 14,
+        "prompt": "Best value package holiday providers UK",
+        "category": "Evaluation"
+      },
+      {
+        "id": 15,
+        "prompt": "Which holiday booking sites are most reliable",
+        "category": "Evaluation"
+      },
+      {
+        "id": 16,
+        "prompt": "Package holiday booking sites comparison",
+        "category": "Evaluation"
+      },
+      {
+        "id": 17,
+        "prompt": "All inclusive holiday providers UK reviews",
+        "category": "Evaluation"
+      },
+      {
+        "id": 18,
+        "prompt": "What makes a good beach holiday deal",
+        "category": "Evaluation"
+      }
+    ],
+    "commercial_investigation": [
+      {
+        "id": 19,
+        "prompt": "Cheapest package holidays UK 2026",
+        "category": "Commercial"
+      },
+      {
+        "id": 20,
+        "prompt": "Low deposit holiday deals UK",
+        "category": "Commercial"
+      },
+      {
+        "id": 21,
+        "prompt": "Last minute beach holiday deals",
+        "category": "Commercial"
+      },
+      {
+        "id": 22,
+        "prompt": "Affordable all inclusive holidays from UK",
+        "category": "Commercial"
+      },
+      {
+        "id": 23,
+        "prompt": "Package holiday price comparison UK",
+        "category": "Commercial"
+      }
+    ],
+    "decision_support": [
+      {
+        "id": 24,
+        "prompt": "Most trusted online travel agents UK",
+        "category": "Decision"
+      },
+      {
+        "id": 25,
+        "prompt": "Best package holiday reviews 2026",
+        "category": "Decision"
+      }
+    ]
+  },
+  "research_quality_summary": {
+    "total_competitors_identified": 15,
+    "geographic_relevance": "Highly relevant - all competitors operate extensively in UK market with direct overlap",
+    "prompt_distribution": {
+      "biased_percentage": 50,
+      "neutral_percentage": 50,
+      "total_prompts": 50
+    },
+    "customer_journey_coverage": "Complete - covers all stages from problem awareness through decision support",
+    "data_confidence_level": "High",
+    "confidence_justification": "Verified through LinkedIn company profiles, public company filings (LSE: OTB.L), Wikipedia business history, customer comparison forums and discussions, web traffic analysis, industry market reports, and competitor analysis from multiple sources",
+    "ranking_methodology": "Competitors ranked by competitive battle frequency based on direct customer comparison discussions, web traffic analysis showing closest competitors, industry market positioning, and customer consideration sets in UK online travel market. TUI and Jet2holidays represent traditional tour operators frequently compared with On the Beach for similar beach destinations, while loveholidays, Expedia, and Booking.com compete directly in the online booking space."
+  },
+  "metadata": {
+    "report_generated_date": "2026-02-03",
+    "research_methodology": "AEO (Answer Engine Optimization) competitive intelligence analysis",
+    "primary_market": "United Kingdom",
+    "data_sources": [
+      "LinkedIn company and executive profiles",
+      "Public company filings (LSE: OTB.L)",
+      "Wikipedia business history",
+      "Official company website",
+      "Customer comparison forums (Reddit, Facebook groups)",
+      "Web traffic analysis (Semrush)",
+      "Industry market reports",
+      "Competitor analysis databases",
+      "Travel industry reviews"
+    ],
+    "web_references": [
+      "web:126",
+      "web:127",
+      "web:128",
+      "web:132",
+      "web:133",
+      "web:134",
+      "web:135",
+      "web:137",
+      "web:138",
+      "web:139",
+      "web:141",
+      "web:142",
+      "web:143",
+      "web:144",
+      "web:145",
+      "web:146",
+      "web:147",
+      "web:148",
+      "web:149",
+      "web:150",
+      "web:151",
+      "web:152",
+      "web:153",
+      "web:154"
+    ]
+  }
+}

@@ -23,7 +23,7 @@ export interface BrandMetricsRow {
   topic: string | null;
   processed_at: string;
   created_at: string;
-  
+
   // From brand_metrics
   visibility_index: number | null;
   share_of_answers: number | null;
@@ -32,7 +32,7 @@ export interface BrandMetricsRow {
   brand_positions: number[];
   brand_first_position: number | null;
   total_word_count: number;
-  
+
   // From brand_sentiment (optional)
   sentiment_score?: number | null;
   sentiment_label?: string | null;
@@ -54,17 +54,17 @@ export interface CompetitorMetricsRow {
   topic: string | null;
   processed_at: string;
   created_at: string;
-  
+
   // Competitor identification
   competitor_id: string;
   competitor_name: string;
-  
+
   // From competitor_metrics
   visibility_index: number | null;
   share_of_answers: number | null;
   competitor_mentions: number;
   competitor_positions: number[];
-  
+
   // From competitor_sentiment (optional)
   sentiment_score?: number | null;
   sentiment_label?: string | null;
@@ -86,18 +86,18 @@ export interface CombinedMetricsResult {
 export interface FetchMetricsOptions {
   // Required: collector_result IDs to fetch
   collectorResultIds: number[];
-  
+
   // Optional filters
   brandId?: string;
   customerId?: string;
-  
+
   // Optional: include sentiment data
   includeSentiment?: boolean;
-  
+
   // Optional: date range filter
   startDate?: string;
   endDate?: string;
-  
+
   // Optional: collector_type filter
   collectorTypes?: string[];
 }
@@ -110,10 +110,11 @@ export interface FetchMetricsByDateRangeOptions {
   customerId: string;
   startDate: string;
   endDate: string;
-  
+
   // Optional filters
   collectorTypes?: string[];
   topics?: string[];
+  queryTags?: string[];
   includeSentiment?: boolean;
 }
 
@@ -124,7 +125,7 @@ export interface FetchMetricsByDateRangeOptions {
 export interface TopicMetricsAggregated {
   topic: string;
   collector_type: string;
-  
+
   // Aggregated brand metrics
   query_count: number;
   avg_share_of_answers: number | null;
@@ -132,7 +133,7 @@ export interface TopicMetricsAggregated {
   avg_sentiment: number | null;
   brand_presence_count: number;
   brand_presence_percentage: number;
-  
+
   // Aggregated competitor metrics (industry benchmarks)
   competitor_avg_share?: number | null;
   competitor_avg_visibility?: number | null;

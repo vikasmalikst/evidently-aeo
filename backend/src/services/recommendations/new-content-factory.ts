@@ -103,17 +103,10 @@ function buildSystemContext(brandName: string, currentYear: number): string {
 You are generating informational content optimized for AI Answer Engines (LLMs).
 
 NON-NEGOTIABLE RULES:
-- Content must be easily parsed, summarized, and cited by LLMs
-- Content must function as a reference document, not marketing
-- Use neutral, factual, non-promotional language
-- Avoid hype, persuasion, or call-to-action language
-- Write explicit statements that can be quoted verbatim
-
-CONTENT PHILOSOPHY:
-- Answer the primary user question immediately
-- Structure content so each section is independently understandable
-- Explain WHY things work, not just WHAT they are
-- Acknowledge limitations, trade-offs, and edge cases
+- Content must be factual, reference-grade, and non-promotional.
+- Answer the user's question immediately (Bottom Line Up Front).
+- Use neutral, objective language. No hype.
+- Structure content for easy reliable parsing.
 
 CONTEXT:
 - Brand: ${brandName}
@@ -123,13 +116,7 @@ CONTEXT:
 
 
 function buildRecommendationContext(rec: RecommendationV3, brand: BrandContextV3, extraContext?: string): string {
-    const baseContext = `
-TASK CONTEXT:
-- Brand: ${brand.brandName} (${brand.industry || 'General'})
-- Goal: Execute recommendation "${rec.action}"
-- Target Keyword/Topic: ${rec.contentFocus || rec.action}
-- Target Platform: ${rec.citationSource || 'Owned Blog'}
-`;
+    const baseContext = `Brand: ${brand.brandName} (${brand.industry || 'General'}) | Topic: ${rec.contentFocus || rec.action} | Platform: ${rec.citationSource || 'Owned Blog'}`;
     // If extraContext is provided (e.g. uploaded documents), append it
     // after the standard task context so the model treats it as primary
     // source material while keeping prompts backwards compatible.

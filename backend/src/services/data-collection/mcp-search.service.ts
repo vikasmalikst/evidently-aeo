@@ -29,6 +29,9 @@ export class McpSearchService {
      * Latency: ~1-2s
      */
     async quickSearch(query: string, maxResults: number = 5): Promise<SearchResponse> {
+        const start = Date.now();
+        console.log(`🌐 [MCP-Search] Requesting: "${query}" (Max: ${maxResults}) -> ${this.baseUrl}/search`);
+
         try {
             // SearXNG JSON API
             const response = await axios.get(`${this.baseUrl}/search`, {
@@ -41,14 +44,28 @@ export class McpSearchService {
                 timeout: this.timeout
             });
 
+            const duration = Date.now() - start;
+
             if (!response.data.results) {
-                console.warn('[McpSearchService] No results structure in response');
+                console.warn(`⚠️ [MCP-Search] No results structure in response (Query: "${query}", Time: ${duration}ms)`);
                 return { query, results: [], suggestions: [] };
+            }
+
+            const resultsCount = response.data.results.length;
+            const topResults = response.data.results.slice(0, maxResults);
+
+            console.log(`✅ [MCP-Search] Received ${resultsCount} results (Returned: ${topResults.length}) for "${query}" in ${duration}ms`);
+
+            // Optional: Log top result titles for clarity
+            if (topResults.length > 0) {
+                topResults.forEach((r: any, i: number) => {
+                    console.log(`   [${i + 1}] ${r.title.substring(0, 50)}${r.title.length > 50 ? '...' : ''} (${r.url.substring(0, 40)}...)`);
+                });
             }
 
             return {
                 query,
-                results: response.data.results.slice(0, maxResults).map((r: any) => ({
+                results: topResults.map((r: any) => ({
                     title: r.title,
                     url: r.url,
                     content: r.content || r.snippet || '',
@@ -57,7 +74,14 @@ export class McpSearchService {
                 suggestions: response.data.suggestions || []
             };
         } catch (error: any) {
-            console.error(`[McpSearchService] Quick search failed: ${error.message}`);
+            const duration = Date.now() - start;
+            if (error.code === 'ECONNREFUSED') {
+                console.error(`❌ [MCP-Search] CONNECTION REFUSED: Is the SSH tunnel or SearXNG instance down? (Target: ${this.baseUrl}, Time: ${duration}ms)`);
+            } else if (error.code === 'ETIMEDOUT' || error.message.includes('timeout')) {
+                console.error(`❌ [MCP-Search] TIMEOUT: SearXNG taking too long (Target: ${this.baseUrl}, Time: ${duration}ms)`);
+            } else {
+                console.error(`❌ [MCP-Search] Quick search failed: ${error.message} (Time: ${duration}ms)`);
+            }
             // Fallback: Return empty rather than crashing only specific service
             return { query, results: [], suggestions: [] };
         }
@@ -69,23 +93,26 @@ export class McpSearchService {
      * Latency: ~2-5s
      */
     async deepResearch(urlOrQuery: string): Promise<string> {
+        const start = Date.now();
         try {
             let targetUrl = urlOrQuery;
 
             // If it looks like a query (no http), search first
             if (!urlOrQuery.startsWith('http')) {
+                console.log(`🔎 [MCP-DeepResearch] Query detected, finding best URL for: "${urlOrQuery}"`);
                 const search = await this.quickSearch(urlOrQuery, 1);
                 if (search.results.length > 0) {
                     targetUrl = search.results[0].url;
+                    console.log(`🎯 [MCP-DeepResearch] Selected URL: ${targetUrl}`);
                 } else {
                     throw new Error('No search results found to scrape');
                 }
             }
 
-            console.log(`[McpSearchService] Scraping: ${targetUrl}`);
+            console.log(`🌐 [MCP-DeepResearch] Scraping content from: ${targetUrl}`);
             // Simple HTML fetch
             const response = await axios.get(targetUrl, {
-                timeout: 10000,
+                timeout: 15000,
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                 }
@@ -98,12 +125,16 @@ export class McpSearchService {
             $('script, style, nav, footer, iframe, svg, path').remove();
 
             // Extract main text
-            const title = $('title').text().trim();
+            const title = $('title').text().trim() || 'No Title';
             const body = $('body').text().replace(/\s+/g, ' ').trim();
+            const duration = Date.now() - start;
+
+            console.log(`✅ [MCP-DeepResearch] Successfully scraped ${body.length} chars from "${title}" in ${duration}ms`);
 
             return `# ${title}\n\nSource: ${targetUrl}\n\n${body.substring(0, 5000)}...`; // Cap length
         } catch (error: any) {
-            console.warn(`[McpSearchService] Deep research failed for ${urlOrQuery}: ${error.message}`);
+            const duration = Date.now() - start;
+            console.warn(`⚠️ [MCP-DeepResearch] Failed for ${urlOrQuery}: ${error.message} (Time: ${duration}ms)`);
             return `Failed to scrape ${urlOrQuery}. Error: ${error.message}`;
         }
     }

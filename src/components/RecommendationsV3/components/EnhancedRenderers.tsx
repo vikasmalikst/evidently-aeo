@@ -57,24 +57,24 @@ export function MarkdownRenderer({ content, className = '', highlightFillIns = t
         remarkPlugins={[remarkGfm]}
         components={{
           // Custom heading styles
-          h1: ({ children }) => <h1 className="text-[20px] font-bold text-[#1e293b] mb-3 mt-4">{children}</h1>,
-          h2: ({ children }) => <h2 className="text-[18px] font-semibold text-[#334155] mb-2 mt-3">{children}</h2>,
-          h3: ({ children }) => <h3 className="text-[16px] font-semibold text-[#475569] mb-2 mt-2">{children}</h3>,
+          h1: ({ children }) => <h1 className="text-2xl font-bold text-slate-900 mb-6 mt-8 leading-tight tracking-tight">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-xl font-semibold text-slate-900 mb-4 mt-8 leading-snug tracking-tight">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-lg font-semibold text-slate-800 mb-3 mt-6 leading-snug">{children}</h3>,
 
           // Paragraph styling
-          p: ({ children }) => <p className="text-[13px] text-[#374151] leading-relaxed mb-3">{children}</p>,
+          p: ({ children }) => <p className="text-[15px] text-slate-700 leading-7 mb-4 font-normal">{children}</p>,
 
           // List styling
-          ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 mb-3 text-[13px] text-[#374151]">{children}</ul>,
-          ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 mb-3 text-[13px] text-[#374151]">{children}</ol>,
-          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+          ul: ({ children }) => <ul className="list-disc pl-5 space-y-2 mb-4 text-[15px] text-slate-700 leading-7 marker:text-slate-400">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal pl-5 space-y-2 mb-4 text-[15px] text-slate-700 leading-7 marker:text-slate-400">{children}</ol>,
+          li: ({ children }) => <li className="pl-1">{children}</li>,
 
           // Strong/Bold
-          strong: ({ children }) => <strong className="font-semibold text-[#1e293b]">{children}</strong>,
+          strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
 
           // Links
           a: ({ href, children }) => (
-            <a href={href} className="text-[#0ea5e9] hover:underline" target="_blank" rel="noopener noreferrer">
+            <a href={href} className="text-emerald-600 hover:text-emerald-700 hover:underline decoration-emerald-300 decoration-1 underline-offset-2 transition-colors" target="_blank" rel="noopener noreferrer">
               {children}
             </a>
           ),
@@ -83,18 +83,18 @@ export function MarkdownRenderer({ content, className = '', highlightFillIns = t
           code: ({ className, children }) => {
             const isInline = !className;
             if (isInline) {
-              return <code className="bg-[#f1f5f9] px-1 py-0.5 rounded text-[12px] text-[#be185d]">{children}</code>;
+              return <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[13px] text-pink-600 font-mono border border-slate-200">{children}</code>;
             }
             return (
-              <pre className="bg-[#1e293b] text-[#e2e8f0] rounded-lg p-3 overflow-x-auto text-[12px] my-3">
+              <pre className="bg-slate-900 text-slate-50 rounded-lg p-4 overflow-x-auto text-[13px] my-6 border border-slate-800 shadow-sm leading-relaxed">
                 <code>{children}</code>
               </pre>
             );
           },
 
-          // Blockquote
+          // Blockquote - Clean, minimal style (No blue background)
           blockquote: ({ children }) => (
-            <blockquote className="border-l-4 border-[#0ea5e9] pl-4 py-1 my-3 bg-[#f0f9ff] rounded-r-lg">
+            <blockquote className="border-l-4 border-emerald-500 pl-5 py-1 my-6 text-slate-600 italic">
               {children}
             </blockquote>
           ),
@@ -487,40 +487,66 @@ export function EditableMarkdown({ content, onChange, className = '' }: Editable
         .editable-markdown-content ul {
           list-style-type: disc;
           padding-left: 1.5em;
-          margin-bottom: 0.75em;
+          margin-bottom: 1em;
+          line-height: 1.75;
+          font-size: 15px;
+          color: #334155;
         }
         .editable-markdown-content ol {
           list-style-type: decimal;
           padding-left: 1.5em;
-          margin-bottom: 0.75em;
+          margin-bottom: 1em;
+          line-height: 1.75;
+          font-size: 15px;
+          color: #334155;
         }
         .editable-markdown-content li {
-          margin-bottom: 0.25em;
+          margin-bottom: 0.5em;
+        }
+        .editable-markdown-content p, .editable-markdown-content div {
+          font-size: 15px;
+          line-height: 1.75;
+          margin-bottom: 1em;
+          color: #334155;
         }
         .editable-markdown-content h1 {
-          font-size: 20px;
+          font-size: 24px;
           font-weight: 700;
-          color: #1e293b;
+          color: #0f172a;
           margin-bottom: 0.75em;
-          margin-top: 1em;
+          margin-top: 1.5em;
+          letter-spacing: -0.025em;
+          line-height: 1.2;
         }
         .editable-markdown-content h2 {
+          font-size: 20px;
+          font-weight: 600;
+          color: #1e293b;
+          margin-bottom: 0.75em;
+          margin-top: 1.5em;
+          letter-spacing: -0.025em;
+          line-height: 1.3;
+        }
+        .editable-markdown-content h3 {
           font-size: 18px;
           font-weight: 600;
           color: #334155;
-          margin-bottom: 0.5em;
-          margin-top: 0.75em;
-        }
-        .editable-markdown-content h3 {
-          font-size: 16px;
-          font-weight: 600;
-          color: #475569;
-          margin-bottom: 0.5em;
-          margin-top: 0.5em;
+          margin-bottom: 0.75em;
+          margin-top: 1.25em;
+          line-height: 1.4;
         }
         .editable-markdown-content a {
-          color: #0ea5e9;
+          color: #059669;
           text-decoration: underline;
+          text-underline-offset: 2px;
+        }
+        .editable-markdown-content blockquote {
+          border-left: 4px solid #10b981;
+          padding-left: 1.25em;
+          margin: 1.5em 0;
+          font-style: italic;
+          color: #475569;
+          background: transparent;
         }
       `}</style>
     </div>

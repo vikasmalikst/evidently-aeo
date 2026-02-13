@@ -17,6 +17,7 @@ import { useRecommendationContext } from '../RecommendationContext';
 import { UnifiedContentRenderer } from '../../../components/RecommendationsV3/components/ContentSectionRenderer';
 import { AEOScoreBadge } from '../../../components/RecommendationsV3/components/ContentAnalysisTools';
 import { ContentAnalysisSidebar } from './ContentAnalysisSidebar';
+import { SafeLogo } from '../../../components/Onboarding/common/SafeLogo';
 import {
     updateRecommendationStatusV3,
     completeRecommendationV3,
@@ -236,9 +237,29 @@ export const Step3Refine: React.FC = () => {
                                         </div>
                                     </div>
 
+
                                     {/* Action Bar (Only visible when Expanded OR if Completed) */}
                                     {/* Actually, let's keep actions visible but subtle */}
-                                    <div className="mt-3 flex items-center justify-end gap-2 pl-9">
+                                    <div className="mt-3 flex items-center justify-between gap-2 pl-9">
+                                        {/* Domain / Source Display (Left) */}
+                                        <div className="flex items-center gap-2">
+                                            {rec.citationSource && (
+                                                <>
+                                                    <div className="w-5 h-5 rounded-md bg-slate-50 flex items-center justify-center overflow-hidden border border-slate-200">
+                                                        <SafeLogo 
+                                                            domain={rec.citationSource}
+                                                            alt={rec.citationSource} 
+                                                            className="w-3.5 h-3.5 object-contain" 
+                                                            size={14} 
+                                                        />
+                                                    </div>
+                                                    <span className="text-xs font-medium text-slate-500 truncate max-w-[120px]">{rec.citationSource}</span>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {/* Actions (Right) */}
+                                        <div className="flex items-center gap-2">
                                         {!rec.isCompleted ? (
                                             <div className="flex items-center gap-2">
                                                 {/* AEO Score Badge - Temporarily Hidden
@@ -325,6 +346,7 @@ export const Step3Refine: React.FC = () => {
                                                 Completed
                                             </span>
                                         )}
+                                        </div>
                                     </div>
                                 </div>
 

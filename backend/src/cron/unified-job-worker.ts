@@ -9,6 +9,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
 import { dataCollectionJobService } from '../services/jobs/data-collection-job.service';
 import { brandScoringService } from '../services/scoring/brand-scoring.orchestrator';
+import { recommendationV3Service } from '../services/recommendations/recommendation-v3.service';
 
 loadEnvironment();
 
@@ -103,7 +104,7 @@ interface JobRun {
   scheduled_job_id: string;
   brand_id: string;
   customer_id: string;
-  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry';
+  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry' | 'ai_recommendations';
   scheduled_for: string;
 }
 
@@ -121,7 +122,7 @@ interface ScheduledJobRow {
   id: string;
   brand_id: string;
   customer_id: string;
-  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry';
+  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry' | 'ai_recommendations';
   is_active: boolean;
   metadata: ScheduledJobMetadata;
   last_run_at: string | null;
@@ -139,6 +140,11 @@ interface JobMetrics {
     sentimentsProcessed: number;
     competitorSentimentsProcessed: number;
     citationsProcessed: number;
+  };
+  recommendations?: {
+    kpisGenerated: number;
+    recommendationsGenerated: number;
+    generationId?: string;
   };
   [key: string]: unknown;
 }
@@ -404,6 +410,34 @@ async function processSingleRun(run: JobRun): Promise<void> {
         const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`[Worker] Scoring failed:`, errorMsg);
         errors.push({ operation: 'scoring', error: errorMsg });
+      }
+    }
+
+    if (run.job_type === 'ai_recommendations') {
+      // Execute AI Recommendations
+      try {
+        console.log(`[Worker] Executing AI Recommendations for brand ${run.brand_id}...`);
+
+        const result = await recommendationV3Service.generateRecommendations(
+          run.brand_id,
+          run.customer_id
+        );
+
+        if (result.success) {
+          metrics.recommendations = {
+            kpisGenerated: result.kpis.length,
+            recommendationsGenerated: result.recommendations.length,
+            generationId: result.generationId
+          };
+          console.log(`[Worker] Recommendations completed: ${result.recommendations.length} recommendations generated.`);
+        } else {
+          throw new Error(result.message || 'Recommendation generation failed');
+        }
+
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`[Worker] Recommendations failed:`, errorMsg);
+        errors.push({ operation: 'ai_recommendations', error: errorMsg });
       }
     }
 

@@ -74,6 +74,7 @@ interface PositionInsertRow {
   total_competitor_product_mentions: number;
   has_brand_presence: boolean;
   processed_at: string;
+  collected_at: string; // Original collection time from collector_results
   topic?: string | null; // Topic column
   metadata?: Record<string, any> | null;
 }
@@ -377,6 +378,7 @@ export class PositionExtractionService {
         collector_type: brandRow.collector_type,
         topic: brandRow.topic || null,
         processed_at: brandRow.processed_at,
+        created_at: brandRow.collected_at, // Use collection time
       };
       metricFactsToUpsert.push(metricFact);
       payloadsByCollectorResult.set(collectorResultId, payload);
@@ -747,6 +749,7 @@ export class PositionExtractionService {
       total_competitor_product_mentions: totalCompetitorProductMentions,
       has_brand_presence: hasBrandPresence,
       processed_at: processedAt,
+      collected_at: result.created_at, // Capture collection time
       topic: topicName || null, // Store topic in dedicated column
       metadata: positionMetadata,
     };
@@ -791,6 +794,7 @@ export class PositionExtractionService {
         total_competitor_product_mentions: competitorProductMentions,
         has_brand_presence: hasBrandPresence,
         processed_at: processedAt,
+        collected_at: result.created_at, // Capture collection time
         topic: topicName || null, // Store topic in dedicated column
         metadata: positionMetadata,
       };

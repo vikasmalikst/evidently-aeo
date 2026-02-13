@@ -757,8 +757,8 @@ export function UnifiedContentRenderer({
           >
             {/* Section Header - Integrated, no grey background */}
             {(hasHeader || isEditingThisSection) && (
-              <div className="px-5 py-1.5 flex items-center justify-between gap-4 border-b border-transparent group-hover:border-slate-100 transition-colors mt-2">
-                <div className="flex items-center gap-3 flex-1">
+              <div className="px-6 py-3 flex items-center justify-between gap-4 border-b border-transparent group-hover:border-slate-100 transition-colors mt-1">
+                <div className="flex items-center gap-4 flex-1">
                   {isEditingThisSection ? (
                     <input 
                       type="text" 
@@ -768,11 +768,11 @@ export function UnifiedContentRenderer({
                       autoFocus
                     />
                   ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-slate-300 w-5">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-bold text-slate-300 w-6">
                         {String(idx + 1).padStart(2, '0')}
                       </span>
-                      <h3 className="text-sm font-bold text-slate-900 leading-none">
+                      <h3 className="text-base font-bold text-slate-900 leading-none">
                         {section.title}
                       </h3>
                     </div>
@@ -780,17 +780,17 @@ export function UnifiedContentRenderer({
                 </div>
 
                 {/* Micro Action Buttons - Integrated style */}
-                <div className="flex items-center gap-1.5 transition-opacity opacity-0 group-hover:opacity-100">
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setActiveFeedbackSection(activeFeedbackSection === idx ? null : idx)}
-                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-all ${
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-semibold transition-all ${
                       feedback.trim().length > 0
-                        ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                        : 'text-slate-400 hover:bg-slate-100'
+                        ? 'bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 shadow-sm'
+                        : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
                     }`}
                   >
-                    <IconMessageCircle size={12} />
-                    <span>Comment</span>
+                    <IconMessageCircle size={12} className={feedback.trim().length > 0 ? "fill-indigo-600/20" : ""} />
+                    <span>{feedback.trim().length > 0 ? 'View Note' : 'Comment'}</span>
                   </button>
 
                   {isEditingThisSection ? (
@@ -816,20 +816,25 @@ export function UnifiedContentRenderer({
 
             {/* Content Only Mode - Hidden actions on hover */}
             {!hasHeader && !isEditingThisSection && (
-               <div className="absolute right-5 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5 shadow-sm">
+               <div className="absolute right-6 top-3 z-10">
+                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
                     <button
                       onClick={() => setActiveFeedbackSection(activeFeedbackSection === idx ? null : idx)}
-                      className="p-1 px-1.5 text-[10px] font-medium text-slate-400 hover:text-amber-600 flex items-center gap-1"
+                      className={`p-1.5 px-2 text-[10px] font-medium flex items-center gap-1.5 rounded transition-colors ${
+                        feedback.trim().length > 0 
+                          ? 'text-indigo-600 bg-indigo-50' 
+                          : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-50'
+                      }`}
                     >
-                      <IconMessageCircle size={12} />
-                      Comment
+                      <IconMessageCircle size={14} className={feedback.trim().length > 0 ? "fill-indigo-600/20" : ""} />
+                      {feedback.trim().length > 0 ? 'View Note' : 'Add Note'}
                     </button>
+                    <div className="w-[1px] h-3 bg-slate-200 mx-0.5"></div>
                     <button
                       onClick={() => setEditingSectionIndex(idx)}
-                      className="p-1 px-1.5 text-[10px] font-medium text-slate-400 hover:text-indigo-600 flex items-center gap-1"
+                      className="p-1.5 px-2 text-[10px] font-medium text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded flex items-center gap-1.5 transition-colors"
                     >
-                      <IconPencil size={12} />
+                      <IconPencil size={14} />
                       Edit
                     </button>
                   </div>
@@ -837,31 +842,45 @@ export function UnifiedContentRenderer({
             )}
 
             {/* Feedback Popover */}
+            {/* Feedback Popover - Redesigned */}
             {activeFeedbackSection === idx && (
-              <div className="px-5 pb-3 animate-in fade-in slide-in-from-top-1 duration-200">
-                <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold text-amber-800 flex items-center gap-1">
-                      <IconMessageCircle size={12} />
-                      Feedback
+              <div className="px-6 pb-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl shadow-sm overflow-hidden p-4 relative">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                      <IconMessageCircle size={14} className="text-indigo-500" />
+                      Feedback & Notes
                     </span>
-                    <button onClick={() => setActiveFeedbackSection(null)} className="text-amber-400 hover:text-amber-600">
-                      <IconX size={12} />
-                    </button>
                   </div>
                   <textarea
-                    className="w-full p-2 bg-white border border-amber-200 rounded text-[13px] text-slate-900 placeholder-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-500 min-h-[60px]"
-                    placeholder="Feedback..."
+                    className="w-full p-3 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all min-h-[80px] resize-y"
+                    placeholder="Add your feedback or notes for this section..."
                     value={feedback}
                     onChange={(e) => onFeedbackChange?.(section.title, e.target.value)}
                     autoFocus
                   />
+                  
+                  {/* Footer Actions */}
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 italic">
+                      {feedback.trim().length > 0 ? 'Changes saved.' : 'Type to add notes.'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                       <button 
+                        onClick={() => setActiveFeedbackSection(null)} 
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium rounded-md transition-colors shadow-sm"
+                      >
+                        <IconCheck size={12} />
+                        Done
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
 
             {/* Section Content - Tightened spacing */}
-            <div className={`px-5 relative ${hasHeader || isEditingThisSection ? 'pb-3 pt-2' : 'py-3'}`}>
+            <div className={`px-6 relative ${hasHeader || isEditingThisSection ? 'pb-3 pt-1' : 'py-3'}`}>
               <div className="text-[14px] text-slate-600 leading-relaxed">
                 {isEditingThisSection ? (
                    <div className="mt-2">

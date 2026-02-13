@@ -46,6 +46,7 @@ interface BackfillStats {
   stuckMarkedFailed: number;
   scoringResetToNull: number;
   scoringTimedOutFailed: number;
+  lostMarked: number;
 }
 
 /**
@@ -329,6 +330,59 @@ async function processRecord(
   }
 }
 
+async function markLostRows(stats: BackfillStats): Promise<void> {
+  const lostCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const PAGE_SIZE = 500;
+  
+  console.log(`\n🔍 Checking for rows pending > 7 days (cutoff: ${lostCutoff})...`);
+  console.log(`   Criteria: status != completed AND status != lost AND raw_answer IS NULL AND created_at < ${lostCutoff}`);
+
+  while (true) {
+    const { data: rows, error } = await supabase
+      .from('collector_results')
+      .select('id')
+      .neq('status', 'completed')
+      .neq('status', 'lost')
+      .is('raw_answer', null)
+      .lt('created_at', lostCutoff)
+      .limit(PAGE_SIZE);
+
+    if (error) {
+      console.error('❌ Error fetching pending > 7 days rows:', error.message);
+      return;
+    }
+
+    if (!rows || rows.length === 0) {
+      break;
+    }
+
+    const ids = rows.map((row: any) => row.id).filter((id: any) => typeof id === 'number' && Number.isFinite(id));
+    
+    if (ids.length > 0) {
+      const { data: updated, error: updateError } = await supabase
+        .from('collector_results')
+        .update({
+          status: 'lost',
+          error_message: 'Timed out: Pending for > 7 days',
+        })
+        .in('id', ids)
+        .select('id');
+
+      if (updateError) {
+        console.error('❌ Error marking rows as lost:', updateError.message);
+      } else {
+        const count = updated?.length ?? 0;
+        stats.lostMarked += count;
+        console.log(`   ⚠️  Marked ${count} rows as 'lost'`);
+      }
+    }
+
+    if (rows.length < PAGE_SIZE) {
+      break;
+    }
+  }
+}
+
 async function markStuckProcessingRows(stats: BackfillStats): Promise<void> {
   const cutoff = new Date(Date.now() - STUCK_PROCESSING_HOURS * 60 * 60 * 1000).toISOString();
   const PAGE_SIZE = 500;
@@ -554,9 +608,15 @@ async function backfillRawAnswerFromSnapshots(): Promise<void> {
     stuckMarkedFailed: 0,
     scoringResetToNull: 0,
     scoringTimedOutFailed: 0,
+    lostMarked: 0,
   };
 
   try {
+    await markLostRows(stats);
+    if (stats.lostMarked > 0) {
+      console.log(`⚠️  Marked ${stats.lostMarked} pending rows as 'lost' (>7 days)`);
+    }
+
     await markStuckProcessingRows(stats);
     if (stats.stuckMarkedFailed > 0) {
       console.log(`⚠️  Marked ${stats.stuckMarkedFailed} stuck 'processing' rows as failed (>${STUCK_PROCESSING_HOURS}h)`);
@@ -579,7 +639,8 @@ async function backfillRawAnswerFromSnapshots(): Promise<void> {
       .from('collector_results')
       .select('id', { count: 'exact', head: true })
       .is('raw_answer', null)
-      .not('brightdata_snapshot_id', 'is', null);
+      .not('brightdata_snapshot_id', 'is', null)
+      .neq('status', 'lost'); // Exclude lost rows from count
 
     if (countError) {
       throw new Error(`Failed to count records: ${countError.message}`);
@@ -594,21 +655,29 @@ async function backfillRawAnswerFromSnapshots(): Promise<void> {
     }
 
     // Step 2: Process in batches
-    let offset = 0;
+    let lastId: number | undefined = undefined;
     let hasMore = true;
+    let processedCount = 0;
 
     while (hasMore) {
       // Fetch batch
-      const { data: batch, error: fetchError } = await supabase
+      let query = supabase
         .from('collector_results')
         .select('id, brightdata_snapshot_id, collector_type')
         .is('raw_answer', null)
         .not('brightdata_snapshot_id', 'is', null)
-        .order('id', { ascending: true })
-        .range(offset, offset + BATCH_SIZE - 1);
+        .neq('status', 'lost') // Exclude lost rows
+        .order('id', { ascending: false }) // Process most recent first
+        .limit(BATCH_SIZE);
+
+      if (lastId !== undefined) {
+        query = query.lt('id', lastId);
+      }
+
+      const { data: batch, error: fetchError } = await query;
 
       if (fetchError) {
-        console.error(`❌ Error fetching batch at offset ${offset}:`, fetchError.message);
+        console.error(`❌ Error fetching batch (lastId: ${lastId}):`, fetchError.message);
         stats.errors += BATCH_SIZE;
         break;
       }
@@ -618,17 +687,17 @@ async function backfillRawAnswerFromSnapshots(): Promise<void> {
         break;
       }
 
+      // Update lastId for next iteration (smallest ID in current batch since desc order)
+      lastId = batch[batch.length - 1].id;
+
       // Process batch
       await processBatch(batch, stats);
 
-      // Update offset
-      offset += BATCH_SIZE;
-      hasMore = batch.length === BATCH_SIZE;
-
+      processedCount += batch.length;
+      
       // Progress update
-      const progress = Math.min(offset, stats.totalFound);
-      const percentage = ((progress / stats.totalFound) * 100).toFixed(1);
-      console.log(`\n📈 Progress: ${progress}/${stats.totalFound} (${percentage}%)\n`);
+      const percentage = stats.totalFound > 0 ? ((processedCount / stats.totalFound) * 100).toFixed(1) : '0.0';
+      console.log(`\n📈 Progress: ${processedCount} processed (approx ${percentage}% of original count)\n`);
     }
 
     // Final summary
@@ -643,6 +712,7 @@ async function backfillRawAnswerFromSnapshots(): Promise<void> {
     console.log(`   ⚠️  Not found/no data: ${stats.notFound}`);
     console.log(`   ❌ Errors: ${stats.errors}`);
     console.log(`   🚫 Marked stuck as failed: ${stats.stuckMarkedFailed}`);
+    console.log(`   🚫 Marked as lost (>7d): ${stats.lostMarked}`);
     console.log(`   ⏳ Reset scoring pending to NULL: ${stats.scoringResetToNull}`);
     console.log(`   ❌ Marked scoring pending as error: ${stats.scoringTimedOutFailed}`);
     console.log('='.repeat(60) + '\n');

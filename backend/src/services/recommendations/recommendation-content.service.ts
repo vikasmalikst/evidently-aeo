@@ -7,7 +7,7 @@
 
 import { supabaseAdmin } from '../../config/database';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
-import { groqCompoundService } from './groq-compound.service';
+import { groqCompoundService, GROQ_MODELS } from './groq-compound.service';
 import {
   detectContentAsset,
   detectPlatform,
@@ -15,7 +15,7 @@ import {
   NewContentPromptContext,
   StructureConfig
 } from './new-content-factory';
-// webResearchService removed - Groq Compound handles search natively
+import { mcpSearchService } from '../data-collection/mcp-search.service';
 import { BrandContextV3, RecommendationV3, ContentAssetType } from './recommendation.types';
 
 export type RecommendationContentStatus = 'generated' | 'accepted' | 'rejected';
@@ -458,10 +458,30 @@ Your content should help the customer's brand improve the targeted KPI by execut
           });
         }
 
-        // --- WEB RESEARCH REMOVED ---
-        // Groq Compound now handles web research natively during generation.
-        // We no longer execute explicit Brave Search queries here.
-        // ----------------------------
+        // --- NEW: Execute Web Research if queries exist ---
+        if (parsedPlan.researchQueries && Array.isArray(parsedPlan.researchQueries) && parsedPlan.researchQueries.length > 0) {
+          console.log(`🔎 [RecommendationContentService] Executing ${parsedPlan.researchQueries.length} research queries via MCP...`);
+
+          let researchContext = '';
+          for (const query of parsedPlan.researchQueries) {
+            try {
+              // Using Quick Search (SearXNG) for speed and reliability
+              const results = await mcpSearchService.quickSearch(query, 3);
+              const formatted = mcpSearchService.formatContext(results);
+              if (formatted) {
+                researchContext += formatted + '\n\n';
+              }
+            } catch (err) {
+              console.warn(`⚠️ [RecommendationContentService] Failed research for query: "${query}"`, err);
+            }
+          }
+
+          if (researchContext.length > 0) {
+            // Append to contextFilesContent (or treating it as highest priority context)
+            contextFilesContent += `\n\n### LATEST MARKET RESEARCH (MCP Verified):\n${researchContext}\n\n`;
+            console.log(`✅ [RecommendationContentService] Injected research context`);
+          }
+        }
 
       } catch (e) {
         console.warn('⚠️ [RecommendationContentService] Failed to parse strategy plan for context files', e);
@@ -907,53 +927,60 @@ ${contentStyleGuide}
     // 1. Try Groq Compound (Primary)
     try {
       console.log('🚀 [RecommendationContentService] Attempting Groq Compound (Primary)...');
-      // Enable native web search for content generation (but not for guides or clean drafts if preferred)
-      // We generally enable it to fulfill the "Grounding Rule".
-      const enableSearch = !isColdStartGuide;
+      // Enable Active Grounding via our MCP tool-calling loop
+      const enableSearch = true;
+
+      const groundingStrategy = `
+You are a senior content strategist and expert researcher. 
+Your goal is to produce high-quality, grounded content by leveraging real-time data.
+
+GROUNDING STRATEGY:
+1. GAP ANALYSIS: Identify all factual gaps (current pricing, 2026 regulations, specific competitor names, etc.).
+2. BATCH RESEARCH: Use the web_search tool to verify these gaps. Execute multiple search queries in parallel (in a single tool call) to maximize efficiency.
+3. CONTEXTUAL SYNTHESIS: Integrate results into a neutral, authoritative voice. 
+4. CITE SOURCES: Use markdown links or inline attribution for verified facts.
+`.trim();
 
       const groqResult = await groqCompoundService.generateContent({
         systemPrompt: isColdStartGuide
           ? 'You are a senior marketing consultant and AEO strategist. Generate implementation guides.'
-          : 'You are a senior content strategist. Produce high-quality, grounded content.',
+          : groundingStrategy,
         userPrompt: prompt,
-        model: 'groq/compound', // Use the compound model
+        model: GROQ_MODELS.LLAMA_70B,
         temperature: isColdStartGuide ? 0.4 : 0.6,
         maxTokens: 8000,
-        jsonMode: false, // Compound doesn't support json_object mode with tools usually, but we rely on prompt instruction
+        jsonMode: false,
         enableWebSearch: enableSearch
       });
 
       if (groqResult.content) {
         content = groqResult.content;
-        providerUsed = 'openrouter'; // Use 'openrouter' label for DB compatibility
-        modelUsed = 'groq/compound';
-        console.log('✅ [RecommendationContentService] Groq Compound succeeded');
-      } else {
-        console.warn('⚠️ [RecommendationContentService] Groq Compound returned empty content');
+        providerUsed = 'openrouter'; // Keep for DB compatibility
+        modelUsed = GROQ_MODELS.LLAMA_70B;
+        console.log(`✅ [RecommendationContentService] Groq ${modelUsed} succeeded (Active Tools: ${groqResult.executedTools?.length || 0})`);
       }
-
-    } catch (e: any) {
-      console.error('❌ [RecommendationContentService] Groq Compound failed:', e.message || e);
-      console.log('🔄 [RecommendationContentService] Falling back to OpenRouter...');
+    } catch (err: any) {
+      console.warn(`⚠️ [RecommendationContentService] Groq Compound failed: ${err.message}. Falling back to OpenRouter...`);
     }
 
-    // 2. Fallback to OpenRouter if Groq failed
+    // 2. Fallback to OpenRouter
     if (!content) {
       try {
-        const or = await openRouterCollectorService.executeQuery({
-          collectorType: 'content',
-          prompt,
-          maxTokens: isColdStartGuide ? 2600 : 8000,
-          temperature: isColdStartGuide ? 0.4 : 0.6,
-          topP: 0.9,
-          // Fallback does NOT use web search to ensure reliability if primary failed
-          enableWebSearch: false
-        });
-        content = or.response;
+        console.log('🚀 [RecommendationContentService] Attempting OpenRouter Fallback...');
         providerUsed = 'openrouter';
-        modelUsed = or.model_used;
-      } catch (e) {
-        console.error('❌ [RecommendationContentService] OpenRouter fallback failed:', e);
+        modelUsed = 'meta-llama/llama-3.3-70b-instruct';
+
+        const result = await openRouterCollectorService.executeQuery({
+          collectorType: 'content',
+          systemPrompt: 'You are a senior content strategist. Produce high-quality, grounded content.',
+          prompt: prompt,
+          model: modelUsed,
+          maxTokens: 5000
+        });
+        content = result.response;
+        console.log('✅ [RecommendationContentService] OpenRouter fallback succeeded');
+      } catch (err: any) {
+        console.error('❌ [RecommendationContentService] All providers failed:', err.message);
       }
     }
 
@@ -963,7 +990,7 @@ ${contentStyleGuide}
 
     // Log the response received
     console.log('\n📥 [RecommendationContentService] ========== RESPONSE ==========');
-    console.log(`Provider: ${providerUsed || 'unknown'}, Model: ${modelUsed || 'unknown'}`);
+    console.log(`Provider: ${providerUsed || 'unknown'}, Model: ${modelUsed || 'unknown'} `);
     console.log(content);
     console.log('📥 [RecommendationContentService] ========== END RESPONSE ==========\n');
 
@@ -977,7 +1004,7 @@ ${contentStyleGuide}
     const shouldRewriteV2 = !isColdStartGuide && isParsedV2 && this.isLowQualityV2(parsed as any);
     if (shouldRewriteV2) {
       console.warn('⚠️ [RecommendationContentService] Detected low-quality v2 content. Attempting one rewrite pass...');
-      const rewritePrompt = `${projectContext}\n\n${recommendationContext}\n\nYou previously generated JSON but it failed quality requirements.\n\nQUALITY REQUIREMENTS (must satisfy all):\n- Do NOT invent any customer/org/community names (no \"Tech Club\" style names). Only mention the brand and the target source domain.\n- Do NOT invent metrics or specific results. If missing, add to requiredInputs.\n- Must be publishable and structured with headings: TL;DR, Why this matters, Step-by-step, Checklist, Common mistakes, FAQs, CTA.\n- Must be Markdown and escape newlines as \\\\n in JSON strings.\n- Keep the same JSON v2.0 schema.\n\nHere is the previous JSON:\n${JSON.stringify(parsed, null, 2)}\n\nReturn ONLY the corrected JSON object.`;
+      const rewritePrompt = `${projectContext} \n\n${recommendationContext} \n\nYou previously generated JSON but it failed quality requirements.\n\nQUALITY REQUIREMENTS(must satisfy all): \n - Do NOT invent any customer / org / community names(no \"Tech Club\" style names). Only mention the brand and the target source domain.\n- Do NOT invent metrics or specific results. If missing, add to requiredInputs.\n- Must be publishable and structured with headings: TL;DR, Why this matters, Step-by-step, Checklist, Common mistakes, FAQs, CTA.\n- Must be Markdown and escape newlines as \\\\n in JSON strings.\n- Keep the same JSON v2.0 schema.\n\nHere is the previous JSON:\n${JSON.stringify(parsed, null, 2)}\n\nReturn ONLY the corrected JSON object.`;
 
       try {
         const orRewrite = await openRouterCollectorService.executeQuery({
@@ -1072,24 +1099,23 @@ ${contentStyleGuide}
     try {
       let cleaned = raw.trim();
 
-      // Remove markdown code blocks
-      const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (jsonBlockMatch) {
-        cleaned = jsonBlockMatch[1].trim();
-      } else {
-        // Try removing just the markers
-        if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-        if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-        if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
-        cleaned = cleaned.trim();
-      }
+      // Robust markdown code block extraction
+      const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/g;
+      const matches = Array.from(cleaned.matchAll(jsonBlockRegex));
 
-      const parsed = JSON.parse(cleaned);
-      if (this.isValidGeneratedContent(parsed)) {
-        return this.normalizeGeneratedContent(parsed);
+      for (const match of matches) {
+        try {
+          const potentialJson = match[1].trim();
+          const parsed = JSON.parse(potentialJson);
+          if (this.isValidGeneratedContent(parsed)) {
+            return this.normalizeGeneratedContent(parsed);
+          }
+        } catch {
+          // Continue to next match
+        }
       }
-    } catch {
-      // Continue to next strategy
+    } catch (e) {
+      console.warn('[PARSE] Strategy 2 failed:', (e as Error).message);
     }
 
     // Strategy 3: Extract JSON object from text (find first { ... } block)
@@ -1422,11 +1448,13 @@ ${contentStyleGuide}
       return false;
     }
 
-    // Common required fields - FSA assets (with assetType) and v5.0 (Unified) don't require recommendationId in the response
+    // Common required fields - FSA assets (with assetType), v4.0 (Refinement), and v5.0 (Unified)
+    // don't require recommendationId in the response (they are grounded by the session)
     const isFsaAsset = !!parsed.assetType;
     const isV5 = version === '5.0';
-    if (!isFsaAsset && !isV5 && !parsed.recommendationId) {
-      console.warn('[VALIDATION FAIL] Missing recommendationId (non-FSA)');
+    const isV4 = version === '4.0';
+    if (!isFsaAsset && !isV5 && !isV4 && !parsed.recommendationId) {
+      console.warn('[VALIDATION FAIL] Missing recommendationId');
       return false;
     }
     if (!parsed.brandName) {

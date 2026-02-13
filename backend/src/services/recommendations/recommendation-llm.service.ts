@@ -73,8 +73,9 @@ export class RecommendationLLMService {
                 const openRouterStartTime = Date.now();
 
                 // Add timeout wrapper for OpenRouter call
+                // Increased to 330s (5.5 mins) to allow for slow generation
                 const timeoutPromise = new Promise((_, reject) => {
-                    setTimeout(() => reject(new Error('OpenRouter request timeout after 180 seconds')), 180000);
+                    setTimeout(() => reject(new Error('OpenRouter request timeout after 330 seconds')), 330000);
                 });
 
                 const openRouterPromise = openRouterCollectorService.executeQuery({
@@ -95,46 +96,6 @@ export class RecommendationLLMService {
                 }
             } catch (e: any) {
                 console.error('❌ [RecommendationLLMService] OpenRouter API failed:', e.message || e);
-                if (e.message?.includes('timeout')) {
-                    console.error('⏱️ [RecommendationLLMService] OpenRouter request timed out, trying Cerebras fallback...');
-                }
-            }
-        }
-
-        // 3. Fallback to Cerebras
-        if (!content && this.cerebrasApiKey) {
-            try {
-                console.log('🔄 [RecommendationLLMService] Trying Cerebras fallback...');
-                const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.cerebrasApiKey}`
-                    },
-                    body: JSON.stringify({
-                        model: this.cerebrasModel,
-                        messages: [
-                            { role: 'system', content: systemMessage },
-                            { role: 'user', content: prompt }
-                        ],
-                        max_tokens: maxTokens,
-                        temperature: 0.5
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await response.json() as CerebrasChatResponse;
-                    content = data?.choices?.[0]?.message?.content || null;
-                    if (content) {
-                        providerUsed = 'cerebras';
-                        console.log('✅ [RecommendationLLMService] Cerebras fallback succeeded');
-                    }
-                } else {
-                    const errorText = await response.text().catch(() => 'Unknown error');
-                    console.error(`❌ [RecommendationLLMService] Cerebras fallback failed: ${response.status} - ${errorText.substring(0, 200)}`);
-                }
-            } catch (e) {
-                console.error('❌ [RecommendationLLMService] Cerebras fallback failed:', e);
             }
         }
 

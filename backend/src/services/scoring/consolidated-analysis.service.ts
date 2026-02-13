@@ -194,13 +194,9 @@ export class ConsolidatedAnalysisService {
     rawResponse?: string
   ): Promise<void> {
     try {
-      // Extract only products and sentiment (citations are stored separately)
+      // Extract only sentiment (citations stored separately, products column removed from schema)
       const cacheData = {
         collector_result_id: collectorResultId,
-        products: {
-          brand: result.products?.brand || [],
-          competitors: result.products?.competitors || {},
-        },
         sentiment: {
           brand: result.sentiment?.brand || { label: 'NEUTRAL', score: 60 },
           competitors: result.sentiment?.competitors || {},

@@ -42,6 +42,7 @@ import { DateRangeSelector } from '../dashboard/components/DateRangeSelector';
 import { DashboardSkeleton } from '../dashboard/components/DashboardSkeleton';
 import { useCachedData } from '../../hooks/useCachedData';
 import type { DashboardScoreMetric } from '../dashboard/types';
+import { usePreviousPeriodData } from '../dashboard/hooks/usePreviousPeriodData';
 
 // Search Visibility components
 import { ChartControls } from '../../components/Visibility/ChartControls';
@@ -523,7 +524,7 @@ export const MeasurePage = () => {
       ...llmSlices.map(s => ({ value: s.provider, label: s.provider, color: s.color }))
     ];
 
-    return { brandModels: brandModelData, competitorModels: competitorModelData, llmOptions, chartDateLabels };
+    return { brandModels: brandModelData, competitorModels: competitorModelData, llmOptions, chartDateLabels, rawDates: masterDates };
   }, [dashboardData, selectedBrand]);
 
   // Update state when processed data changes
@@ -549,6 +550,7 @@ export const MeasurePage = () => {
   const currentModels = competitorModels;
   const llmOptions = allLlmOptions;
   const chartDateLabels = processedData.chartDateLabels || chartLabels;
+  const rawDates = processedData.rawDates || [];
 
   const prevModelIdsRef = useRef<string[]>([]);
 
@@ -649,18 +651,26 @@ export const MeasurePage = () => {
   const findScore = (label: string, data: typeof dashboardData): DashboardScoreMetric | undefined =>
     data?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
 
-  // Dashboard KPI metrics - Derived from Filtered Data (dashboardData)
+  // Period-over-Period (PoP) Comparison Data
+  const { previousData } = usePreviousPeriodData(startDate, endDate, selectedBrandId);
+
+  // Helper to find score in Previous Data
+  const findPrevScore = (label: string): number | undefined => {
+    return previousData?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase())?.value;
+  };
+
+  // Dashboard KPI metrics - Derived from Current Filtered Data (dashboardData)
   const filteredBrandSummary = dashboardData?.brandSummary;
 
   const visibilityMetricValue = filteredBrandSummary?.visibility ?? findScore('Visibility Index', dashboardData)?.value;
-  // Share from brandSummary is already a 0-1 float, so multiply by 100 for display
-  // BUT if the value is already > 1 (like 4.4 meaning 440%), don't multiply again
+  
+  // Share calculation
   const rawShare = filteredBrandSummary?.share;
   const shareMetricValue = rawShare !== undefined
-    ? (rawShare > 1 ? rawShare : rawShare * 100) // If > 1, it's already a percentage
+    ? (rawShare > 1 ? rawShare : rawShare * 100)
     : findScore('Share of Answers', dashboardData)?.value;
 
-  // Re-map sentiment from slices if needed
+  // Sentiment calculation
   const calculatedSentiment = useMemo(() => {
     if (!dashboardData?.llmVisibility?.length) return undefined;
     const slices = dashboardData.llmVisibility;
@@ -672,25 +682,80 @@ export const MeasurePage = () => {
 
   const sentimentMetricValueFinal = calculatedSentiment ?? findScore('Sentiment Score', dashboardData)?.value;
 
+  // PERIOD-OVER-PERIOD DERIVATION
+  // 1. Visibility (Absolute Point Change)
+  const prevVisibility = previousData?.brandSummary?.visibility ?? findPrevScore('Visibility Index');
+  const visibilityDelta = (visibilityMetricValue !== undefined && prevVisibility !== undefined)
+    ? Number((visibilityMetricValue - prevVisibility).toFixed(1))
+    : 0;
+
+  // 2. Share of Answers
+  // Share can be tricky. Usually normalized 0-100.
+  // We want to show the CHANGE. 
+  // User asked for "real numbers" for Visibility/Sentiment. Share is usually a percentage.
+  // Standard is absolute percentage point change for percentages (e.g. 50% -> 55% = +5%).
+  // Currently DashboardScoreMetric 'delta' is usually relative unless specified.
+  // Let's stick to absolute point difference for Share too (since it's a %).
+  // Or do relative? "increment decrement". 
+  // Let's do absolute change for Share as well (e.g. +4.2%).
+  const prevShareRaw = previousData?.brandSummary?.share;
+  const prevShareValue = prevShareRaw !== undefined
+    ? (prevShareRaw > 1 ? prevShareRaw : prevShareRaw * 100)
+    : findPrevScore('Share of Answers');
+    
+  const shareDelta = (shareMetricValue !== undefined && prevShareValue !== undefined)
+    ? Number((shareMetricValue - prevShareValue).toFixed(1))
+    : 0;
+
+
+  // 3. Sentiment Score (Absolute Point Change)
+  // Need to calculate Previous Sentiment similarly
+  const paramsPrevSentiment = useMemo(() => {
+     if (!previousData?.llmVisibility?.length) return undefined;
+     const slices = previousData.llmVisibility;
+     const valid = slices.filter(s => s.sentiment != null);
+     if (!valid.length) return undefined;
+     const sum = valid.reduce((acc, s) => acc + (s.sentiment || 0), 0);
+     return sum / valid.length;
+  }, [previousData]);
+  
+  const prevSentimentValue = paramsPrevSentiment ?? findPrevScore('Sentiment Score');
+  const sentimentDelta = (sentimentMetricValueFinal !== undefined && prevSentimentValue !== undefined)
+    ? Number((sentimentMetricValueFinal - prevSentimentValue).toFixed(1))
+    : 0;
+
+
+  // 4. Brand Presence (Relative or Absolute?)
+  // Previously we used trendPercentage which is usually relative.
+  // Let's perform relative growth calculation for Brand Presence if it's a volume/count thing,
+  // BUT the card shows %. So let's show point change.
+  // "Brand Presence: 80.1%". If previous was 70%, delta is +10.1%.
   const brandPresencePercentage = filteredBrandSummary?.brandPresencePercentage ??
     (dashboardData?.totalBrandRows ? Math.min(100, Math.round((dashboardData.brandPresenceRows / dashboardData.totalBrandRows) * 100)) : 0);
+    
+  const prevBrandPresencePercentage = previousData?.brandSummary?.brandPresencePercentage ??
+      (previousData?.totalBrandRows ? Math.min(100, Math.round((previousData.brandPresenceRows / previousData.totalBrandRows) * 100)) : undefined);
+      
+  const brandPresenceDelta = (brandPresencePercentage !== undefined && prevBrandPresencePercentage !== undefined)
+      ? Number((brandPresencePercentage - prevBrandPresencePercentage).toFixed(1))
+      : 0;
 
   // Construct metrics matching DashboardScoreMetric interface
   const visibilityMetric: DashboardScoreMetric = {
     value: visibilityMetricValue || 0,
-    delta: 0,
+    delta: visibilityDelta,
     label: 'Visibility Index',
     description: 'Visibility Index'
   };
   const shareMetric: DashboardScoreMetric = {
     value: shareMetricValue || 0,
-    delta: 0,
+    delta: shareDelta,
     label: 'Share of Answers',
     description: 'Share of Answers'
   };
   const sentimentMetric: DashboardScoreMetric = {
     value: sentimentMetricValueFinal || 0,
-    delta: 0,
+    delta: sentimentDelta,
     label: 'Sentiment Score',
     description: 'Sentiment Score'
   };
@@ -758,7 +823,7 @@ export const MeasurePage = () => {
           title: 'Brand Presence',
           value: `${brandPresencePercentage}%`,
           subtitle: '',
-          trend: computeTrend(dashboardData?.trendPercentage),
+          trend: computeTrend(brandPresenceDelta),
           icon: <Activity size={20} />,
           color: '#7c3aed',
           linkTo: '/measure?kpi=brandPresence',
@@ -776,6 +841,7 @@ export const MeasurePage = () => {
           value: formatMetricValue(visibilityMetric, ''),
           subtitle: '',
           trend: computeTrend(visibilityMetric?.delta),
+          trendSuffix: '', // Absolute points
           icon: <Eye size={20} />,
           color: '#498cf9',
           linkTo: '/measure?kpi=visibility',
@@ -810,6 +876,7 @@ export const MeasurePage = () => {
           value: sentimentMetric ? formatNumber(sentimentMetric.value, 1) : '—',
           subtitle: '',
           trend: computeTrend(sentimentMetric?.delta),
+          trendSuffix: '', // Absolute points
           icon: <MessageSquare size={20} />,
           color: '#00bcdc',
           linkTo: '/measure?kpi=sentiment',
@@ -1119,7 +1186,7 @@ export const MeasurePage = () => {
               <div className="flex flex-col gap-6">
                 {/* KPI Toggle */}
                 <div className="flex items-start justify-between gap-4">
-                  <KpiToggle metricType={metricType} onChange={handleKpiSelect} allowedMetricTypes={['visibility', 'share', 'brandPresence', 'sentiment']} />
+                  <KpiToggle metricType={metricType} onChange={handleKpiSelect} allowedMetricTypes={['brandPresence', 'visibility', 'share', 'sentiment']} />
                   <HelpButton
                     onClick={() => handleHelpClick('trend-analysis')}
                     label="How to read this chart"
@@ -1168,6 +1235,7 @@ export const MeasurePage = () => {
                     models={currentModels}
                     metricType={metricType}
                     completedRecommendations={dashboardData?.completedRecommendations}
+                    rawDates={rawDates}
                   />
                 </motion.div>
               </AnimatePresence>

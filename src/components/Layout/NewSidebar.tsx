@@ -54,7 +54,7 @@ const navItems: NavItem[] = [
     children: [
       { label: 'Citation Sources', path: '/analyze/citation-sources', icon: IconQuote },
       { label: 'Topics', path: '/analyze/topics', icon: IconCategory },
-      { label: 'Queries', path: '/analyze/queries', icon: IconMessageQuestion },
+      // { label: 'Queries', path: '/analyze/queries', icon: IconMessageQuestion },
       { label: 'Queries & Answers', path: '/analyze/queries-answers', icon: IconMessages },
       // { label: 'Keywords', path: '/analyze/keywords', icon: IconKey },
       // { label: 'Sentiment Graph', path: '/analyze/keywords-graph', icon: IconKey },

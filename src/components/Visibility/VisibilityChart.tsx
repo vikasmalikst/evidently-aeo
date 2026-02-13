@@ -34,21 +34,24 @@ const getOrCreateTooltip = (chart: any) => {
   if (!tooltipEl) {
     tooltipEl = document.createElement('div');
     tooltipEl.classList.add('chartjs-tooltip');
-    tooltipEl.style.background = 'rgba(26, 29, 41, 0.96)';
-    tooltipEl.style.borderRadius = '4px';
-    tooltipEl.style.color = 'white';
+    tooltipEl.style.background = '#ffffff';
+    tooltipEl.style.borderRadius = '12px';
     tooltipEl.style.opacity = '1';
     tooltipEl.style.pointerEvents = 'none';
     tooltipEl.style.position = 'absolute';
     // tooltipEl.style.transform = 'translate(-50%, 0)'; // Moved to external handler for dynamic positioning
     tooltipEl.style.zIndex = '100';
-    tooltipEl.style.border = '1px solid #c6c9d2';
-    tooltipEl.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+    tooltipEl.style.border = '1px solid #f1f5f9';
+    tooltipEl.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04)';
+    tooltipEl.style.fontFamily = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    tooltipEl.style.transition = 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), top 0.1s cubic-bezier(0.4, 0, 0.2, 1), left 0.1s cubic-bezier(0.4, 0, 0.2, 1)';
+    tooltipEl.style.padding = '0'; // Reset padding, will be handled by internal container
 
-    const table = document.createElement('table');
-    table.style.margin = '0px';
+    const container = document.createElement('div');
+    container.style.padding = '12px 14px';
+    container.classList.add('tooltip-container');
 
-    tooltipEl.appendChild(table);
+    tooltipEl.appendChild(container);
     chart.canvas.parentNode.appendChild(tooltipEl);
   }
 
@@ -138,6 +141,7 @@ interface VisibilityChartProps {
     action: string;
     completedAt: string;
   }>;
+  rawDates?: string[];
 }
 
 export const VisibilityChart = memo((props: VisibilityChartProps) => {
@@ -149,7 +153,8 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
     activeTab = 'brand',
     models = [],
     metricType = 'visibility',
-    completedRecommendations = []
+    completedRecommendations = [],
+    rawDates = []
   } = props;
 
   const chartRef = useRef<any>(null);
@@ -388,29 +393,43 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
               const titleLines = tooltip.title || [];
               const bodyLines = tooltip.body.map((b: any) => b.lines);
 
-              const tableHead = document.createElement('thead');
+              const dataPoints = tooltip.dataPoints || [];
+              const dataIndex = dataPoints.length > 0 ? dataPoints[0].dataIndex : -1;
+              
+              // Resolve proper title (formatted date)
+              let displayTitle = '';
+              if (dataIndex !== -1 && rawDates && rawDates[dataIndex]) {
+                 try {
+                   // Ensure consistent formatting: "Sat, Oct 7, 2023"
+                   // Parse explicitly to avoid TZ issues if possible, but localized string is fine for display
+                   // We use the same parsing logic as in dateFormatting.ts if needed, but Date constructor usually works for YYYY-MM-DD
+                   // Better to use the utility if available, but for now simple Date is okay or we can use the label if it fails
+                   const [y, m, d] = rawDates[dataIndex].split('-').map(Number);
+                   const dateObj = new Date(y, m - 1, d);
+                   displayTitle = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+                 } catch (e) {
+                   displayTitle = titleLines[0];
+                 }
+              } else {
+                 displayTitle = titleLines[0];
+              }
 
-              titleLines.forEach((title: string) => {
-                const tr = document.createElement('tr');
-                tr.style.borderWidth = '0';
-
-                const th = document.createElement('th');
-                th.style.borderWidth = '0';
-                th.style.textAlign = 'left';
-                th.style.paddingBottom = '8px';
-                th.style.color = '#ffffff';
-                th.style.fontSize = '12px';
-                th.style.fontWeight = '600';
-                th.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
-
-                const text = document.createTextNode(title);
-                th.appendChild(text);
-                tr.appendChild(th);
-                tableHead.appendChild(tr);
-              });
+              const headerDiv = document.createElement('div');
+              headerDiv.style.marginBottom = '12px';
+              headerDiv.style.paddingBottom = '8px';
+              headerDiv.style.borderBottom = '1px solid #f1f5f9'; // Slate 100
+              
+              const titleSpan = document.createElement('div');
+              titleSpan.style.color = '#64748b'; // Slate 500
+              titleSpan.style.fontSize = '11px';
+              titleSpan.style.fontWeight = '600';
+              titleSpan.style.textTransform = 'uppercase';
+              titleSpan.style.letterSpacing = '0.05em';
+              titleSpan.innerText = displayTitle;
+              headerDiv.appendChild(titleSpan);
 
               // Sort data points by value (descending) to show highest value on top
-              const dataPoints = tooltip.dataPoints || [];
+              // dataPoints is already defined above
               const sortedIndices = dataPoints
                 .map((dp: any, i: number) => ({ index: i, value: dp.raw as number }))
                 .sort((a: any, b: any) => {
@@ -421,7 +440,10 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
                 })
                 .map((item: any) => item.index);
 
-              const tableBody = document.createElement('tbody');
+              const rowsContainer = document.createElement('div');
+              rowsContainer.style.display = 'flex';
+              rowsContainer.style.flexDirection = 'column';
+              rowsContainer.style.gap = '6px';
 
               // Iterate using sorted indices
               sortedIndices.forEach((sortedIndex: number) => {
@@ -434,33 +456,34 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
                 const logoUrl = (dataset as any).logo;
                 const domain = (dataset as any).domain;
 
-                const tr = document.createElement('tr');
-                tr.style.backgroundColor = 'inherit';
-                tr.style.borderWidth = '0';
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.alignItems = 'center';
+                row.style.justifyContent = 'space-between';
+                row.style.width = '100%';
+                row.style.minWidth = '180px'; 
+                row.style.gap = '16px';
 
-                const td = document.createElement('td');
-                td.style.borderWidth = '0';
-                td.style.display = 'flex';
-                td.style.alignItems = 'center';
-                td.style.padding = '4px 0';
+                const leftSide = document.createElement('div');
+                leftSide.style.display = 'flex';
+                leftSide.style.alignItems = 'center';
+                leftSide.style.gap = '8px';
+                leftSide.style.overflow = 'hidden';
 
                 // Color indicator or Logo
                 const iconContainer = document.createElement('div');
                 iconContainer.style.width = '16px';
                 iconContainer.style.height = '16px';
-                iconContainer.style.minWidth = '16px';
-                iconContainer.style.marginRight = '8px';
+                iconContainer.style.minWidth = '16px'; // Prevent shrink
                 iconContainer.style.display = 'flex';
                 iconContainer.style.alignItems = 'center';
                 iconContainer.style.justifyContent = 'center';
 
                 // Fallback to dot helper
                 const renderDot = () => {
-                  const dot = document.createElement('span');
-                  dot.style.background = colors.borderColor;
-                  dot.style.borderColor = colors.borderColor;
-                  dot.style.borderWidth = '2px';
-                  dot.style.display = 'inline-block';
+                  const dot = document.createElement('div');
+                  dot.style.background = colors.backgroundColor;
+                  dot.style.border = `2px solid ${colors.borderColor}`;
                   dot.style.height = '8px';
                   dot.style.width = '8px';
                   dot.style.borderRadius = '50%';
@@ -473,11 +496,11 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
 
                   if (candidates.length > 0) {
                     img.src = candidates[0];
-                    img.style.width = '14px';
-                    img.style.height = '14px';
+                    img.style.width = '16px';
+                    img.style.height = '16px';
                     img.style.objectFit = 'contain';
-                    img.style.borderRadius = '2px';
-
+                    img.style.borderRadius = '4px'; // Slightly rounded logo
+                    
                     img.onerror = () => {
                       failedUrls.current.add(img.src);
                       const nextCandidates = candidates.filter(url => !failedUrls.current.has(url));
@@ -497,12 +520,7 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
                   renderDot();
                 }
 
-                td.appendChild(iconContainer);
-
-                const textSpan = document.createElement('span');
-                textSpan.style.color = '#ffffff';
-                textSpan.style.fontSize = '12px';
-                textSpan.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+                leftSide.appendChild(iconContainer);
 
                 const labelFull = body[0];
                 const labelParts = labelFull.split(':');
@@ -510,30 +528,39 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
                 const labelValue = labelParts[1];
 
                 const nameSpan = document.createElement('span');
-                nameSpan.style.color = 'rgba(255, 255, 255, 0.7)';
-                nameSpan.style.marginRight = '4px';
-                nameSpan.innerText = labelName + ':';
+                nameSpan.style.color = '#334155'; // Slate 700 - darker for readability
+                nameSpan.style.fontSize = '12px';
+                nameSpan.style.fontWeight = '500';
+                nameSpan.style.whiteSpace = 'nowrap';
+                nameSpan.style.overflow = 'hidden';
+                nameSpan.style.textOverflow = 'ellipsis';
+                nameSpan.style.maxWidth = '140px'; 
+                nameSpan.innerText = labelName;
+
+                leftSide.appendChild(nameSpan);
 
                 const valueSpan = document.createElement('span');
+                valueSpan.style.color = '#0f172a'; // Slate 900 - darkest
+                valueSpan.style.fontSize = '12px';
                 valueSpan.style.fontWeight = '600';
+                valueSpan.style.fontVariantNumeric = 'tabular-nums';
                 valueSpan.innerText = labelValue;
 
-                textSpan.appendChild(nameSpan);
-                textSpan.appendChild(valueSpan);
-                td.appendChild(textSpan);
-                tr.appendChild(td);
-                tableBody.appendChild(tr);
+                row.appendChild(leftSide);
+                row.appendChild(valueSpan);
+                rowsContainer.appendChild(row);
               });
 
-              const root = tooltipEl.querySelector('table');
+              const root = tooltipEl.querySelector('.tooltip-container');
+              if (root) {
+                // Remove old children
+                while (root.firstChild) {
+                  root.firstChild.remove();
+                }
 
-              // Remove old children
-              while (root.firstChild) {
-                root.firstChild.remove();
+                root.appendChild(headerDiv);
+                root.appendChild(rowsContainer);
               }
-
-              root.appendChild(tableHead);
-              root.appendChild(tableBody);
             }
 
             const { offsetLeft: positionX, offsetTop: positionY } = chart.canvas;
@@ -550,9 +577,11 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
             // Let's rely on the parent container height which is 320px
             const chartHeight = chart.canvas.parentNode.clientHeight || 320;
             const tooltipHeight = tooltipRect.height;
+            const tooltipWidth = tooltipRect.width;
 
             // Default position: below the cursor
             let topPos = positionY + tooltip.caretY + 10;
+            let leftPos = positionX + tooltip.caretX;
 
             // Check if it overflows the bottom of the chart container
             if (topPos + tooltipHeight > chartHeight) {
@@ -570,11 +599,30 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
             if (topPos + tooltipHeight > chartHeight) {
               topPos = chartHeight - tooltipHeight;
             }
+            
+            // Handle Horizontal Overflow
+            // By default we center it: transform: translate(-50%, 0)
+            // We need to check if leftPos - width/2 < 0 (left overflow)
+            // or leftPos + width/2 > chartWidth (right overflow)
+            
+            const chartWidth = chart.width;
+            
+            let translateX = -50;
+            
+            if (leftPos - tooltipWidth / 2 < 0) {
+               // Left overflow: shift right. remove translate
+               translateX = 0;
+               leftPos = 10; // padding
+            } else if (leftPos + tooltipWidth / 2 > chartWidth) {
+               // Right overflow: shift left
+               translateX = -100;
+               leftPos = chartWidth - 10; // padding
+            }
 
-            tooltipEl.style.transform = 'translate(-50%, 0)'; // Alway center horizontally, manual Y pos
-            tooltipEl.style.left = positionX + tooltip.caretX + 'px';
+            tooltipEl.style.transform = `translate(${translateX}%, 0)`; 
+            tooltipEl.style.left = leftPos + 'px';
             tooltipEl.style.top = topPos + 'px';
-            tooltipEl.style.padding = tooltip.options.padding + 'px ' + tooltip.options.padding + 'px';
+            tooltipEl.style.padding = '0';
           }
         },
       },

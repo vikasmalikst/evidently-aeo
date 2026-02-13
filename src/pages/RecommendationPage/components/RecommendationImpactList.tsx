@@ -1,6 +1,5 @@
-import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { IconTrash, IconExternalLink } from '@tabler/icons-react';
+import { SafeLogo } from '../../../components/Onboarding/common/SafeLogo';
 import { RecommendationV3, IdentifiedKPI } from '../../../api/recommendationsV3Api';
 
 interface RecommendationImpactListProps {
@@ -87,7 +86,7 @@ export const RecommendationImpactList: React.FC<RecommendationImpactListProps> =
               <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                 Recommendation Action
               </th>
-              <th className="px-6 py-4 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                 Domain/Source
               </th>
               <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider min-w-[180px]">
@@ -98,9 +97,6 @@ export const RecommendationImpactList: React.FC<RecommendationImpactListProps> =
               </th>
               <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider min-w-[180px]">
                 Sentiment (Baseline / Current)
-              </th>
-              <th className="px-6 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-wider w-[60px]">
-                Action
               </th>
             </tr>
           </thead>
@@ -143,11 +139,24 @@ export const RecommendationImpactList: React.FC<RecommendationImpactListProps> =
                     </td>
 
                     {/* Domain/Source */}
-                    <td className="px-6 py-6 align-top text-center w-[10%]">
-                      <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-sky-50 text-sky-600 border border-sky-100 shadow-sm">
-                        <IconExternalLink size={10} className="mr-1.5" />
-                        <span className="text-[10px] font-bold">{rec.citationSource || 'Link'}</span>
-                      </div>
+                    <td className="px-6 py-6 align-top text-left w-[15%]">
+                        <div className="flex flex-col items-start gap-1">
+                            {rec.citationSource && (
+                                <>
+                                    <div className="flex-shrink-0 w-6 h-6 rounded overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
+                                        <SafeLogo 
+                                            domain={rec.citationSource}
+                                            alt={rec.citationSource} 
+                                            className="w-4 h-4 object-contain" 
+                                            size={16} 
+                                        />
+                                    </div>
+                                    <p className="text-[11px] font-medium text-slate-500 truncate max-w-[150px] leading-tight" title={rec.citationSource}>
+                                        {rec.citationSource}
+                                    </p>
+                                </>
+                            )}
+                        </div>
                     </td>
 
                     {/* Visibility */}
@@ -165,22 +174,7 @@ export const RecommendationImpactList: React.FC<RecommendationImpactListProps> =
                       {renderMetricCell(rec.sentiment, currentSentiment)}
                     </td>
 
-                    {/* Action */}
-                    <td className="px-6 py-6 align-top text-right w-[5%]">
-                      {rec.id && (
-                        <button
-                          onClick={() => {
-                            if (confirm('Are you sure you want to stop tracking this recommendation?')) {
-                              onStatusChange(rec.id!, 'removed');
-                            }
-                          }}
-                          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                          title="Stop Tracking"
-                        >
-                          <IconTrash size={16} />
-                        </button>
-                      )}
-                    </td>
+
                   </motion.tr>
                 ))}
               </AnimatePresence>

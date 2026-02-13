@@ -1,0 +1,137 @@
+#!/usr/bin/expect
+
+set timeout 20
+# Generate secret key locally
+set secret [exec openssl rand -hex 32]
+
+spawn ssh -o StrictHostKeyChecking=no dev@evidentlyaeo.com
+
+expect {
+  "password:" { send "t3mpd3vp@ss\r"; exp_continue }
+  "yes/no" { send "yes\r"; exp_continue }
+  "$ " {}
+}
+
+# --- Cleanup previous attempts ---
+send "echo 'Cleaning up...'\r"
+expect "$ "
+send "cd /opt/mcp-search\r"
+expect "$ "
+send "docker-compose down\r"
+expect "$ "
+
+# --- Write docker-compose.yml (Port 8082) ---
+send "echo 'Writing docker-compose.yml...'\r"
+expect "$ "
+send "cat > /opt/mcp-search/docker-compose.yml << 'EOF'\r"
+expect "> "
+send "version: '3.8'\r"
+send "\r"
+send "services:\r"
+send "  searxng:\r"
+send "    image: searxng/searxng:latest\r"
+send "    container_name: mcp-searxng\r"
+send "    restart: unless-stopped\r"
+send "    volumes:\r"
+send "      - ./searxng:/etc/searxng:ro\r"
+send "    environment:\r"
+send "      - SEARXNG_BASE_URL=http://localhost:8082/\r"
+send "    ports:\r"
+send "      - \"127.0.0.1:8082:8080\"\r"
+send "    cap_drop:\r"
+send "      - ALL\r"
+send "    cap_add:\r"
+send "      - CHOWN\r"
+send "      - SETGID\r"
+send "      - SETUID\r"
+send "    logging:\r"
+send "      driver: \"json-file\"\r"
+send "      options:\r"
+send "        max-size: \"10m\"\r"
+send "        max-file: \"3\"\r"
+send "    depends_on:\r"
+send "      - redis\r"
+send "\r"
+send "  redis:\r"
+send "    image: redis:alpine\r"
+send "    container_name: mcp-redis\r"
+send "    restart: unless-stopped\r"
+send "    command: redis-server --save 60 1 --loglevel warning\r"
+send "    volumes:\r"
+send "      - redis-data:/data\r"
+send "\r"
+send "  firecrawl:\r"
+send "    image: firecrawl/firecrawl:latest\r"
+send "    container_name: firecrawl\r"
+send "    environment:\r"
+send "      - REDIS_URL=redis://mcp-redis:6379\r"
+send "      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright:3000\r"
+send "    depends_on:\r"
+send "      - redis\r"
+send "\r"
+send "volumes:\r"
+send "  redis-data:\r"
+send "EOF\r"
+expect "$ "
+
+# --- Write settings.yml ---
+send "echo 'Writing settings.yml...'\r"
+expect "$ "
+send "cat > /opt/mcp-search/searxng/settings.yml << 'EOF'\r"
+expect "> "
+send "use_default_settings: true\r"
+send "\r"
+send "general:\r"
+send "  instance_name: \"EvidentlyAEO MCP Search\"\r"
+send "  enable_metrics: false\r"
+send "\r"
+send "server:\r"
+send "  secret_key: \"GENERATED_SECRET_KEY_PLACEHOLDER\" \r"
+send "  limiter: false\r"
+send "  image_proxy: true\r"
+send "\r"
+send "search:\r"
+send "  formats:\r"
+send "    - html\r"
+send "    - json\r"
+send "\r"
+send "engines:\r"
+send "  - name: google\r"
+send "    disabled: false\r"
+send "  - name: bing\r"
+send "    disabled: false\r"
+send "  - name: duckduckgo\r"
+send "    disabled: false\r"
+send "  - name: brave\r"
+send "    disabled: false\r"
+send "EOF\r"
+expect "$ "
+
+# --- Deploy ---
+send "echo 'Deploying Stack...'\r"
+expect "$ "
+# Replace placeholder with generated secret
+send "sed -i \"s/GENERATED_SECRET_KEY_PLACEHOLDER/$secret/\" /opt/mcp-search/searxng/settings.yml\r"
+expect "$ "
+
+send "cd /opt/mcp-search\r"
+expect "$ "
+send "docker-compose up -d\r"
+expect "$ "
+
+# --- Verify ---
+send "echo 'Verifying deployment...'\r"
+expect "$ "
+send "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'\r"
+expect "$ "
+
+# Wait a moment for SearXNG to start
+send "echo 'Waiting for startup...'\r"
+expect "$ "
+send "sleep 10\r"
+expect "$ "
+send "curl -s \"http://localhost:8082/search?q=test&format=json\" | head -n 5\r"
+expect "$ "
+
+send "exit\r"
+expect eof

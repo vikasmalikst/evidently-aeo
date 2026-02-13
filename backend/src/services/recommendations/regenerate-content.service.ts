@@ -18,6 +18,7 @@ export interface RegenerateContentResponse {
     data?: {
         content: any;
         regenRetry: number;
+        toolCallsExecuted?: number;
     };
     error?: string;
 }
@@ -80,6 +81,8 @@ class RegenerateContentService {
                 .eq('id', rec.brand_id)
                 .eq('customer_id', customerId)
                 .single();
+
+            // Autonomous tool-calling loop will handle research if needed
 
             // 5. Build regeneration prompt
             const projectContext = `You are generating content for AnswerIntel (Evidently): a platform that helps brands improve their visibility in AI answers.
@@ -156,17 +159,29 @@ INSTRUCTIONS:
 
 Return the complete regenerated JSON object:`;
 
-            // 6. Call OpenRouter with GPT-OSS-20b (fastest model)
-            console.log(`🔄 [RegenerateContentService] Regenerating content for ${recommendationId}...`);
+            // 6. Call OpenRouter with autonomous tool-calling loop
+            console.log(`🔄 [RegenerateContentService] Regenerating content for ${recommendationId} with autonomous grounding...`);
+
+            const groundingStrategy = `
+You are a senior content strategist and expert researcher.
+Your goal is to produce high-quality, grounded content by leveraging real-time data.
+
+GROUNDING STRATEGY:
+1. GAP ANALYSIS: Identify all factual gaps (current pricing, 2026 regulations, specific competitor names, etc.).
+2. BATCH RESEARCH: Use the web_search tool to verify these gaps. Execute multiple search queries in parallel (in a single tool call) to maximize efficiency.
+3. CONTEXTUAL SYNTHESIS: Integrate results into a neutral, authoritative voice.
+4. CITE SOURCES: Use markdown links or inline attribution for verified facts.
+`.trim();
 
             const orResponse = await openRouterCollectorService.executeQuery({
                 collectorType: 'content',
+                systemPrompt: groundingStrategy,
                 prompt: regenerationPrompt,
-                maxTokens: 2600,
-                temperature: 0.5,
+                maxTokens: 10000,
+                temperature: 0.6,
                 topP: 0.9,
-                enableWebSearch: false,
-                model: 'openai/gpt-oss-20b' // Fast and cost-effective for regeneration
+                model: 'openai/gpt-oss-20b', // Fast, efficient model
+                enableToolLoop: true // Enable autonomous tool-calling loop
             });
 
             let regeneratedContent = orResponse.response;
@@ -235,8 +250,7 @@ Return the complete regenerated JSON object:`;
             const { error: retryUpdateError } = await supabaseAdmin
                 .from('recommendations')
                 .update({
-                    regen_retry: currentRetry + 1,
-                    updated_at: now
+                    regen_retry: currentRetry + 1
                 })
                 .eq('id', recommendationId)
                 .eq('customer_id', customerId);
@@ -252,7 +266,8 @@ Return the complete regenerated JSON object:`;
                 success: true,
                 data: {
                     content: parsedRegenContent,
-                    regenRetry: currentRetry + 1
+                    regenRetry: currentRetry + 1,
+                    toolCallsExecuted: orResponse.toolCallsExecuted || 0
                 }
             };
 

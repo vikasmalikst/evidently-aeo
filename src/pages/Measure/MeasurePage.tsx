@@ -650,6 +650,35 @@ export const MeasurePage = () => {
   const findScore = (label: string, data: typeof dashboardData): DashboardScoreMetric | undefined =>
     data?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
 
+  // Helper for trend calculation
+  const calculate7DayDelta = useCallback((data: number[] | undefined | null, mode: 'percentage' | 'absolute' = 'percentage'): number => {
+    if (!data || data.length < 2) return 0;
+    
+    // We want Week-over-Week (7 days ago)
+    // Assuming daily data points in the array
+    const currentIndex = data.length - 1;
+    const prevIndex = data.length - 8; // 7 days prior to current
+                         
+    if (prevIndex < 0) return 0; // Not enough data for strict 7-day trend
+    
+    const current = data[currentIndex] ?? 0;
+    const previous = data[prevIndex] ?? 0;
+    
+    // Absolute difference
+    if (mode === 'absolute') {
+      return Number((current - previous).toFixed(1));
+    }
+    
+    // Percentage change
+    if (previous === 0) {
+      // If previous was 0 and now we have something, current > 0 ? 100 : 0
+      return current > 0 ? 100 : 0; 
+    }
+    
+    const percentChange = ((current - previous) / previous) * 100;
+    return percentChange;
+  }, []);
+
   // Dashboard KPI metrics - Derived from Filtered Data (dashboardData)
   const filteredBrandSummary = dashboardData?.brandSummary;
 
@@ -676,22 +705,36 @@ export const MeasurePage = () => {
   const brandPresencePercentage = filteredBrandSummary?.brandPresencePercentage ??
     (dashboardData?.totalBrandRows ? Math.min(100, Math.round((dashboardData.brandPresenceRows / dashboardData.totalBrandRows) * 100)) : 0);
 
+  // Calculate Deltas from TimeSeries
+  // Visibility: Absolute points
+  const visibilityDelta = calculate7DayDelta(filteredBrandSummary?.timeSeries?.visibility, 'absolute');
+  
+  // Share: Percentage change (or could be absolute % points, but 'percentage' mode is relative growth)
+  // User asked for "real numbers" for Visibility/Sentiment specifically. Share is usually relative.
+  const shareDelta = calculate7DayDelta(filteredBrandSummary?.timeSeries?.share, 'percentage');
+  
+  // Sentiment: Absolute points (scale 0-100)
+  const sentimentDelta = calculate7DayDelta(filteredBrandSummary?.timeSeries?.sentiment as number[] | undefined, 'absolute');
+  
+  // Brand Presence: Percentage change
+  const brandPresenceDelta = dashboardData?.trendPercentage ?? calculate7DayDelta(filteredBrandSummary?.timeSeries?.brandPresencePercentage, 'percentage');
+
   // Construct metrics matching DashboardScoreMetric interface
   const visibilityMetric: DashboardScoreMetric = {
     value: visibilityMetricValue || 0,
-    delta: 0,
+    delta: visibilityDelta,
     label: 'Visibility Index',
     description: 'Visibility Index'
   };
   const shareMetric: DashboardScoreMetric = {
     value: shareMetricValue || 0,
-    delta: 0,
+    delta: shareDelta,
     label: 'Share of Answers',
     description: 'Share of Answers'
   };
   const sentimentMetric: DashboardScoreMetric = {
     value: sentimentMetricValueFinal || 0,
-    delta: 0,
+    delta: sentimentDelta,
     label: 'Sentiment Score',
     description: 'Sentiment Score'
   };
@@ -759,7 +802,7 @@ export const MeasurePage = () => {
           title: 'Brand Presence',
           value: `${brandPresencePercentage}%`,
           subtitle: '',
-          trend: computeTrend(dashboardData?.trendPercentage),
+          trend: computeTrend(brandPresenceDelta),
           icon: <Activity size={20} />,
           color: '#7c3aed',
           linkTo: '/measure?kpi=brandPresence',
@@ -777,6 +820,7 @@ export const MeasurePage = () => {
           value: formatMetricValue(visibilityMetric, ''),
           subtitle: '',
           trend: computeTrend(visibilityMetric?.delta),
+          trendSuffix: '', // Absolute points
           icon: <Eye size={20} />,
           color: '#498cf9',
           linkTo: '/measure?kpi=visibility',
@@ -811,6 +855,7 @@ export const MeasurePage = () => {
           value: sentimentMetric ? formatNumber(sentimentMetric.value, 1) : '—',
           subtitle: '',
           trend: computeTrend(sentimentMetric?.delta),
+          trendSuffix: '', // Absolute points
           icon: <MessageSquare size={20} />,
           color: '#00bcdc',
           linkTo: '/measure?kpi=sentiment',

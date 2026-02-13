@@ -15,6 +15,7 @@ import {
   IconTrash,
   IconUmbrella,
   IconUpload,
+  IconCheck,
 } from '@tabler/icons-react';
 import {
   getBrightdataCountries,
@@ -26,6 +27,13 @@ import {
   type ArchivedTopicsPromptsV2,
 } from '../../api/promptManagementApi';
 import { QueryTagFilter } from '../../components/common/QueryTagFilter';
+import { apiClient } from '../../lib/apiClient';
+
+interface ScheduledJob {
+  id: string;
+  job_type: string;
+  next_run_at: string | null;
+}
 
 export const TopicsPromptsConfigV2 = () => {
   const { selectedBrandId, selectedBrand } = useManualBrandDashboard();
@@ -47,6 +55,8 @@ export const TopicsPromptsConfigV2 = () => {
     existingCount: number;
   }>({ isOpen: false, importedRows: [], existingCount: 0 });
   const [saveConfirm, setSaveConfirm] = useState<{ isOpen: boolean }>({ isOpen: false });
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [nextRunTime, setNextRunTime] = useState<string | null>(null);
 
   const initialRowsByIdRef = useRef<Map<string, TopicsPromptsConfigV2Row>>(new Map());
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -57,6 +67,29 @@ export const TopicsPromptsConfigV2 = () => {
     }
     return map;
   }, [countries]);
+
+  const fetchNextRunTime = useCallback(async () => {
+    if (!selectedBrandId) return;
+    try {
+      const response = await apiClient.get<{ data: ScheduledJob[] }>(`/scheduled-jobs?brand_id=${selectedBrandId}`);
+      if (response.data && Array.isArray(response.data)) {
+        const jobs = response.data;
+        // Find data_collection job
+        const collectionJob = jobs.find(j => j.job_type === 'data_collection' || j.job_type === 'data_collection_and_scoring');
+        if (collectionJob?.next_run_at) {
+          setNextRunTime(collectionJob.next_run_at);
+        } else {
+          setNextRunTime(null);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch scheduled jobs', e);
+    }
+  }, [selectedBrandId]);
+
+  useEffect(() => {
+    fetchNextRunTime();
+  }, [fetchNextRunTime]);
 
   const getFlagEmoji = useCallback((countryCode: string) => {
     const code = countryCode.trim().toUpperCase();
@@ -527,7 +560,10 @@ export const TopicsPromptsConfigV2 = () => {
         country: r.country.trim().toUpperCase(),
       }));
       await saveTopicsPromptsConfigV2Rows(selectedBrandId, payload, Array.from(deletedIds));
+      setSuccessModalOpen(true);
       await load();
+      // Fetch next run time again to ensure it's up to date
+      fetchNextRunTime();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save config rows');
     } finally {
@@ -811,14 +847,14 @@ export const TopicsPromptsConfigV2 = () => {
                 >
                   Discard changes
                 </button>
-                <span title={saveDisabledReason || 'Save changes'} className={`inline-flex ${saveDisabledReason ? 'cursor-not-allowed' : ''}`}>
+                <span title={saveDisabledReason || 'Scheduled changes'} className={`inline-flex ${saveDisabledReason ? 'cursor-not-allowed' : ''}`}>
                   <button
                     onClick={handleSaveClick}
                     disabled={Boolean(saveDisabledReason)}
                     className={`px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium disabled:opacity-50 ${saveDisabledReason ? 'pointer-events-none' : ''
                       }`}
                   >
-                    {isSaving ? 'Saving...' : 'Save changes'}
+                    {isSaving ? 'Saving...' : 'Scheduled changes'}
                   </button>
                 </span>
               </div>
@@ -1054,6 +1090,53 @@ export const TopicsPromptsConfigV2 = () => {
                   className="px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium"
                 >
                   Save anyway
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {successModalOpen && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div
+              className="bg-white rounded-xl shadow-xl max-w-md w-full p-8 text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-16 h-16 rounded-full bg-[var(--success100)] text-[var(--success500)] flex items-center justify-center mx-auto mb-6">
+                <IconCheck size={32} strokeWidth={3} />
+              </div>
+              <h3 className="text-xl font-bold text-[var(--text-headings)] mb-3">
+                Changes Scheduled
+              </h3>
+              <p className="text-[var(--text-body)] mb-6 leading-relaxed">
+                Your changes have been saved successfully. The scores will be collected accordingly in the next collection.
+              </p>
+              {nextRunTime ? (
+                <div className="mb-8 p-4 bg-slate-50 rounded-lg border border-slate-100 inline-block">
+                  <p className="text-sm font-semibold text-[var(--text-headings)]">
+                    Next collection scheduled for:
+                  </p>
+                  <p className="text-[var(--accent-primary)] font-bold mt-1">
+                    {new Date(nextRunTime).toLocaleString(undefined, {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-8 p-3 text-xs text-[var(--text-caption)] bg-slate-50 rounded-lg">
+                  (No collection job currently scheduled for this brand)
+                </div>
+              )}
+              <div>
+                <button
+                  onClick={() => setSuccessModalOpen(false)}
+                  className="px-8 py-3 rounded-lg bg-[var(--accent-primary)] text-white font-medium hover:bg-[var(--accent-hover)] transition-colors w-full sm:w-auto"
+                >
+                  Got it
                 </button>
               </div>
             </div>

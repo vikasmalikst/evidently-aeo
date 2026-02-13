@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { IconChevronDown, IconChevronUp, IconTrash } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronUp, IconTrash, IconDotsVertical, IconCheck, IconSparkles } from '@tabler/icons-react';
 import { RecommendationV3 } from '../../api/recommendationsV3Api';
 import { SafeLogo } from '../Onboarding/common/SafeLogo';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -450,101 +450,108 @@ export const RecommendationsTableV3 = ({
                               {onAction && (() => {
                                 const isGenerating = generatingContentIds.has(rec.id || '');
                                 const isGenerated = rec.isContentGenerated;
-
-                                if (isGenerating) {
-                                  return (
-                                    <motion.span
-                                      initial={{ opacity: 0, scale: 0.9 }}
-                                      animate={{ opacity: 1, scale: 1 }}
-                                      className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold border bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200 shadow-sm"
-                                    >
-                                      <motion.div
-                                        className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full mr-2"
-                                        animate={{ rotate: 360 }}
-                                        transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-                                      />
-                                      Generating...
-                                    </motion.span>
-                                  );
-                                }
-
-                                if (isGenerated) {
-                                  return (
-                                    <motion.span
-                                      initial={{ opacity: 0, scale: 0.8 }}
-                                      animate={{ opacity: 1, scale: 1 }}
-                                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                                      className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold border bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-700 border-emerald-200 shadow-sm"
-                                    >
-                                      <motion.svg
-                                        className="w-3.5 h-3.5 mr-1.5"
-                                        fill="currentColor"
-                                        viewBox="0 0 20 20"
-                                        initial={{ scale: 0 }}
-                                        animate={{ scale: 1 }}
-                                        transition={{ type: "spring", stiffness: 500, damping: 15, delay: 0.1 }}
-                                      >
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                      </motion.svg>
-                                      {generatedLabel}
-                                    </motion.span>
-                                  );
-                                }
-
                                 const displayLabel = customActionLabel ? customActionLabel(rec) : actionLabel;
                                 const actionTypeValue = customActionType ? customActionType(rec) : actionType;
 
+                                // Action Group Container
                                 return (
-                                  <motion.button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onAction(rec, actionTypeValue);
-                                    }}
-                                    whileHover={{ scale: 1.05, y: -1 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                                    className="group relative inline-flex items-center px-4 py-2 rounded-lg text-[12px] font-bold border-0 bg-gradient-to-r from-emerald-500 via-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-200/50 hover:shadow-xl hover:shadow-emerald-300/50 cursor-pointer overflow-hidden"
-                                  >
-                                    {/* Animated shimmer effect */}
-                                    <motion.div
-                                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12"
-                                      initial={{ x: "-100%" }}
-                                      animate={{ x: "200%" }}
-                                      transition={{
-                                        duration: 2,
-                                        repeat: Infinity,
-                                        repeatDelay: 3,
-                                        ease: "easeInOut"
-                                      }}
-                                    />
-                                    {/* Lightning icon with pulse */}
-                                    <motion.svg
-                                      className="w-4 h-4 mr-1.5 relative"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                      initial={{ opacity: 0.8 }}
-                                      animate={{ opacity: [0.8, 1, 0.8] }}
-                                      transition={{ duration: 2, repeat: Infinity }}
-                                    >
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    </motion.svg>
-                                    <span className="relative">{displayLabel}</span>
-                                  </motion.button>
+                                  <div className="flex items-center">
+                                    {/* Primary Action Button */}
+                                    <div className="relative z-10">
+                                      {isGenerating ? (
+                                        <motion.span
+                                          initial={{ opacity: 0, scale: 0.9 }}
+                                          animate={{ opacity: 1, scale: 1 }}
+                                          className="inline-flex items-center px-3 py-1.5 rounded-l-lg text-[11px] font-semibold border bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200 shadow-sm min-h-[32px]"
+                                        >
+                                          <motion.div
+                                            className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full mr-2"
+                                            animate={{ rotate: 360 }}
+                                            transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                                          />
+                                          Generating...
+                                        </motion.span>
+                                      ) : isGenerated ? (
+                                        <motion.span
+                                          initial={{ opacity: 0, scale: 0.8 }}
+                                          animate={{ opacity: 1, scale: 1 }}
+                                          transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                                          className="inline-flex items-center px-3 py-1.5 rounded-l-lg text-[11px] font-semibold border bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-700 border-emerald-200 shadow-sm min-h-[32px]"
+                                        >
+                                          <IconCheck size={14} className="mr-1.5" />
+                                          {generatedLabel}
+                                        </motion.span>
+                                      ) : (
+                                        <motion.button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onAction(rec, actionTypeValue);
+                                          }}
+                                          whileHover={{ scale: 1.02 }}
+                                          whileTap={{ scale: 0.98 }}
+                                          className="flex items-center px-3 py-1.5 rounded-l-lg text-[11px] font-bold border-y border-l border-emerald-500 bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm hover:shadow-md hover:from-emerald-400 hover:to-teal-400 transition-all min-h-[32px]"
+                                        >
+                                          <IconSparkles size={14} className="mr-1.5" />
+                                          {displayLabel}
+                                        </motion.button>
+                                      )}
+                                    </div>
+
+                                    {/* Secondary Actions Menu Trigger */}
+                                    <div className="relative group/menu border-l border-white/20 -ml-px z-0">
+                                      <button
+                                        className={`flex items-center justify-center w-8 h-[32px] rounded-r-lg border-y border-r transition-colors ${isGenerated
+                                          ? 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
+                                          : isGenerating
+                                            ? 'bg-orange-50 border-amber-200 hover:bg-orange-100'
+                                            : 'bg-teal-500 border-teal-500 text-white hover:bg-teal-400'
+                                          }`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          // Toggle menu logic could go here if not using CSS hover
+                                        }}
+                                      >
+                                        <IconDotsVertical size={16} className={isGenerated || isGenerating ? 'text-slate-600' : 'text-white'} />
+                                      </button>
+
+                                      {/* Dropdown Menu */}
+                                      <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-xl border border-slate-200 py-1 opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all duration-200 transform origin-top-right z-50">
+                                        <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 rounded-t-lg">
+                                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">More Actions</p>
+                                        </div>
+
+                                        {/* Status: Pending Review */}
+                                        {onStatusChange && (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (rec.id) onStatusChange(rec.id, 'pending_review');
+                                            }}
+                                            className="w-full text-left px-3 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 hover:text-[#00bcdc] flex items-center gap-2 transition-colors"
+                                          >
+                                            <div className="w-1.5 h-1.5 rounded-full bg-orange-400"></div>
+                                            Move to Pending Review
+                                          </button>
+                                        )}
+
+                                        {/* Stop Tracking */}
+                                        {onStopTracking && (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (rec.id) onStopTracking(rec.id);
+                                            }}
+                                            className="w-full text-left px-3 py-2 text-[12px] font-medium text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors rounded-b-lg border-t border-slate-100"
+                                          >
+                                            <IconTrash size={14} />
+                                            Stop Tracking
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
                                 );
                               })()}
-                              {onStopTracking && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (rec.id) onStopTracking(rec.id);
-                                  }}
-                                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                                  title="Stop Tracking"
-                                >
-                                  <IconTrash size={16} />
-                                </button>
-                              )}
                             </div>
                           </td>
                         )}

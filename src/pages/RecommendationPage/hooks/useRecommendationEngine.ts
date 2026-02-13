@@ -455,7 +455,7 @@ export const useRecommendationEngine = (initialStep?: number) => {
         setError(null);
 
         // Optimistic Update
-        if (status === 'removed' || status === 'rejected') {
+        if (status === 'removed' || status === 'rejected' || (status === 'pending_review' && currentStep > 1)) {
             setRecommendations(prev => prev.filter(r => r.id !== recommendationId));
             setAllRecommendations(prev => prev.filter(r => r.id !== recommendationId));
         } else {

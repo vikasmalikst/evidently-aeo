@@ -318,10 +318,10 @@ export const Step3Refine: React.FC = () => {
                                                             }
                                                         }}
                                                         className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-amber-200 text-amber-700 hover:bg-amber-50 rounded-lg text-[12px] font-medium transition-all shadow-sm"
-                                                        title="Regenerate content based on your feedback"
+                                                        title="Refine content based on your feedback"
                                                     >
                                                         <IconPlus size={14} className="text-amber-500" />
-                                                        <span>Regenerate</span>
+                                                        <span>Refine with feedback</span>
                                                     </button>
                                                 )}
 
@@ -349,60 +349,70 @@ export const Step3Refine: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
-
-                                {isExpanded && (
-                                    <div className="border-t border-[#e2e8f0]">
-                                        {/* Content Display Logic */}
-                                        {isColdStart ? (
-                                            guideObj ? (
-                                                <div className="p-6 text-sm">
-                                                    {/* Render Guide Object fields - Summary, Plan, etc. */}
-                                                    <p className="font-semibold text-[#1e293b] mb-2">Goal: {guideObj?.summary?.goal || 'N/A'}</p>
-                                                    <div className="bg-[#0f172a] rounded-lg overflow-hidden">
-                                                        <div className="flex items-center px-4 py-2 bg-[#1e293b] border-b border-[#334155]">
-                                                            <span className="text-[11px] font-mono text-[#94a3b8]">JSON Data</span>
+                                <AnimatePresence initial={false}>
+                                    {isExpanded && (
+                                        <motion.div
+                                            key="content"
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: "auto", opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                                            className="overflow-hidden"
+                                        >
+                                            <div className="border-t border-[#e2e8f0]">
+                                                {/* Content Display Logic */}
+                                                {isColdStart ? (
+                                                    guideObj ? (
+                                                        <div className="p-6 text-sm">
+                                                            {/* Render Guide Object fields - Summary, Plan, etc. */}
+                                                            <p className="font-semibold text-[#1e293b] mb-2">Goal: {guideObj?.summary?.goal || 'N/A'}</p>
+                                                            <div className="bg-[#0f172a] rounded-lg overflow-hidden">
+                                                                <div className="flex items-center px-4 py-2 bg-[#1e293b] border-b border-[#334155]">
+                                                                    <span className="text-[11px] font-mono text-[#94a3b8]">JSON Data</span>
+                                                                </div>
+                                                                <pre className="p-4 text-[11px] font-mono text-[#e2e8f0] overflow-auto max-h-96 custom-scrollbar">
+                                                                    {JSON.stringify(guideObj, null, 2)}
+                                                                </pre>
+                                                            </div>
                                                         </div>
-                                                        <pre className="p-4 text-[11px] font-mono text-[#e2e8f0] overflow-auto max-h-96 custom-scrollbar">
-                                                            {JSON.stringify(guideObj, null, 2)}
-                                                        </pre>
-                                                    </div>
-                                                </div>
-                                            ) : <div className="p-6 text-sm text-[#ef4444]">Guide content not found.</div>
-                                        ) : (
-                                            <div className="text-sm">
-                                                {rec.id && contentMap.get(rec.id) ? (
-                                                    <UnifiedContentRenderer
-                                                        content={rec.id ? contentMap.get(rec.id) || '' : ''}
-                                                        isEditing={true}
-                                                        onContentChange={(newContent) => {
-                                                            if (!rec.id) return;
-                                                            const newMap = new Map(contentMap);
-                                                            newMap.set(rec.id, newContent);
-                                                            setContentMap(newMap);
-                                                        }}
-                                                        sectionFeedback={rec.id ? (sectionFeedbackMap.get(rec.id) || new Map()) : new Map()}
-                                                        onFeedbackChange={(sectionTitle, feedback) => {
-                                                            if (!rec.id) return;
-                                                            setSectionFeedbackMap(prev => {
-                                                                const next = new Map(prev);
-                                                                const recFeedback = next.get(rec.id!) || new Map();
-                                                                recFeedback.set(sectionTitle, feedback);
-                                                                next.set(rec.id!, recFeedback);
-                                                                return next;
-
-                                                            });
-                                                        }}
-                                                    />
+                                                    ) : <div className="p-6 text-sm text-[#ef4444]">Guide content not found.</div>
                                                 ) : (
-                                                    <div className="p-12 flex flex-col items-center justify-center text-center">
-                                                        <div className="w-8 h-8 border-2 border-[#e2e8f0] border-t-[#0ea5e9] rounded-full animate-spin mb-4" />
-                                                        <span className="text-[13px] text-[#64748b]">Loading content...</span>
+                                                    <div className="text-sm">
+                                                        {rec.id && contentMap.get(rec.id) ? (
+                                                            <UnifiedContentRenderer
+                                                                content={rec.id ? contentMap.get(rec.id) || '' : ''}
+                                                                isEditing={true}
+                                                                onContentChange={(newContent) => {
+                                                                    if (!rec.id) return;
+                                                                    const newMap = new Map(contentMap);
+                                                                    newMap.set(rec.id, newContent);
+                                                                    setContentMap(newMap);
+                                                                }}
+                                                                sectionFeedback={rec.id ? (sectionFeedbackMap.get(rec.id) || new Map()) : new Map()}
+                                                                onFeedbackChange={(sectionTitle, feedback) => {
+                                                                    if (!rec.id) return;
+                                                                    setSectionFeedbackMap(prev => {
+                                                                        const next = new Map(prev);
+                                                                        const recFeedback = next.get(rec.id!) || new Map();
+                                                                        recFeedback.set(sectionTitle, feedback);
+                                                                        next.set(rec.id!, recFeedback);
+                                                                        return next;
+
+                                                                    });
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <div className="p-12 flex flex-col items-center justify-center text-center">
+                                                                <div className="w-8 h-8 border-2 border-[#e2e8f0] border-t-[#0ea5e9] rounded-full animate-spin mb-4" />
+                                                                <span className="text-[13px] text-[#64748b]">Loading content...</span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
-                                        )}
-                                    </div>
-                                )}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </motion.div>
                         );
                     })}

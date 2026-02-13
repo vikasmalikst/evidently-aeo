@@ -57,24 +57,24 @@ export function MarkdownRenderer({ content, className = '', highlightFillIns = t
         remarkPlugins={[remarkGfm]}
         components={{
           // Custom heading styles
-          h1: ({ children }) => <h1 className="text-2xl font-bold text-slate-900 mb-6 mt-8 leading-tight tracking-tight">{children}</h1>,
-          h2: ({ children }) => <h2 className="text-xl font-semibold text-slate-900 mb-4 mt-8 leading-snug tracking-tight">{children}</h2>,
-          h3: ({ children }) => <h3 className="text-lg font-semibold text-slate-800 mb-3 mt-6 leading-snug">{children}</h3>,
+          h1: ({ children }) => <h1 className="text-lg font-bold text-slate-900 mb-3 mt-4 leading-tight">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-base font-bold text-slate-800 mb-2 mt-3 leading-tight">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-700 mb-2 mt-2 leading-snug">{children}</h3>,
 
           // Paragraph styling
-          p: ({ children }) => <p className="text-[15px] text-slate-700 leading-7 mb-4 font-normal">{children}</p>,
+          p: ({ children }) => <p className="text-[13px] text-slate-700 leading-relaxed mb-3">{children}</p>,
 
           // List styling
-          ul: ({ children }) => <ul className="list-disc pl-5 space-y-2 mb-4 text-[15px] text-slate-700 leading-7 marker:text-slate-400">{children}</ul>,
-          ol: ({ children }) => <ol className="list-decimal pl-5 space-y-2 mb-4 text-[15px] text-slate-700 leading-7 marker:text-slate-400">{children}</ol>,
+          ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 mb-3 text-[13px] text-slate-700 leading-relaxed">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 mb-3 text-[13px] text-slate-700 leading-relaxed">{children}</ol>,
           li: ({ children }) => <li className="pl-1">{children}</li>,
 
           // Strong/Bold
-          strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+          strong: ({ children }) => <strong className="font-semibold text-[#1e293b]">{children}</strong>,
 
           // Links
           a: ({ href, children }) => (
-            <a href={href} className="text-emerald-600 hover:text-emerald-700 hover:underline decoration-emerald-300 decoration-1 underline-offset-2 transition-colors" target="_blank" rel="noopener noreferrer">
+            <a href={href} className="text-[#0ea5e9] hover:underline" target="_blank" rel="noopener noreferrer">
               {children}
             </a>
           ),
@@ -83,18 +83,18 @@ export function MarkdownRenderer({ content, className = '', highlightFillIns = t
           code: ({ className, children }) => {
             const isInline = !className;
             if (isInline) {
-              return <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[13px] text-pink-600 font-mono border border-slate-200">{children}</code>;
+              return <code className="bg-[#f1f5f9] px-1 py-0.5 rounded text-[12px] text-[#be185d]">{children}</code>;
             }
             return (
-              <pre className="bg-slate-900 text-slate-50 rounded-lg p-4 overflow-x-auto text-[13px] my-6 border border-slate-800 shadow-sm leading-relaxed">
+              <pre className="bg-[#1e293b] text-[#e2e8f0] rounded-lg p-3 overflow-x-auto text-[12px] my-3">
                 <code>{children}</code>
               </pre>
             );
           },
 
-          // Blockquote - Clean, minimal style (No blue background)
+          // Blockquote - Professional clean style, no background
           blockquote: ({ children }) => (
-            <blockquote className="border-l-4 border-emerald-500 pl-5 py-1 my-6 text-slate-600 italic">
+            <blockquote className="border-l-4 border-slate-300 pl-4 py-1 my-4 text-slate-600 italic">
               {children}
             </blockquote>
           ),
@@ -136,11 +136,12 @@ export function MarkdownRenderer({ content, className = '', highlightFillIns = t
       {/* CSS for FILL_IN highlighting */}
       <style>{`
         .fill-in-placeholder {
-          background-color: #fef3c7;
-          color: #92400e;
+          background-color: #fef9c3;
+          color: #854d0e;
           padding: 2px 6px;
           border-radius: 4px;
           font-weight: 500;
+          border: 1px solid #fde047;
         }
       `}</style>
     </div>
@@ -487,66 +488,40 @@ export function EditableMarkdown({ content, onChange, className = '' }: Editable
         .editable-markdown-content ul {
           list-style-type: disc;
           padding-left: 1.5em;
-          margin-bottom: 1em;
-          line-height: 1.75;
-          font-size: 15px;
-          color: #334155;
+          margin-bottom: 0.75em;
         }
         .editable-markdown-content ol {
           list-style-type: decimal;
           padding-left: 1.5em;
-          margin-bottom: 1em;
-          line-height: 1.75;
-          font-size: 15px;
-          color: #334155;
+          margin-bottom: 0.75em;
         }
         .editable-markdown-content li {
-          margin-bottom: 0.5em;
-        }
-        .editable-markdown-content p, .editable-markdown-content div {
-          font-size: 15px;
-          line-height: 1.75;
-          margin-bottom: 1em;
-          color: #334155;
+          margin-bottom: 0.25em;
         }
         .editable-markdown-content h1 {
-          font-size: 24px;
-          font-weight: 700;
-          color: #0f172a;
-          margin-bottom: 0.75em;
-          margin-top: 1.5em;
-          letter-spacing: -0.025em;
-          line-height: 1.2;
-        }
-        .editable-markdown-content h2 {
           font-size: 20px;
-          font-weight: 600;
+          font-weight: 700;
           color: #1e293b;
           margin-bottom: 0.75em;
-          margin-top: 1.5em;
-          letter-spacing: -0.025em;
-          line-height: 1.3;
+          margin-top: 1em;
         }
-        .editable-markdown-content h3 {
+        .editable-markdown-content h2 {
           font-size: 18px;
           font-weight: 600;
           color: #334155;
-          margin-bottom: 0.75em;
-          margin-top: 1.25em;
-          line-height: 1.4;
+          margin-bottom: 0.5em;
+          margin-top: 0.75em;
+        }
+        .editable-markdown-content h3 {
+          font-size: 16px;
+          font-weight: 600;
+          color: #475569;
+          margin-bottom: 0.5em;
+          margin-top: 0.5em;
         }
         .editable-markdown-content a {
-          color: #059669;
+          color: #0ea5e9;
           text-decoration: underline;
-          text-underline-offset: 2px;
-        }
-        .editable-markdown-content blockquote {
-          border-left: 4px solid #10b981;
-          padding-left: 1.25em;
-          margin: 1.5em 0;
-          font-style: italic;
-          color: #475569;
-          background: transparent;
         }
       `}</style>
     </div>

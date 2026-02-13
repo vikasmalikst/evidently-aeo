@@ -453,34 +453,24 @@ export const RecommendationsTableV3 = ({
                                 const displayLabel = customActionLabel ? customActionLabel(rec) : actionLabel;
                                 const actionTypeValue = customActionType ? customActionType(rec) : actionType;
 
-                                // Action Group Container
                                 return (
-                                  <div className="flex items-center">
+                                  <div className="flex items-center gap-2">
                                     {/* Primary Action Button */}
-                                    <div className="relative z-10">
+                                    <div className="relative z-0">
                                       {isGenerating ? (
-                                        <motion.span
-                                          initial={{ opacity: 0, scale: 0.9 }}
-                                          animate={{ opacity: 1, scale: 1 }}
-                                          className="inline-flex items-center px-3 py-1.5 rounded-l-lg text-[11px] font-semibold border bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200 shadow-sm min-h-[32px]"
-                                        >
+                                        <div className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 shadow-sm min-h-[32px]">
                                           <motion.div
                                             className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full mr-2"
                                             animate={{ rotate: 360 }}
                                             transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
                                           />
                                           Generating...
-                                        </motion.span>
+                                        </div>
                                       ) : isGenerated ? (
-                                        <motion.span
-                                          initial={{ opacity: 0, scale: 0.8 }}
-                                          animate={{ opacity: 1, scale: 1 }}
-                                          transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                                          className="inline-flex items-center px-3 py-1.5 rounded-l-lg text-[11px] font-semibold border bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-700 border-emerald-200 shadow-sm min-h-[32px]"
-                                        >
+                                        <div className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm min-h-[32px]">
                                           <IconCheck size={14} className="mr-1.5" />
                                           {generatedLabel}
-                                        </motion.span>
+                                        </div>
                                       ) : (
                                         <motion.button
                                           onClick={(e) => {
@@ -489,7 +479,7 @@ export const RecommendationsTableV3 = ({
                                           }}
                                           whileHover={{ scale: 1.02 }}
                                           whileTap={{ scale: 0.98 }}
-                                          className="flex items-center px-3 py-1.5 rounded-l-lg text-[11px] font-bold border-y border-l border-emerald-500 bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm hover:shadow-md hover:from-emerald-400 hover:to-teal-400 transition-all min-h-[32px]"
+                                          className="flex items-center px-3 py-1.5 rounded-lg text-[11px] font-bold border border-emerald-500 bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm hover:shadow-md hover:from-emerald-400 hover:to-teal-400 transition-all min-h-[32px]"
                                         >
                                           <IconSparkles size={14} className="mr-1.5" />
                                           {displayLabel}
@@ -497,21 +487,13 @@ export const RecommendationsTableV3 = ({
                                       )}
                                     </div>
 
-                                    {/* Secondary Actions Menu Trigger */}
-                                    <div className="relative group/menu border-l border-white/20 -ml-px z-0">
+                                    {/* Secondary Actions Menu Trigger - Clean Ghost Button */}
+                                    <div className="relative group/menu z-10">
                                       <button
-                                        className={`flex items-center justify-center w-8 h-[32px] rounded-r-lg border-y border-r transition-colors ${isGenerated
-                                          ? 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
-                                          : isGenerating
-                                            ? 'bg-orange-50 border-amber-200 hover:bg-orange-100'
-                                            : 'bg-teal-500 border-teal-500 text-white hover:bg-teal-400'
-                                          }`}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          // Toggle menu logic could go here if not using CSS hover
-                                        }}
+                                        className="flex items-center justify-center w-8 h-[32px] rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all border border-transparent hover:border-slate-200"
+                                        onClick={(e) => e.stopPropagation()}
                                       >
-                                        <IconDotsVertical size={16} className={isGenerated || isGenerating ? 'text-slate-600' : 'text-white'} />
+                                        <IconDotsVertical size={16} />
                                       </button>
 
                                       {/* Dropdown Menu */}

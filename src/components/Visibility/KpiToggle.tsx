@@ -1,4 +1,4 @@
-import { PieChart, TrendingUp, Heart, Eye, Hash, ListOrdered } from 'lucide-react';
+import { PieChart, Eye, Hash, ListOrdered, Activity, Target, MessageSquare } from 'lucide-react';
 import { HelpButton } from '../common/HelpButton';
 
 export type MetricType = 'visibility' | 'share' | 'sentiment' | 'brandPresence' | 'mentions' | 'position';
@@ -17,28 +17,28 @@ const KPI_OPTIONS: Array<{
   Icon: typeof PieChart;
 }> = [
     {
+      id: 'brandPresence',
+      label: 'Brand Presence',
+      description: 'Percentage of queries where your brand appears in answers',
+      Icon: Activity
+    },
+    {
       id: 'visibility',
       label: 'Visibility Score',
       description: 'How prominently your brand surfaces in AI answers',
-      Icon: TrendingUp
+      Icon: Eye
     },
     {
       id: 'share',
       label: 'Share of Answers',
       description: 'Percent of answers where your brand is mentioned',
-      Icon: PieChart
-    },
-    {
-      id: 'brandPresence',
-      label: 'Brand Presence',
-      description: 'Percentage of queries where your brand appears in answers',
-      Icon: Eye
+      Icon: Target
     },
     {
       id: 'sentiment',
       label: 'Sentiment Score',
       description: 'How positively your brand and competitors are discussed',
-      Icon: Heart
+      Icon: MessageSquare
     },
     {
       id: 'mentions',

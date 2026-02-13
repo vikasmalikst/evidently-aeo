@@ -43,7 +43,7 @@ describe('generateKeyTakeaways', () => {
     it('detects Rising Stars opportunity', () => {
         const sources: AnalysisSource[] = [
             {
-                name: 'NewStar', type: 'blog',
+                name: 'NewStar', type: 'editorial',
                 mentionRate: 10, mentionChange: 20, // +20% change
                 soa: 5, soaChange: 15,
                 sentiment: 60, sentimentChange: 0,

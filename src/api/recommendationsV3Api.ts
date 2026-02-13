@@ -205,8 +205,9 @@ export async function generateRecommendationsV3(
 ): Promise<GenerateRecommendationsV3Response> {
   try {
     // Use direct fetch with longer timeout for this long-running operation
-    // Increased to 180 seconds to accommodate Ollama local models which can be slower
-    const timeoutMs = 180000; // 180 seconds (3 minutes) for local Ollama models
+    // Use direct fetch with longer timeout for this long-running operation
+    // Increased to 330 seconds (5.5 minutes) to accommodate slow generation
+    const timeoutMs = 330000;
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => {
       timeoutController.abort();
@@ -374,8 +375,8 @@ export async function generateContentBulkV3(
   structureConfig?: any // Optional structure override for all items (if uniform) or key-based map
 ): Promise<{ success: boolean; data?: { total: number; successful: number; failed: number; results: any[] }; error?: string }> {
   try {
-    // Use direct fetch with longer timeout for bulk content generation (can take 20-30 seconds)
-    const timeoutMs = 180000; // 180 seconds (3 minutes) for bulk generation
+    // Use direct fetch with longer timeout for bulk content generation
+    const timeoutMs = 330000; // 330 seconds
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => {
       timeoutController.abort();
@@ -438,7 +439,7 @@ export async function generateGuidesBulkV3(
   generationId: string
 ): Promise<{ success: boolean; data?: { total: number; successful: number; failed: number; results: any[] }; error?: string }> {
   try {
-    const timeoutMs = 180000; // 3 minutes
+    const timeoutMs = 330000; // 330 seconds
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => {
       timeoutController.abort();
@@ -504,8 +505,8 @@ export async function generateContentV3(
   request?: GenerateContentV3Request
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
-    // Increased to 180 seconds to accommodate local Ollama models
-    const timeoutMs = 180000;
+    // Increased to 330 seconds
+    const timeoutMs = 330000;
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => {
       timeoutController.abort();
@@ -787,11 +788,11 @@ export async function generateStrategyV3(
   }
 ): Promise<{ success: boolean; data?: StrategyPlan; error?: string }> {
   try {
-    // Increase timeout to 180s for strategy generation
+    // Increase timeout to 330s for strategy generation
     const response = await apiClient.post<{ success: boolean; data?: StrategyPlan; error?: string }>(
       `/recommendations-v3/${recommendationId}/generate-strategy`,
       data,
-      { timeout: 180000 }
+      { timeout: 330000 }
     );
 
     if (response && typeof response === 'object' && 'success' in response) {

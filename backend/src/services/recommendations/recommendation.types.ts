@@ -186,6 +186,21 @@ export type ContentSectionType =
     | 'schema_markup';       // JSON-LD schema for SEO
 
 /**
+ * Structure Section for Strategy and Template Plans
+ */
+export interface StructureSection {
+    id: string;
+    title: string;
+    content: string;
+    sectionType: string;
+}
+
+/**
+ * Content Template Type (subset or alias of ContentAssetType)
+ */
+export type ContentTemplateType = ContentAssetType;
+
+/**
  * Determines the *type of content asset* being generated (the "Payload").
  * This is detected from `recommendation.action`.
  */
@@ -243,3 +258,63 @@ export interface WhitepaperMetadata {
     targetAudience: string;
     estimatedReadTime: string;
 }
+
+/**
+ * Context File Upload Structure
+ */
+export interface ContextFile {
+    id: string;
+    name: string;
+    content: string; // The extracted text content
+    uploadedAt: string;
+    type?: string;
+    size?: number;
+}
+
+/**
+ * Strategy Plan Structure (Step 2 Output)
+ */
+export interface StrategyPlan {
+    recommendationId: string;
+    contentType: ContentTemplateType;
+    primaryEntity: string;
+    targetChannel: string;
+    brandContext: {
+        name: string;
+        competitors?: string[];
+    };
+    structure: StructureSection[];
+    strategicGuidance: {
+        keyFocus: string;
+        aeoTargets: string[];
+        toneGuidelines: string;
+        differentiation: string;
+    };
+    contextFiles?: ContextFile[];
+    researchQueries?: string[]; // Legacy support
+    additional_context?: string; // For TemplatePlan compatibility if needed
+    context_files?: ContextFile[]; // For TemplatePlan compatibility if needed (snake_case)
+}
+
+/**
+ * Template Plan Structure (Step 1 Output)
+ */
+export interface TemplatePlan {
+    version: string;
+    recommendationId: string;
+    targetChannel: string;
+    content_type: ContentTemplateType;
+    primary_entity: string;
+    action_description: string;
+    aeo_extraction_targets: any;
+    structure: any[];
+    embedded_placeholders?: {
+        fact_pack_slot?: boolean;
+        sources_slot?: boolean;
+        voice_rules_slot?: boolean;
+        banned_claims_slot?: boolean;
+    };
+    additional_context?: string;
+    context_files?: ContextFile[];
+}
+

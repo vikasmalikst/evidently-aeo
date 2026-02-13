@@ -26,6 +26,8 @@ import { ReportTableOfContents } from './components/ReportTableOfContents';
 import { FeedbackSideModal } from './components/FeedbackSideModal';
 import { ExportSuccessModal } from './components/ExportSuccessModal';
 import { IconMail } from '@tabler/icons-react';
+import { QueryTagFilter } from '../../components/common/QueryTagFilter';
+import { useDashboardStore } from '../../store/dashboardStore';
 import '../../styles/executive-reporting.css';
 
 interface ExecutiveReport {
@@ -40,6 +42,7 @@ interface ExecutiveReport {
 
 export const ExecutiveReportingPage = () => {
     const { selectedBrandId, selectedBrand, brands, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+    const { queryTags } = useDashboardStore();
     const [report, setReport] = useState<ExecutiveReport | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -103,7 +106,9 @@ export const ExecutiveReportingPage = () => {
         try {
             const response = await apiClient.post<{ success: boolean; data: ExecutiveReport }>(
                 `/brands/${selectedBrandId}/executive-reports`,
-                {}
+                {
+                    queryTags
+                }
             );
 
             if (response.success && response.data) {
@@ -305,7 +310,8 @@ export const ExecutiveReportingPage = () => {
                                 </div>
 
                                 {/* Controls */}
-                                <div className="executive-controls">
+                                <div className="executive-controls flex items-center gap-3">
+                                    <QueryTagFilter variant="outline" />
                                     <button
                                         onClick={() => setIsGenerationModalOpen(true)}
                                         // disabled={generating} // Let modal handle strict state or concurrent check if needed

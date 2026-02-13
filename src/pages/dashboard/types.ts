@@ -212,6 +212,7 @@ export interface MetricCardProps {
   description?: string;
   comparisons?: Array<{ label: string; value: number; isBrand?: boolean }>;
   comparisonSuffix?: string;
+  trendSuffix?: string;
   onHelpClick?: () => void;
   metricType?: 'visibility' | 'share' | 'sentiment' | 'brandPresence';
   headerAction?: React.ReactNode;

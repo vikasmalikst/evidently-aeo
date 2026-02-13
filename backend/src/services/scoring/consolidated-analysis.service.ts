@@ -211,11 +211,9 @@ export class ConsolidatedAnalysisService {
     rawResponse?: string
   ): Promise<void> {
     try {
-      // Extract only components that exist in the schema
-      // NOTE: 'products' column was removed from schema
+      // Extract only sentiment (citations stored separately, products column removed from schema)
       const cacheData = {
         collector_result_id: collectorResultId,
-        // products: { ... }, // REMOVED - column does not exist
         sentiment: {
           brand: result.sentiment?.brand || { label: 'NEUTRAL', score: 60 },
           competitors: result.sentiment?.competitors || {},

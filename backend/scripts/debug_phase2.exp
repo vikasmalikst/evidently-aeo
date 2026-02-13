@@ -1,0 +1,39 @@
+#!/usr/bin/expect
+
+set timeout 20
+spawn ssh -o StrictHostKeyChecking=no dev@evidentlyaeo.com
+
+expect {
+  "password:" { send "t3mpd3vp@ss\r"; exp_continue }
+  "yes/no" { send "yes\r"; exp_continue }
+  "$ " {}
+}
+
+# Check port 8081 usage
+send "echo '=== CHECKING PORT 8081 ==='\r"
+expect "$ "
+send "sudo lsof -i :8081 || echo 'Port 8081 is FREE'\r"
+expect "password"
+send "t3mpd3vp@ss\r"
+expect "$ "
+
+# Check container status
+send "echo '\n=== CONTAINER STATUS ==='\r"
+expect "$ "
+send "docker ps -a --filter name=mcp-searxng\r"
+expect "$ "
+
+# Check logs if container exists
+send "echo '\n=== SEARXNG LOGS ==='\r"
+expect "$ "
+send "docker logs mcp-searxng --tail 20\r"
+expect "$ "
+
+# Check what responded to the curl
+send "echo '\n=== CURL RESPONSE ==='\r"
+expect "$ "
+send "curl -v \"http://localhost:8081/search?q=test&format=json\"\r"
+expect "$ "
+
+send "exit\r"
+expect eof

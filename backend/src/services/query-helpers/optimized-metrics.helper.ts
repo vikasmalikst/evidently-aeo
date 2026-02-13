@@ -457,6 +457,7 @@ export class OptimizedMetricsHelper {
         endDate,
         collectorTypes,
         topics,
+        queryTags,
         includeSentiment = true,
       } = options;
 
@@ -480,6 +481,9 @@ export class OptimizedMetricsHelper {
             brand_positions,
             brand_first_position,
             total_word_count
+          ),
+          generated_queries!inner(
+            query_tag
           )
           ${includeSentiment ? `,brand_sentiment(
             sentiment_score,
@@ -504,6 +508,10 @@ export class OptimizedMetricsHelper {
 
       if (topics && topics.length > 0) {
         query = query.in('topic', topics);
+      }
+
+      if (queryTags && queryTags.length > 0) {
+        query = query.in('generated_queries.query_tag', queryTags);
       }
 
       const { data, error } = await query;
@@ -583,6 +591,7 @@ export class OptimizedMetricsHelper {
     startDate: string;
     endDate: string;
     includeSentiment?: boolean;
+    queryTags?: string[];
   }): Promise<FetchCompetitorMetricsResult> {
     const startTime = Date.now();
 
@@ -593,6 +602,7 @@ export class OptimizedMetricsHelper {
         customerId,
         startDate,
         endDate,
+        queryTags,
         includeSentiment = true,
       } = options;
 
@@ -615,6 +625,9 @@ export class OptimizedMetricsHelper {
             competitor_mentions,
             competitor_positions,
             brand_competitors(competitor_name)
+          ),
+          generated_queries!inner(
+            query_tag
           )
           ${includeSentiment ? `,competitor_sentiment(
             competitor_id,
@@ -627,6 +640,10 @@ export class OptimizedMetricsHelper {
         .gte('processed_at', startDate)
         .lte('processed_at', endDate)
         .eq('competitor_metrics.competitor_id', competitorId);
+
+      if (queryTags && queryTags.length > 0) {
+        query = query.in('generated_queries.query_tag', queryTags);
+      }
 
       const { data, error } = await query;
 

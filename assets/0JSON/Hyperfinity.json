@@ -1,0 +1,322 @@
+{
+  "company_profile": {
+    "company_name": "Method Analytics Ltd (trading as HyperFinity)",
+    "website": "https://hyperfinity.ai",
+    "industry": "Business Intelligence & Analytics / Retail Decision Intelligence SaaS",
+    "founded": 2019,
+    "headquarters": {
+      "city": "Leeds",
+      "country": "United Kingdom"
+    },
+    "leadership": {
+      "current_ceo": "Peter Denby (Chief Commercial Officer)",
+      "founders": "Peter Denby, Adam Barrowcliff (Chief Data Officer), Damon Bryan (Chief Technology Officer), Thomas Hill (Chief Customer Officer)"
+    },
+    "company_size": "11-50 employees",
+    "funding_status": "Private - Seed funding from Snowflake Ventures (2023), Finance Yorkshire and River Capital (2025)",
+    "description": "HyperFinity is a decision intelligence platform for retailers and consumer brands that combines data science, machine learning, and AI to optimize commercial decisions. The cloud-based, no-code SaaS platform enables retailers to make data-driven decisions across product assortment, pricing and promotions, marketing and loyalty, retail media, and supply chain without requiring technical expertise. Built on Snowflake's data platform, HyperFinity serves major UK retailers including Asda, Costa, Card Factory, Hotel Chocolat, and Toolstation."
+  },
+  "competitors": [
+    {
+      "rank": 1,
+      "company_name": "Dataiku",
+      "domain": "https://www.dataiku.com",
+      "geographic_overlap": "High (UK/Global enterprise presence)",
+      "customer_segment": "Enterprise retailers, CPG companies, B2B",
+      "battle_frequency": "High",
+      "primary_differentiation": "Universal AI platform for technical and business users vs. retail-specific decision intelligence; broader industry coverage but less retail-focused features"
+    },
+    {
+      "rank": 2,
+      "company_name": "Peak AI (acquired by UiPath 2025)",
+      "domain": "https://peak.ai",
+      "geographic_overlap": "High (UK-founded, global operations)",
+      "customer_segment": "Mid-market to enterprise retailers, B2B",
+      "battle_frequency": "High",
+      "primary_differentiation": "Commercial AI platform with retail applications vs. pure retail decision intelligence; now part of UiPath automation ecosystem"
+    },
+    {
+      "rank": 3,
+      "company_name": "Faculty AI",
+      "domain": "https://faculty.ai",
+      "geographic_overlap": "High (UK-based AI consultancy)",
+      "customer_segment": "Enterprise clients across sectors including retail, B2B",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Bespoke AI solutions and consultancy vs. productized SaaS platform; broader industry focus beyond retail"
+    },
+    {
+      "rank": 4,
+      "company_name": "Blue Yonder",
+      "domain": "https://blueyonder.com",
+      "geographic_overlap": "High (Global with UK presence)",
+      "customer_segment": "Large enterprise retailers, B2B",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Full supply chain and commerce platform vs. decision intelligence focus; targets larger enterprises with complex requirements"
+    },
+    {
+      "rank": 5,
+      "company_name": "Revionics (SymphonyAI Retail/CPG)",
+      "domain": "https://symphonyai.com/retail-cpg/",
+      "geographic_overlap": "Medium (US-based with global presence)",
+      "customer_segment": "Enterprise retailers, B2B",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Pricing and promotion optimization specialist vs. broader decision intelligence across multiple retail functions"
+    },
+    {
+      "rank": 6,
+      "company_name": "dunnhumby",
+      "domain": "https://www.dunnhumby.com",
+      "geographic_overlap": "High (UK-founded, Tesco ownership)",
+      "customer_segment": "Large grocery retailers, CPG brands, B2B",
+      "battle_frequency": "Medium",
+      "primary_differentiation": "Customer data science and retail media focus vs. end-to-end decision intelligence platform; consultancy-heavy model"
+    },
+    {
+      "rank": 7,
+      "company_name": "Retail Express",
+      "domain": "https://www.retailexpress.com",
+      "geographic_overlap": "High (UK market focus)",
+      "customer_segment": "SMB to mid-market retailers, B2B",
+      "battle_frequency": "Low",
+      "primary_differentiation": "Integrated POS and retail management system with AI pricing vs. pure analytics and decision intelligence platform"
+    },
+    {
+      "rank": 8,
+      "company_name": "Ocula Technologies",
+      "domain": "https://ocula.ai",
+      "geographic_overlap": "Medium (Global AI analytics)",
+      "customer_segment": "Mid-market retailers, B2B",
+      "battle_frequency": "Low",
+      "primary_differentiation": "Computer vision and image recognition for retail vs. customer and product decision intelligence"
+    },
+    {
+      "rank": 9,
+      "company_name": "RetailNext",
+      "domain": "https://retailnext.net",
+      "geographic_overlap": "Medium (US-based with global presence)",
+      "customer_segment": "Physical retailers, B2B",
+      "battle_frequency": "Low",
+      "primary_differentiation": "In-store analytics and shopper behavior tracking vs. customer-product decision intelligence and optimization"
+    },
+    {
+      "rank": 10,
+      "company_name": "ThoughtSpot",
+      "domain": "https://www.thoughtspot.com",
+      "geographic_overlap": "Medium (Global enterprise BI)",
+      "customer_segment": "Enterprise cross-industry including retail, B2B",
+      "battle_frequency": "Low",
+      "primary_differentiation": "Self-service BI search analytics platform vs. retail-specific decision intelligence with embedded AI recommendations"
+    }
+  ],
+  "biased_prompts": {
+    "total_count": 15,
+    "awareness_informational": [
+      {
+        "id": 1,
+        "prompt": "What is Hyperfinity and how does it help UK retailers?",
+        "category": "Awareness"
+      },
+      {
+        "id": 2,
+        "prompt": "How does Hyperfinity decision intelligence platform work?",
+        "category": "Awareness"
+      },
+      {
+        "id": 3,
+        "prompt": "Is Hyperfinity suitable for retailers without data science teams?",
+        "category": "Awareness"
+      },
+      {
+        "id": 4,
+        "prompt": "Hyperfinity reviews from UK retail clients",
+        "category": "Awareness"
+      }
+    ],
+    "consideration_evaluation": [
+      {
+        "id": 5,
+        "prompt": "What features does Hyperfinity offer for retail pricing optimization?",
+        "category": "Consideration"
+      },
+      {
+        "id": 6,
+        "prompt": "How much does Hyperfinity cost for mid-size retailers?",
+        "category": "Consideration"
+      },
+      {
+        "id": 7,
+        "prompt": "Hyperfinity customer segmentation capabilities explained",
+        "category": "Consideration"
+      },
+      {
+        "id": 8,
+        "prompt": "Can Hyperfinity integrate with Snowflake and Shopify?",
+        "category": "Consideration"
+      },
+      {
+        "id": 9,
+        "prompt": "What results do retailers achieve with Hyperfinity platform?",
+        "category": "Consideration"
+      }
+    ],
+    "comparison_commercial": [
+      {
+        "id": 10,
+        "prompt": "Hyperfinity vs Dataiku for retail analytics UK",
+        "category": "Comparison"
+      },
+      {
+        "id": 11,
+        "prompt": "Peak AI vs Hyperfinity which is better for retailers?",
+        "category": "Comparison"
+      },
+      {
+        "id": 12,
+        "prompt": "Hyperfinity vs Blue Yonder pricing and features comparison",
+        "category": "Comparison"
+      },
+      {
+        "id": 13,
+        "prompt": "Should I choose Hyperfinity or dunnhumby for customer analytics?",
+        "category": "Comparison"
+      }
+    ],
+    "decision_transactional": [
+      {
+        "id": 14,
+        "prompt": "Hyperfinity demo request for UK retailer",
+        "category": "Decision"
+      },
+      {
+        "id": 15,
+        "prompt": "Book Hyperfinity consultation for retail pricing strategy",
+        "category": "Decision"
+      }
+    ]
+  },
+  "blind_prompts": {
+    "total_count": 15,
+    "problem_awareness": [
+      {
+        "id": 1,
+        "prompt": "How can retailers make better pricing decisions with data?",
+        "category": "Problem"
+      },
+      {
+        "id": 2,
+        "prompt": "Why do retail promotions often fail to deliver ROI?",
+        "category": "Problem"
+      },
+      {
+        "id": 3,
+        "prompt": "Challenges with retail customer segmentation and targeting",
+        "category": "Problem"
+      }
+    ],
+    "solution_education": [
+      {
+        "id": 4,
+        "prompt": "What is retail decision intelligence and how does it work?",
+        "category": "Education"
+      },
+      {
+        "id": 5,
+        "prompt": "Benefits of AI-powered retail analytics platforms",
+        "category": "Education"
+      },
+      {
+        "id": 6,
+        "prompt": "How to optimize product assortment using customer data?",
+        "category": "Education"
+      },
+      {
+        "id": 7,
+        "prompt": "No-code analytics tools for retail merchandisers",
+        "category": "Education"
+      }
+    ],
+    "evaluation_consideration": [
+      {
+        "id": 8,
+        "prompt": "Best retail analytics platforms for UK businesses 2026",
+        "category": "Evaluation"
+      },
+      {
+        "id": 9,
+        "prompt": "Retail pricing optimization software comparison",
+        "category": "Evaluation"
+      },
+      {
+        "id": 10,
+        "prompt": "Customer loyalty analytics tools for retailers",
+        "category": "Evaluation"
+      },
+      {
+        "id": 11,
+        "prompt": "SaaS platforms for retail decision making",
+        "category": "Evaluation"
+      },
+      {
+        "id": 12,
+        "prompt": "AI solutions for retail marketing personalization UK",
+        "category": "Evaluation"
+      }
+    ],
+    "commercial_investigation": [
+      {
+        "id": 13,
+        "prompt": "Affordable retail analytics software for mid-market UK retailers",
+        "category": "Commercial"
+      },
+      {
+        "id": 14,
+        "prompt": "Retail decision intelligence platforms with Snowflake integration",
+        "category": "Commercial"
+      },
+      {
+        "id": 15,
+        "prompt": "ROI of retail AI platforms for pricing and loyalty",
+        "category": "Commercial"
+      }
+    ],
+    "decision_support": []
+  },
+  "research_quality_summary": {
+    "total_competitors_identified": 10,
+    "geographic_relevance": "High UK focus - competitors include UK-founded (Peak, Faculty, dunnhumby), UK-active (Dataiku, Blue Yonder), and global platforms with UK presence",
+    "prompt_distribution": {
+      "biased_percentage": 50,
+      "neutral_percentage": 50,
+      "total_prompts": 30
+    },
+    "customer_journey_coverage": "Complete - Problem Awareness through Decision/Transaction stages with emphasis on Consideration and Evaluation phases",
+    "data_confidence_level": "High",
+    "confidence_justification": "Company profile verified from official website, LinkedIn, CB Insights, and multiple credible news sources. Competitors identified through CB Insights alternatives, industry analysis, and market research. Funding and leadership confirmed through UK Tech News and Retail Tech Innovation Hub. Client portfolio validated through company website and case studies.",
+    "ranking_methodology": "Ranked by: (1) Win/loss battle frequency in UK retail decision intelligence market, (2) Geographic overlap with UK market, (3) Customer segment alignment (mid-market to enterprise retailers), (4) Product overlap across pricing, assortment, loyalty functions, (5) Direct vs aspirational competition (80/20 split). Top competitors (Dataiku, Peak, Faculty) compete directly for same buyers; mid-tier (Blue Yonder, Revionics, dunnhumby) overlap specific functions; lower-ranked serve adjacent use cases or different segments."
+  },
+  "metadata": {
+    "report_generated_date": "2026-02-11",
+    "research_methodology": "AEO (Answer Engine Optimization) competitive benchmarking per AEO_Research_V2.md specifications",
+    "primary_market": "United Kingdom",
+    "data_sources": [
+      "HyperFinity official website (hyperfinity.ai)",
+      "LinkedIn company page",
+      "CB Insights company and competitor profiles",
+      "UK Tech News and Retail Tech Innovation Hub articles",
+      "Snowflake Ventures and Finance Yorkshire investment announcements",
+      "Industry platform comparisons and retail analytics market research"
+    ],
+    "web_references": [
+      "https://hyperfinity.ai",
+      "https://hyperfinity.ai/about-hyperfinity",
+      "https://uk.linkedin.com/company/hyperfinity",
+      "https://www.cbinsights.com/company/hyper-group",
+      "https://www.uktechnews.info/2023/01/10/method-analytics-t-a-hyperfinity-secures-seed-investment-from-snowflake-ventures/",
+      "https://retailtechinnovationhub.com/home/2025/4/15/hyperfinity-bags-finance-yorkshire-investment",
+      "https://www.dataiku.com/solutions/retail-cpg/",
+      "https://retailtechinnovationhub.com/home/2025/3/13/uipath-acquires-peak",
+      "https://www.insiderlondon.com/blog/Faculty-unleashing-the-power-of-ai/",
+      "https://www.cbinsights.com/company/hyper-group/alternatives-competitors"
+    ]
+  }
+}

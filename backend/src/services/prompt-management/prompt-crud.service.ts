@@ -15,11 +15,11 @@ export class PromptCrudService {
   async getConfigV2Rows(
     brandId: string,
     customerId: string
-  ): Promise<Array<{ id: string; topic: string; prompt: string; locale: string; country: string; version: number }>> {
+  ): Promise<Array<{ id: string; topic: string; prompt: string; locale: string; country: string; version: number; queryTag?: string }>> {
     // Fetch queries
     const { data: queries, error: queriesError } = await supabaseAdmin
       .from('generated_queries')
-      .select('id, topic, query_text, locale, country')
+      .select('id, topic, query_text, locale, country, query_tag')
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
       .eq('is_active', true)
@@ -57,7 +57,8 @@ export class PromptCrudService {
         prompt: (row.query_text || '').trim(),
         locale: (row.locale || 'en-US').trim(),
         country: (row.country || 'US').trim(),
-        version: versionMap.get(topicName.toLowerCase()) || 1
+        version: versionMap.get(topicName.toLowerCase()) || 1,
+        queryTag: row.query_tag
       }
     })
   }
@@ -144,10 +145,10 @@ export class PromptCrudService {
     }
 
     const existingTopicByNormalized = new Map<string, { id: string; is_active: boolean | null; topic_name: string | null }>()
-    ;(existingTopics || []).forEach(t => {
-      if (!t.topic_name) return
-      existingTopicByNormalized.set(t.topic_name.trim().toLowerCase(), t)
-    })
+      ; (existingTopics || []).forEach(t => {
+        if (!t.topic_name) return
+        existingTopicByNormalized.set(t.topic_name.trim().toLowerCase(), t)
+      })
 
     // 2. Archive Logic: Identify topics being modified and touch them to trigger archiving
     const topicsToArchive = new Set<string>()
@@ -180,13 +181,13 @@ export class PromptCrudService {
 
     if (brandTopicsToTouch.length > 0) {
       // Manual Archiving Logic (replaces DB trigger)
-      
+
       // 1. Fetch current topic details (version, name)
       const { data: topicsData, error: topicsFetchError } = await supabaseAdmin
         .from('brand_topics')
         .select('id, topic_name, version, brand_id')
         .in('id', brandTopicsToTouch)
-      
+
       if (topicsFetchError) {
         throw new DatabaseError(`Failed to fetch topics for archiving: ${topicsFetchError.message}`)
       }
@@ -214,19 +215,19 @@ export class PromptCrudService {
         }
 
         const queriesByTopic = new Map<string, any[]>()
-        ;(currentQueries || []).forEach(q => {
-          const t = (q.topic || '').trim()
-          if (!queriesByTopic.has(t)) {
-            queriesByTopic.set(t, [])
-          }
-          queriesByTopic.get(t)!.push(q)
-        })
+          ; (currentQueries || []).forEach(q => {
+            const t = (q.topic || '').trim()
+            if (!queriesByTopic.has(t)) {
+              queriesByTopic.set(t, [])
+            }
+            queriesByTopic.get(t)!.push(q)
+          })
 
         // 3. Prepare archive records
         const archiveInserts = topicsData.map(t => {
           const tName = (t.topic_name || '').trim()
           const prompts = queriesByTopic.get(tName) || []
-          
+
           // Format prompts as expected by JSONB
           const formattedPrompts = prompts.map(p => ({
             id: p.id,
@@ -251,17 +252,17 @@ export class PromptCrudService {
           const { error: archiveError } = await supabaseAdmin
             .from('archived_topics_prompts')
             .insert(archiveInserts)
-          
+
           if (archiveError) {
-             // If table doesn't exist, we might want to fail gracefully or warn, 
-             // but user explicitly asked for this feature, so throwing is appropriate 
-             // unless we want to support systems without the migration.
-             // Given the instructions, we should probably throw.
-             if (archiveError.code === '42P01') {
-                 console.warn('Archived table does not exist, skipping archive step')
-             } else {
-                 throw new DatabaseError(`Failed to archive topics: ${archiveError.message}`)
-             }
+            // If table doesn't exist, we might want to fail gracefully or warn, 
+            // but user explicitly asked for this feature, so throwing is appropriate 
+            // unless we want to support systems without the migration.
+            // Given the instructions, we should probably throw.
+            if (archiveError.code === '42P01') {
+              console.warn('Archived table does not exist, skipping archive step')
+            } else {
+              throw new DatabaseError(`Failed to archive topics: ${archiveError.message}`)
+            }
           }
         }
 
@@ -371,9 +372,9 @@ export class PromptCrudService {
       }
 
       const metadataById = new Map<string, unknown>()
-      ;(existingQueries || []).forEach(q => {
-        metadataById.set(q.id, q.metadata)
-      })
+        ; (existingQueries || []).forEach(q => {
+          metadataById.set(q.id, q.metadata)
+        })
 
       for (const row of rowsWithId) {
         const existingMetadata = metadataById.get(row.id)
@@ -521,7 +522,7 @@ export class PromptCrudService {
     }
 
     // Fetch active queries
-    const { data: queryRows, error: queryError} = await supabaseAdmin
+    const { data: queryRows, error: queryError } = await supabaseAdmin
       .from('generated_queries')
       .select('id, query_text, metadata, created_at')
       .eq('brand_id', brandId)
@@ -538,7 +539,7 @@ export class PromptCrudService {
 
     // Fetch latest responses for each prompt
     const responseMap = new Map<string, { response: string; timestamp: string; collectorType: string }>()
-    
+
     if (queryIds.length > 0) {
       const { data: responseRows } = await supabaseAdmin
         .from('collector_results')
@@ -563,7 +564,7 @@ export class PromptCrudService {
 
     // Fetch metrics (sentiment, visibility) for each prompt
     const metricsMap = new Map<string, { sentiment: number | null; visibility: number | null }>()
-    
+
     if (queryIds.length > 0) {
       const { data: metricsRows } = await supabaseAdmin
         .from('extracted_positions')
@@ -574,14 +575,14 @@ export class PromptCrudService {
       if (metricsRows) {
         // Group by query_id and calculate averages
         const grouped = new Map<string, { sentiments: number[]; visibilities: number[] }>()
-        
+
         metricsRows.forEach(row => {
           if (!row.query_id) return
-          
+
           if (!grouped.has(row.query_id)) {
             grouped.set(row.query_id, { sentiments: [], visibilities: [] })
           }
-          
+
           const group = grouped.get(row.query_id)!
           if (typeof row.sentiment_score === 'number') {
             group.sentiments.push(row.sentiment_score)
@@ -596,7 +597,7 @@ export class PromptCrudService {
           const avgSentiment = values.sentiments.length > 0
             ? roundToPrecision(values.sentiments.reduce((sum, v) => sum + v, 0) / values.sentiments.length, 1)
             : null
-          
+
           const avgVisibility = values.visibilities.length > 0
             ? roundToPrecision((values.visibilities.reduce((sum, v) => sum + v, 0) / values.visibilities.length) * 100, 1)
             : null
@@ -611,7 +612,7 @@ export class PromptCrudService {
 
     // Fetch volume counts (how many times each prompt was executed)
     const volumeMap = new Map<string, number>()
-    
+
     if (queryIds.length > 0) {
       const { data: volumeRows } = await supabaseAdmin
         .from('collector_results')
@@ -630,7 +631,7 @@ export class PromptCrudService {
 
     // Fetch keywords
     const keywordMap = new Map<string, string[]>()
-    
+
     if (queryIds.length > 0) {
       const { data: keywordRows } = await supabaseAdmin
         .from('generated_keywords')
@@ -687,7 +688,7 @@ export class PromptCrudService {
 
     // Group by topic
     const topicMap = new Map<string, ManagedPrompt[]>()
-    
+
     prompts.forEach(prompt => {
       const topicId = slugify(prompt.topic)
       if (!topicMap.has(topicId)) {
@@ -712,7 +713,7 @@ export class PromptCrudService {
     // Calculate summary statistics
     const totalPrompts = prompts.length
     const totalTopics = topics.length
-    
+
     const visibilityScores = prompts
       .map(p => p.visibilityScore)
       .filter((v): v is number => v !== null)

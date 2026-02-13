@@ -4,14 +4,17 @@
  */
 
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
+import { mcpSearchService } from './mcp-search.service';
 
 loadEnvironment();
 
-export type OpenRouterRole = 'system' | 'user' | 'assistant';
+export type OpenRouterRole = 'system' | 'user' | 'assistant' | 'tool';
 
 export interface OpenRouterMessage {
   role: OpenRouterRole;
   content: string;
+  tool_call_id?: string;
+  name?: string;
 }
 
 export interface OpenRouterQueryRequest {
@@ -24,6 +27,7 @@ export interface OpenRouterQueryRequest {
   systemPrompt?: string;
   enableWebSearch?: boolean;
   collectorType?: string;
+  enableToolLoop?: boolean; // NEW: Enable autonomous tool-calling loop
 }
 
 export interface OpenRouterQueryResponse {
@@ -37,6 +41,7 @@ export interface OpenRouterQueryResponse {
   citations?: string[];
   urls?: string[];
   metadata?: Record<string, unknown>;
+  toolCallsExecuted?: number; // NEW: Track autonomous tool calls
 }
 
 export class OpenRouterCollectorService {
@@ -80,10 +85,10 @@ export class OpenRouterCollectorService {
         topP: 0.9
       },
       content: {
-        model: 'meta-llama/llama-3.3-70b-instruct',
+        model: 'openai/gpt-oss-20b',
         systemPrompt: 'You are a senior content strategist. Write clear, brand-safe marketing content that is factual, structured, and ready to ship. Do not use web search unless explicitly requested.',
         enableWebSearch: false,
-        maxTokens: 10000, // Increased for reasoning models - they need tokens for both reasoning and output
+        maxTokens: 10000,
         temperature: 0.6,
         topP: 0.9
       }
@@ -92,7 +97,266 @@ export class OpenRouterCollectorService {
     const hasApiKey = Boolean(this.apiKey);
   }
 
+  /**
+   * NEW: Execute query with autonomous tool-calling loop
+   * Mirrors the GroqCompoundService logic for Active Grounding
+   */
+  async executeQueryWithTools(request: OpenRouterQueryRequest): Promise<OpenRouterQueryResponse> {
+    if (!this.apiKey) {
+      throw new Error('OpenRouter API key not configured. Set OPENROUTER_API_KEY in your environment.');
+    }
+
+    if (!request.prompt && (!request.messages || request.messages.length === 0)) {
+      throw new Error('OpenRouter request requires either a prompt or a messages array.');
+    }
+
+    const resolvedConfig = this.resolveConfig(request);
+    const queryId = `openrouter_tool_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const startTime = new Date().toISOString();
+
+    // Build initial messages
+    let messages: any[];
+    if (request.messages && request.messages.length > 0) {
+      messages = [...request.messages];
+      if (request.systemPrompt) {
+        messages = [{ role: 'system', content: request.systemPrompt }, ...messages];
+      } else if (!messages.some(msg => msg.role === 'system') && resolvedConfig.systemPrompt) {
+        messages = [{ role: 'system', content: resolvedConfig.systemPrompt }, ...messages];
+      }
+    } else {
+      messages = [];
+      messages.push({
+        role: 'system',
+        content: request.systemPrompt || resolvedConfig.systemPrompt || this.defaultSystemPrompt
+      });
+      messages.push({
+        role: 'user',
+        content: request.prompt || ''
+      });
+    }
+
+    // Define web search tool (OpenAI function calling format)
+    const tools = [
+      {
+        type: 'function',
+        function: {
+          name: 'web_search',
+          description: 'Search the web for real-time information, facts, or data gaps. Returns a list of relevant snippets.',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'The search query'
+              }
+            },
+            required: ['query']
+          }
+        }
+      }
+    ];
+
+    console.log(`🚀 [OpenRouterCollectorService] Starting tool loop with ${resolvedConfig.model}`);
+
+    let iterations = 0;
+    const maxIterations = 5; // Reduced for regeneration speed
+    let toolCallsExecuted = 0;
+    let lastContent = '';
+
+    while (iterations < maxIterations) {
+      iterations++;
+
+      const body: Record<string, unknown> = {
+        model: resolvedConfig.model,
+        messages,
+        tools,
+        temperature: resolvedConfig.temperature,
+        max_tokens: resolvedConfig.maxTokens,
+        top_p: resolvedConfig.topP
+      };
+
+      console.log(`🌐 [OpenRouterCollectorService] Tool loop iteration ${iterations}/${maxIterations}`);
+
+      try {
+        const response = await fetch(this.baseUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.apiKey}`,
+            'HTTP-Referer': this.referer,
+            'X-Title': this.appName
+          },
+          body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ OpenRouter API Error:', {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorText
+          });
+          throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+        }
+
+        const result = await response.json() as any;
+
+        if (!result?.choices?.[0]) {
+          console.error('❌ OpenRouter response structure:', JSON.stringify(result, null, 2));
+          throw new Error(`Invalid OpenRouter response: no choices found.`);
+        }
+
+        const message = result.choices[0].message;
+        const finishReason = result.choices[0].finish_reason;
+
+        // Debug: Log message structure
+        console.log(`🔍 [OpenRouterCollectorService] Iteration ${iterations} - Finish reason: ${finishReason}, Has tool_calls: ${!!message.tool_calls}, Has content: ${!!message.content}`);
+
+        // Check for tool calls
+        if (message.tool_calls && message.tool_calls.length > 0) {
+          console.log(`🔎 [OpenRouterCollectorService] LLM requested ${message.tool_calls.length} tool(s)`);
+
+          // Add assistant message with tool calls to history
+          messages.push(message);
+
+          // Execute each tool call
+          for (const toolCall of message.tool_calls) {
+            const functionName = toolCall.function?.name || toolCall.name;
+            let args: any = {};
+
+            try {
+              args = JSON.parse(toolCall.function?.arguments || toolCall.arguments || '{}');
+            } catch (e) {
+              console.warn('⚠️ Failed to parse tool arguments:', toolCall);
+            }
+
+            let toolResult = 'Tool not found';
+
+            if (functionName === 'web_search') {
+              const query = args.query || args.q || '';
+              console.log(`🌐 [OpenRouterCollectorService] Executing MCP Search: "${query}"`);
+              try {
+                const searchRes = await mcpSearchService.quickSearch(query, 3);
+                toolResult = mcpSearchService.formatContext(searchRes);
+                toolCallsExecuted++;
+              } catch (err: any) {
+                console.warn(`⚠️ MCP Search failed: ${err.message}`);
+                toolResult = `Search failed: ${err.message}`;
+              }
+            }
+
+            // Add tool response to messages
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              name: functionName,
+              content: toolResult
+            });
+          }
+
+          // Continue loop to get next LLM response
+          continue;
+        }
+
+        // No tool calls - extract final content
+        let content = message.content || '';
+
+        if (typeof content !== 'string') {
+          if (Array.isArray(content)) {
+            content = content
+              .map((part: any) => {
+                if (typeof part === 'string') return part;
+                if (part?.text) return part.text;
+                if (part?.content) return part.content;
+                return '';
+              })
+              .filter(Boolean)
+              .join('\n');
+          } else {
+            content = String(content);
+          }
+        }
+
+        lastContent = content;
+
+        // Check if we have valid content
+        if (content && content.trim().length > 0) {
+          console.log(`✅ [OpenRouterCollectorService] Tool loop completed in ${iterations} iterations (${toolCallsExecuted} tool calls)`);
+          console.log(`📝 [OpenRouterCollectorService] Final content length: ${content.length} chars`);
+
+          const endTime = new Date().toISOString();
+          return {
+            query_id: queryId,
+            run_start: startTime,
+            run_end: endTime,
+            prompt: request.prompt || '',
+            response: content,
+            model_used: result?.model || resolvedConfig.model,
+            collector_type: request.collectorType || 'openrouter',
+            citations: [],
+            urls: [],
+            metadata: {
+              provider: 'openrouter',
+              model: result?.model || resolvedConfig.model,
+              usage: result?.usage || {},
+              iterations,
+              toolCallsExecuted
+            },
+            toolCallsExecuted
+          };
+        }
+
+        // Empty content but not first iteration - might be mid-loop
+        console.warn(`⚠️ [OpenRouterCollectorService] Iteration ${iterations} returned empty content, continuing loop...`);
+        if (iterations === 1) {
+          throw new Error('OpenRouter returned empty content on first iteration');
+        }
+
+      } catch (err: any) {
+        console.error(`❌ [OpenRouterCollectorService] Error in iteration ${iterations}:`, err.message);
+
+        // If we're past iteration 3 and have errors, bail out
+        if (iterations >= 3) {
+          throw err;
+        }
+
+        // Otherwise try to continue
+        continue;
+      }
+    }
+
+    // Max iterations reached - return best effort
+    console.warn(`⚠️ [OpenRouterCollectorService] Max iterations (${maxIterations}) reached. Returning best-effort content.`);
+
+    const endTime = new Date().toISOString();
+    return {
+      query_id: queryId,
+      run_start: startTime,
+      run_end: endTime,
+      prompt: request.prompt || '',
+      response: lastContent || 'Max iterations reached without final content',
+      model_used: resolvedConfig.model,
+      collector_type: request.collectorType || 'openrouter',
+      citations: [],
+      urls: [],
+      metadata: {
+        provider: 'openrouter',
+        model: resolvedConfig.model,
+        iterations: maxIterations,
+        toolCallsExecuted,
+        maxIterationsReached: true
+      },
+      toolCallsExecuted
+    };
+  }
+
   async executeQuery(request: OpenRouterQueryRequest): Promise<OpenRouterQueryResponse> {
+    // If tool loop is requested, delegate to new method
+    if (request.enableToolLoop) {
+      return this.executeQueryWithTools(request);
+    }
+
+    // Original implementation continues below...
     if (!this.apiKey) {
       throw new Error('OpenRouter API key not configured. Set OPENROUTER_API_KEY in your environment.');
     }

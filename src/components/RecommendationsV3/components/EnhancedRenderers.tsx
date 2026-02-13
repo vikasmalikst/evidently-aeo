@@ -57,17 +57,17 @@ export function MarkdownRenderer({ content, className = '', highlightFillIns = t
         remarkPlugins={[remarkGfm]}
         components={{
           // Custom heading styles
-          h1: ({ children }) => <h1 className="text-[20px] font-bold text-[#1e293b] mb-3 mt-4">{children}</h1>,
-          h2: ({ children }) => <h2 className="text-[18px] font-semibold text-[#334155] mb-2 mt-3">{children}</h2>,
-          h3: ({ children }) => <h3 className="text-[16px] font-semibold text-[#475569] mb-2 mt-2">{children}</h3>,
+          h1: ({ children }) => <h1 className="text-lg font-bold text-slate-900 mb-3 mt-4 leading-tight">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-base font-bold text-slate-800 mb-2 mt-3 leading-tight">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-700 mb-2 mt-2 leading-snug">{children}</h3>,
 
           // Paragraph styling
-          p: ({ children }) => <p className="text-[13px] text-[#374151] leading-relaxed mb-3">{children}</p>,
+          p: ({ children }) => <p className="text-[13px] text-slate-700 leading-relaxed mb-3">{children}</p>,
 
           // List styling
-          ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 mb-3 text-[13px] text-[#374151]">{children}</ul>,
-          ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 mb-3 text-[13px] text-[#374151]">{children}</ol>,
-          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+          ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 mb-3 text-[13px] text-slate-700 leading-relaxed">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 mb-3 text-[13px] text-slate-700 leading-relaxed">{children}</ol>,
+          li: ({ children }) => <li className="pl-1">{children}</li>,
 
           // Strong/Bold
           strong: ({ children }) => <strong className="font-semibold text-[#1e293b]">{children}</strong>,
@@ -92,9 +92,9 @@ export function MarkdownRenderer({ content, className = '', highlightFillIns = t
             );
           },
 
-          // Blockquote
+          // Blockquote - Professional clean style, no background
           blockquote: ({ children }) => (
-            <blockquote className="border-l-4 border-[#0ea5e9] pl-4 py-1 my-3 bg-[#f0f9ff] rounded-r-lg">
+            <blockquote className="border-l-4 border-slate-300 pl-4 py-1 my-4 text-slate-600 italic">
               {children}
             </blockquote>
           ),
@@ -136,11 +136,12 @@ export function MarkdownRenderer({ content, className = '', highlightFillIns = t
       {/* CSS for FILL_IN highlighting */}
       <style>{`
         .fill-in-placeholder {
-          background-color: #fef3c7;
-          color: #92400e;
+          background-color: #fef9c3;
+          color: #854d0e;
           padding: 2px 6px;
           border-radius: 4px;
           font-weight: 500;
+          border: 1px solid #fde047;
         }
       `}</style>
     </div>

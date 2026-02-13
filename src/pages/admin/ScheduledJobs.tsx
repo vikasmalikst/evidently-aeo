@@ -44,7 +44,7 @@ interface ScheduledJob {
   id: string;
   brand_id: string;
   customer_id: string;
-  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry';
+  job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring' | 'data_collection_retry' | 'scoring_retry' | 'ai_recommendations';
   cron_expression: string;
   timezone: string;
   is_active: boolean;
@@ -59,7 +59,7 @@ interface JobRun {
   scheduled_job_id: string;
   brand_id: string;
   customer_id: string;
-  job_type: string;
+  job_type: ScheduledJob['job_type'];
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
   scheduled_for: string;
   started_at: string | null;
@@ -2111,7 +2111,8 @@ const CreateJobModal = ({
                 if (
                   value === 'data_collection' ||
                   value === 'scoring' ||
-                  value === 'data_collection_and_scoring'
+                  value === 'data_collection_and_scoring' ||
+                  value === 'ai_recommendations'
                 ) {
                   setFormData({ ...formData, job_type: value });
                 }
@@ -2122,6 +2123,7 @@ const CreateJobModal = ({
               <option value="data_collection">Data Collection</option>
               <option value="scoring">Scoring</option>
               <option value="data_collection_and_scoring">Data Collection + Scoring</option>
+              <option value="ai_recommendations">AI Recommendations</option>
             </select>
           </div>
           <div>

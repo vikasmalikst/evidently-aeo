@@ -38,7 +38,8 @@ export class DataAggregationService {
         periodStart: Date,
         periodEnd: Date,
         comparisonStart: Date,
-        comparisonEnd: Date
+        comparisonEnd: Date,
+        queryTags?: string[]
     ): Promise<ReportDataSnapshot> {
         console.log(`📊 [EXEC-REPORT] Aggregating data for brand ${brandId}`);
         console.log(`📊 Current period: ${periodStart.toISOString()} to ${periodEnd.toISOString()}`);
@@ -54,12 +55,12 @@ export class DataAggregationService {
             opportunities,
             queryOpportunities,
         ] = await Promise.all([
-            this.aggregateBrandPerformance(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
-            this.aggregateLLMPerformance(brandId, periodStart, periodEnd),
-            this.aggregateCompetitiveLandscape(brandId, periodStart, periodEnd),
+            this.aggregateBrandPerformance(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd, queryTags),
+            this.aggregateLLMPerformance(brandId, periodStart, periodEnd, queryTags),
+            this.aggregateCompetitiveLandscape(brandId, periodStart, periodEnd, queryTags),
             this.aggregateDomainReadiness(brandId, periodStart, periodEnd),
             this.aggregateActionsImpact(brandId, periodStart, periodEnd),
-            this.calculateTopMovers(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
+            this.calculateTopMovers(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd, queryTags),
             this.aggregateOpportunities(brandId),
             this.aggregateQueryOpportunities(brandId),
         ]);
@@ -84,15 +85,14 @@ export class DataAggregationService {
         periodStart: Date,
         periodEnd: Date,
         comparisonStart: Date,
-        comparisonEnd: Date
+        comparisonEnd: Date,
+        queryTags?: string[]
     ): Promise<BrandPerformanceData> {
         console.log(`📈 [EXEC-REPORT] Aggregating brand performance for ${brandId}`);
 
         // Fetch current period metrics
-        const currentMetrics = await this.fetchPeriodMetrics(brandId, periodStart, periodEnd);
-
-        // Fetch comparison period metrics
-        const previousMetrics = await this.fetchPeriodMetrics(brandId, comparisonStart, comparisonEnd);
+        const currentMetrics = await this.fetchPeriodMetrics(brandId, periodStart, periodEnd, queryTags);
+        const previousMetrics = await this.fetchPeriodMetrics(brandId, comparisonStart, comparisonEnd, queryTags);
 
         // Calculate deltas
         const deltas = {
@@ -104,7 +104,7 @@ export class DataAggregationService {
         };
 
         // Fetch 12-week trends
-        const twelveWeekTrends = await this.fetch12WeekTrends(brandId, periodEnd);
+        const twelveWeekTrends = await this.fetch12WeekTrends(brandId, periodEnd, queryTags);
 
         return {
             current: currentMetrics,
@@ -117,7 +117,7 @@ export class DataAggregationService {
     /**
      * Fetch metrics for a specific time period
      */
-    private async fetchPeriodMetrics(brandId: string, startDate: Date, endDate: Date) {
+    private async fetchPeriodMetrics(brandId: string, startDate: Date, endDate: Date, queryTags?: string[]) {
         // First, fetch the customer_id for this brand
         const { data: brandData, error: brandError } = await supabaseAdmin
             .from('brands')
@@ -148,6 +148,7 @@ export class DataAggregationService {
             startDate: startDate.toISOString(),
             endDate: endDate.toISOString(),
             includeSentiment: true,
+            queryTags,
         });
 
         if (!result.success || !result.data) {
@@ -200,7 +201,7 @@ export class DataAggregationService {
     /**
      * Fetch 12-week rolling trends
      */
-    private async fetch12WeekTrends(brandId: string, endDate: Date): Promise<{
+    private async fetch12WeekTrends(brandId: string, endDate: Date, queryTags?: string[]): Promise<{
         visibility: TrendDataPoint[];
         average_position: TrendDataPoint[];
         appearance_rate: TrendDataPoint[];
@@ -227,7 +228,7 @@ export class DataAggregationService {
             const weekEnd = new Date(weekStart);
             weekEnd.setDate(weekEnd.getDate() + 6);
 
-            const weekMetrics = await this.fetchPeriodMetrics(brandId, weekStart, weekEnd);
+            const weekMetrics = await this.fetchPeriodMetrics(brandId, weekStart, weekEnd, queryTags);
 
             trends.visibility.push({
                 week_start: weekStart.toISOString().split('T')[0],
@@ -266,13 +267,11 @@ export class DataAggregationService {
     /**
      * Aggregate LLM-specific performance
      */
-    /**
-     * Aggregate LLM-specific performance
-     */
     async aggregateLLMPerformance(
         brandId: string,
         periodStart: Date,
-        periodEnd: Date
+        periodEnd: Date,
+        queryTags?: string[]
     ): Promise<LLMPerformanceData> {
         console.log(`🤖 [EXEC-REPORT] Aggregating LLM performance for ${brandId}`);
 
@@ -303,6 +302,7 @@ export class DataAggregationService {
             startDate: periodStart.toISOString(),
             endDate: periodEnd.toISOString(),
             includeSentiment: true,
+            queryTags, // Pass queryTags here
         });
 
         if (!result.success || !result.data) {
@@ -373,7 +373,8 @@ export class DataAggregationService {
     async aggregateCompetitiveLandscape(
         brandId: string,
         periodStart: Date,
-        periodEnd: Date
+        periodEnd: Date,
+        queryTags?: string[]
     ): Promise<CompetitiveLandscapeData> {
         console.log(`\n🤖 [EXEC-REPORT] ========== AGGREGATING COMPETITIVE LANDSCAPE ==========`);
         console.log(`[EXEC-REPORT] Brand ID: ${brandId}`);
@@ -412,6 +413,7 @@ export class DataAggregationService {
             startDate: periodStart.toISOString(),
             endDate: periodEnd.toISOString(),
             includeSentiment: true,
+            queryTags, // Pass queryTags here
         });
 
         const totalQueries = brandResult.data?.length || 0;
@@ -506,11 +508,9 @@ export class DataAggregationService {
                         customerId,
                         startDate: periodStart.toISOString(),
                         endDate: periodEnd.toISOString(),
-                        includeSentiment: true
+                        includeSentiment: true,
+                        queryTags
                     });
-
-                    console.log(`[EXEC-REPORT] Competitor metrics result: success=${compMetrics.success}, rows=${compMetrics.data?.length || 0}`);
-
                     if (compMetrics.success && compMetrics.data) {
                         const rows = compMetrics.data;
                         const visibilityValues = rows.map(r => r.visibility_index).filter(v => v != null) as number[];
@@ -834,7 +834,8 @@ export class DataAggregationService {
         periodStart: Date,
         periodEnd: Date,
         comparisonStart: Date,
-        comparisonEnd: Date
+        comparisonEnd: Date,
+        queryTags?: string[]
     ): Promise<TopMoversData> {
         console.log(`📊 [EXEC-REPORT] Calculating top movers for ${brandId}`);
 
@@ -1370,7 +1371,7 @@ export class DataAggregationService {
      */
     async aggregateQueryOpportunities(brandId: string): Promise<QueryOpportunitiesData> {
         console.log(`🔎 [EXEC-REPORT] Aggregating query opportunities for ${brandId}`);
-        
+
         try {
             // Get customer ID
             const { data: brandData } = await supabaseAdmin
@@ -1378,7 +1379,7 @@ export class DataAggregationService {
                 .select('customer_id')
                 .eq('id', brandId)
                 .single();
-                
+
             if (!brandData) {
                 console.warn(`⚠️ [EXEC-REPORT] Brand ${brandId} not found or no customer_id`);
                 return this.getEmptyQueryOpportunities();

@@ -119,6 +119,7 @@ export const computeEnhancedSources = (sourceData: SourceData[]): EnhancedSource
             soa: s.soa,
             sentiment: s.sentiment,
             citations: s.citations,
+            topPages: s.topPages,
             valueScore,
             quadrant: classifyQuadrant(
                 s.mentionRate,

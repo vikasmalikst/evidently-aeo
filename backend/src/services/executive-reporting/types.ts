@@ -322,6 +322,7 @@ export interface GenerateReportRequest {
     brand_id: string;
     period_days?: 7 | 30 | 60 | 90;
     end_date?: string; // Optional, defaults to today
+    queryTags?: string[];
 }
 
 export interface CreateScheduleRequest {

@@ -5,12 +5,17 @@ import { useDashboardStore } from '../../store/dashboardStore';
 interface QueryTagFilterProps {
     className?: string;
     variant?: 'outline' | 'default';
+    value?: string[];
+    onChange?: (tags: string[]) => void;
 }
 
 
 
-export const QueryTagFilter: React.FC<QueryTagFilterProps> = ({ className, variant }) => {
-    const { queryTags, setQueryTags } = useDashboardStore();
+export const QueryTagFilter: React.FC<QueryTagFilterProps> = ({ className, variant, value, onChange }) => {
+    const { queryTags: storeQueryTags, setQueryTags: setStoreQueryTags } = useDashboardStore();
+
+    const queryTags = value !== undefined ? value : storeQueryTags;
+    const setQueryTags = onChange || setStoreQueryTags;
 
     // Map internal tags to display labels
     // [] -> All

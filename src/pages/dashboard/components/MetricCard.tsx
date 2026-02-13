@@ -1,5 +1,5 @@
 
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import { ChevronUp, ChevronDown, Minus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { HelpButton } from '../../../components/common/HelpButton';
 import type { MetricCardProps } from '../types';
@@ -134,6 +134,7 @@ export const MetricCard = ({
   description,
   comparisons = [],
   comparisonSuffix = '',
+  trendSuffix = '%',
   metricType,
   onHelpClick,
   headerAction,
@@ -286,19 +287,24 @@ export const MetricCard = ({
 
       <div className="flex items-end gap-2 mb-2">
         <div className="text-3xl font-extrabold text-slate-900 leading-none tracking-tight">{value}</div>
-        {trend.direction !== 'stable' && (
-          <div
-            className={`flex items-center gap-0.5 text-[12px] font-bold pb-1 px-1.5 py-0.5 rounded-full ${trend.direction === 'up' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-              }`}
-          >
-            {trend.direction === 'up' ? (
-              <ChevronUp size={12} strokeWidth={3} />
-            ) : (
-              <ChevronDown size={12} strokeWidth={3} />
-            )}
-            {Math.abs(trend.value)}%
-          </div>
-        )}
+        <div
+          className={`flex items-center gap-0.5 text-[12px] font-bold pb-1 px-1.5 py-0.5 rounded-full ${
+            trend.direction === 'up' 
+              ? 'bg-emerald-50 text-emerald-600' 
+              : trend.direction === 'down'
+                ? 'bg-rose-50 text-rose-600'
+                : 'bg-slate-100 text-slate-500'
+          }`}
+        >
+          {trend.direction === 'up' ? (
+            <ChevronUp size={12} strokeWidth={3} />
+          ) : trend.direction === 'down' ? (
+            <ChevronDown size={12} strokeWidth={3} />
+          ) : (
+            <Minus size={12} strokeWidth={3} />
+          )}
+          {Math.abs(trend.value)}{trendSuffix}
+        </div>
       </div>
 
       {subtitle && <div className="text-[13px] text-slate-500 font-medium">{subtitle}</div>}
@@ -375,4 +381,3 @@ export const MetricCard = ({
     </div>
   );
 };
-

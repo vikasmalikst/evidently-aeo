@@ -6,46 +6,11 @@
  */
 
 import { supabaseAdmin } from '../../config/supabase';
-import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
-import { strategyPlanner } from './strategy-planner.service';
+import { groqCompoundService } from './groq-compound.service';
+import { mcpSearchService } from '../data-collection/mcp-search.service';
 
-// Import templates from frontend (we'll reference them, not duplicate)
-export type ContentTemplateType = 'article' | 'whitepaper' | 'short_video' | 'expert_community_response' | 'podcast' | 'comparison_table' | 'social_media_thread';
-
-export interface StructureSection {
-    id: string;
-    title: string;
-    content: string;
-    sectionType: string;
-}
-
-export interface StrategyPlan {
-    recommendationId: string;
-    contentType: ContentTemplateType;
-    primaryEntity: string;
-    targetChannel: string;
-    brandContext: {
-        name: string;
-        competitors?: string[];
-    };
-    structure: StructureSection[];
-    strategicGuidance: {
-        keyFocus: string;
-        aeoTargets: string[];
-        toneGuidelines: string;
-        differentiation: string;
-    };
-    contextFiles?: {
-        id: string;
-        name: string;
-        content: string;
-        uploadedAt: string;
-    }[];
-}
-
-
-
-// ... (imports remain same)
+import { RecommendationV3, TemplatePlan, StrategyPlan, BrandContextV3, ContextFile, StructureSection, ContentTemplateType } from './recommendation.types';
+import { getContentTemplates, detectContentType } from './content-templates';
 
 export class StrategyGenerationService {
     /**
@@ -104,33 +69,62 @@ export class StrategyGenerationService {
                 }
             }
 
-            // 3. Build Unified Prompt
-            const prompt = this.buildUnifiedPrompt({
-                brand: brand || { name: 'Brand', industry: 'Unknown', competitors: [] },
-                topic: rec.action,
+            // 3. Build combined strategy + angle prompt (single LLM call)
+            const competitors = brand?.competitors && brand.competitors.length > 0
+                ? brand.competitors.join(', ')
+                : 'standard industry alternatives';
+
+            // 2.8 MCP Web Search (Market Context)
+            let researchContext = '';
+            try {
+                const searchQuery = `${brand.name} ${rec.action} trends ${new Date().getFullYear()}`;
+                console.log(`🔎 [StrategyService] Searching MCP: "${searchQuery}"`);
+                const searchResults = await mcpSearchService.quickSearch(searchQuery, 3);
+                researchContext = mcpSearchService.formatContext(searchResults);
+                if (researchContext) console.log('✅ [StrategyService] MCP Search context acquired');
+            } catch (err) {
+                console.warn('⚠️ [StrategyService] MCP Search failed, proceeding without web context');
+            }
+
+            // 3. Build strategy enrichment prompt
+            const prompt = this.buildStrategyPrompt({
+                recommendation: rec,
+                brand: brand || { name: 'Brand' },
+                templateSections,
                 contentType,
-                templateSections
+                customInstructions,
+                competitors,
+                researchContext
             });
 
-            console.log(`🧠 [StrategyService] Generating UNIFIED strategy for ${recommendationId} (${contentType})`);
+            console.log(`🧠 [StrategyService] Generating strategy + angle for ${recommendationId} (${contentType})`);
+            console.log('\n📤 [StrategyService] ========== STRATEGY PROMPT ==========');
+            console.log(prompt);
+            console.log('📤 [StrategyService] ========== END STRATEGY PROMPT ==========\n');
 
-            // 4. Call LLM for strategy enrichment
-            const response = await openRouterCollectorService.executeQuery({
-                collectorType: 'content',
-                prompt,
-                maxTokens: 10000,
-                temperature: 0.7, // Higher temp for creativity in angle
-                model: 'openai/gpt-oss-20b' // Using consistent model
+            // 4. Call LLM for combined strategy enrichment + strategic angle
+            // Use Groq Llama 3.3 70B with JSON mode for reliability
+            const groqResponse = await groqCompoundService.generateContent({
+                systemPrompt: 'You are a senior content strategist.',
+                userPrompt: prompt,
+                model: 'llama-3.3-70b-versatile',
+                temperature: 0.5,
+                maxTokens: 6000,
+                jsonMode: true // Enforce JSON object response
             });
 
-            if (!response.response) {
+            if (!groqResponse.content) {
                 return { success: false, error: 'LLM returned empty response' };
             }
 
-            // 5. Parse Unified Response
-            console.log('🤖 [StrategyService] Raw LLM Response:', response.response);
-            const strategyPlan = this.parseUnifiedResponse(
-                response.response,
+            // Log the full LLM response
+            console.log('\n📥 [StrategyService] ========== STRATEGY RESPONSE ==========');
+            console.log(groqResponse.content);
+            console.log('📥 [StrategyService] ========== END STRATEGY RESPONSE ==========\n');
+
+            // 5. Parse strategy plan (now includes strategic angle)
+            const strategyPlan = this.parseStrategyResponse(
+                groqResponse.content,
                 {
                     recommendationId,
                     contentType,
@@ -165,54 +159,72 @@ export class StrategyGenerationService {
     /**
      * Build the Unified Logic Prompt
      */
-    private buildUnifiedPrompt({
+    private buildStrategyPrompt({
+        recommendation,
         brand,
-        topic,
+        templateSections,
         contentType,
-        templateSections
+        customInstructions,
+        competitors,
+        researchContext
     }: any): string {
-        const competitors = (brand.competitors || []).join(', ') || 'Standard Industry Competitors';
         const templatesJson = JSON.stringify(templateSections, null, 2);
 
         return `You are a World-Class Content Strategist for ${brand.name}.
-Your goal is to plan a high-performance piece of content about: "${topic}" (${contentType}).
+Your goal is to plan a high-performance piece of content about: "${recommendation.action}".
 
-You must perform two distinct steps in a single output:
-1. **STRATEGIC PLANNING:** Define the target audience, their pain points, and a unique hook.
-2. **EXECUTION PLANNING:** Rewrite the provided content structure to align perfectly with that strategy.
-
-**Brand Context:**
-- Name: ${brand.name}
-- Industry: ${brand.industry || 'Unknown Industry'}
+**Context:**
+- Brand: ${brand.name}${brand.industry ? ` (${brand.industry})` : ''}
+- Channel: ${recommendation.channel}
+- Content Type: ${contentType}
 - Competitors: ${competitors}
 
-**Step 1: Strategic Angle (The "Brain")**
-Analyze the topic and brand to define:
-- **Target Audience:** Be hyper-specific (e.g., "Budget-conscious renovators", not "Homeowners").
-- **Primary Pain Point:** What strictly KEEPS THEM UP AT NIGHT regarding this topic?
-- **The Hook:** What is the unique, contrarian, or "insider" perspective ${brand.name} can take?
-- **Competitor Counter-Strike:** How do competitors (${competitors}) usually fail at this? How does ${brand.name} succeed?
+${researchContext ? `**LATEST MARKET RESEARCH (Use this to ground your strategy):**\n${researchContext}\n` : ''}
 
-**Step 2: Execution Plan (The "Hands")**
-Rewrite the provided content structure template below.
-- **Rules:**
-  - You are NOT just copying the template. You are customizing every instruction to hit the specific Audience and Hook defined in Step 1.
-  - **IMPORTANT:** If a section is a 'comparison_table', the 'content' field MUST be a valid Markdown table (using | separators). Do NOT write a paragraph describing the table. Write the actual table.
-  - Use \\n for line breaks.
+You have 2 tasks. Complete ALL of them in a single JSON response.
+
+---
+
+**Task 1: Define Strategic Angle**
+Before writing anything, define WHO this content is for and WHY they should care.
+
+1. **Target Audience:** Be hyper-specific (e.g., "Overworked DevOps Engineers at mid-market SaaS companies", NOT "Tech People").
+2. **Primary Pain Point:** What KEEPS THEM UP AT NIGHT regarding "${recommendation.action}"?
+3. **The Hook:** What is the unique, contrarian, or "insider" perspective ${brand.name} can take? Avoid generic "We are better".
+4. **Competitor Counter-Strike:** How do competitors (${competitors}) usually fail at this? How does ${brand.name} succeed where they fail?
+
+---
+
+**Task 2: Rewrite Content Structure**
+Using the Strategic Angle you defined in Task 1, rewrite the provided content structure.
+You are NOT just copying the template. You are customizing every instruction to hit the specific Audience and Hook.
+
+1. **Update "title":** Make it specific to the Target Audience and promise to solve their Pain Point.
+2. **Update "content":** Replace generic instructions with specific guidance that leverages the Hook and Competitor Counter-Strike.
+   - *Example:* Instead of "Explain X", say "Explain X by contrasting it with [Competitor]'s failure to do Y."
+
+---
 
 **Input Template:**
 ${templatesJson}
 
 **Output Requirements:**
-Return a SINGLE JSON object with this exact schema:
+- Return ONLY valid JSON.
+- Return a JSON object with TWO keys:
+  1. "strategic_angle": Object with targetAudience, primaryPainPoint, theHook, competitorCounterStrike
+  2. "structure": Array of section objects (same structure as input)
+- Do NOT return a top-level Array.
+- Use \\n for line breaks.
+
+**Example Output Format:**
 {
   "strategic_angle": {
-    "targetAudience": "...",
-    "primaryPainPoint": "...",
-    "theHook": "...",
-    "competitorCounterStrike": "..."
+    "targetAudience": "Overworked DevOps Engineers at mid-market SaaS",
+    "primaryPainPoint": "Spending 40% of time on manual deployments",
+    "theHook": "The CI/CD pipeline you built is actually slowing you down",
+    "competitorCounterStrike": "Jenkins requires 3x more maintenance overhead"
   },
-  "sections": [
+  "structure": [
     {
       "id": "section_id",
       "title": "Optimized Title...",
@@ -227,7 +239,7 @@ Return a SINGLE JSON object with this exact schema:
     /**
      * Parse Unified LLM response into StrategyPlan
      */
-    private parseUnifiedResponse(
+    private parseStrategyResponse(
         llmResponse: string,
         context: {
             recommendationId: string;
@@ -238,30 +250,67 @@ Return a SINGLE JSON object with this exact schema:
             channel: string;
         }
     ): StrategyPlan | null {
+        let parsed: any;
+        const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
+
+        if (!jsonMatch) {
+            console.error('❌ No JSON object found in LLM response');
+            return null;
+        }
+
+        const jsonString = jsonMatch[0];
+
         try {
-            // Extract JSON from response
-            const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                console.error('❌ No JSON object found in LLM response');
+            parsed = JSON.parse(jsonString);
+        } catch (error) {
+            console.warn('⚠️ Initial JSON parse failed, attempting sanitization:', error);
+            try {
+                // 1. Remove non-printable control characters (except common whitespace) GLOBALLY
+                // eslint-disable-next-line no-control-regex
+                let sanitized = jsonString.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '');
+
+                // 2. Escape unescaped newlines/tabs ONLY within double quotes
+                // Regex to match string literals: "..."
+                sanitized = sanitized.replace(/"((?:[^"\\]|\\.)*)"/g, (match, content) => {
+                    // Replace unescaped newlines with \n, tabs with \t within the string content
+                    const newContent = content
+                        .replace(/(?<!\\)\n/g, '\\n')
+                        .replace(/(?<!\\)\t/g, '\\t')
+                        .replace(/(?<!\\)\r/g, '\\r');
+                    return `"${newContent}"`;
+                });
+
+                parsed = JSON.parse(sanitized);
+                console.log('✅ Sanitized JSON parsed successfully');
+            } catch (retryError: any) {
+                console.error('❌ Sanitized JSON parse also failed:', retryError.message);
+                return null;
+            }
+        }
+
+        try {
+            let enrichedSections: StructureSection[] = [];
+            let strategicAngle: any = null;
+
+            if (Array.isArray(parsed)) {
+                // Legacy format (just the sections array)
+                enrichedSections = parsed;
+            } else if (parsed.structure && Array.isArray(parsed.structure)) {
+                // New format (object with structure + strategic_angle)
+                enrichedSections = parsed.structure;
+                // Research queries removed from pipeline
+                strategicAngle = parsed.strategic_angle || null;
+            } else {
+                console.error('❌ Invalid JSON structure (neither array nor object with structure)');
                 return null;
             }
 
-            const jsonString = jsonMatch[0];
-            const parsed = JSON.parse(jsonString);
-
-            if (!parsed.strategic_angle || !parsed.sections) {
-                console.error('❌ Invalid JSON structure: missing strategic_angle or sections');
-                return null;
-            }
-
-            const { strategic_angle, sections } = parsed;
-            console.log('📦 [StrategyService] Parsed Sections:', JSON.stringify(sections, null, 2));
-            console.log('📦 [StrategyService] Parsed Angle:', JSON.stringify(strategic_angle, null, 2));
+            console.log(`✅ Parsed ${enrichedSections.length} enriched sections, angle: ${strategicAngle ? 'yes' : 'no'}`);
 
             // Map enriched sections to original IDs
             console.log('🔍 [StrategyService] Mapping sections...');
             const finalSections = context.templateSections.map(original => {
-                const enriched = sections.find((e: any) => e.id === original.id);
+                const enriched = enrichedSections.find((e: any) => e.id === original.id);
                 console.log(`   🔸 Checking ID: "${original.id}" -> Found match? ${!!enriched}`);
                 if (enriched) {
                     return {
@@ -283,14 +332,14 @@ Return a SINGLE JSON object with this exact schema:
                 },
                 structure: finalSections,
                 strategicGuidance: {
-                    keyFocus: strategic_angle.theHook || 'Strategic Focus',
-                    aeoTargets: [strategic_angle.targetAudience || 'Target Audience'],
-                    toneGuidelines: `Address pain point: ${strategic_angle.primaryPainPoint || 'Pain Point'} `,
-                    differentiation: strategic_angle.competitorCounterStrike || ''
+                    keyFocus: strategicAngle?.theHook || '',
+                    aeoTargets: strategicAngle?.targetAudience ? [strategicAngle.targetAudience] : [],
+                    toneGuidelines: strategicAngle?.primaryPainPoint ? `Address pain point: ${strategicAngle.primaryPainPoint}` : '',
+                    differentiation: strategicAngle?.competitorCounterStrike || ''
                 }
             };
         } catch (error) {
-            console.error('❌ Error parsing strategy response:', error);
+            console.error('❌ Error processing parsed strategy:', error);
             return null;
         }
     }
@@ -350,8 +399,9 @@ Return a SINGLE JSON object with this exact schema:
                 status: 'generated',
                 content_type: 'strategy_plan',
                 content: JSON.stringify(strategy),
+                // Use 'openrouter' as provider label for DB compatibility until 'groq' is added to constraints
                 model_provider: 'openrouter',
-                model_name: 'meta-llama/llama-3.3-70b-instruct',
+                model_name: 'llama-3.3-70b-versatile',
                 prompt: 'strategy_enrichment',
                 metadata: {
                     is_strategy_plan: true,
@@ -486,8 +536,8 @@ Return a SINGLE JSON object with this exact schema:
                     status: 'generated',
                     content_type: 'strategy_plan',
                     content: JSON.stringify(strategy),
-                    model_provider: 'openrouter',
-                    model_name: 'meta-llama/llama-3.3-70b-instruct',
+                    model_provider: 'groq',
+                    model_name: 'llama-3.3-70b-versatile',
                     prompt: 'strategy_enrichment',
                     metadata: {
                         is_strategy_plan: true,

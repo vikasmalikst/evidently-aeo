@@ -116,7 +116,7 @@ router.get('/brands/:brandId/executive-reports/:reportId', authenticateToken, re
 router.post('/brands/:brandId/executive-reports', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
-        let { period_days, end_date } = req.body;
+        let { period_days, end_date, queryTags } = req.body;
 
         // If period_days is not provided, fetch from report settings
         if (!period_days) {
@@ -184,6 +184,7 @@ router.post('/brands/:brandId/executive-reports', authenticateToken, requireFeat
             brand_id: brandId,
             period_days: Number(period_days) as any, // Cast to any to bypass strict literal type if needed, or update type definition
             end_date,
+            queryTags,
         };
 
         const userId = (req as any).user?.id || 'system';

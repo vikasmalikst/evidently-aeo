@@ -15,6 +15,7 @@ import {
   IconTrash,
   IconUmbrella,
   IconUpload,
+  IconCheck,
 } from '@tabler/icons-react';
 import {
   getBrightdataCountries,
@@ -25,6 +26,14 @@ import {
   type TopicsPromptsConfigV2Row,
   type ArchivedTopicsPromptsV2,
 } from '../../api/promptManagementApi';
+import { QueryTagFilter } from '../../components/common/QueryTagFilter';
+import { apiClient } from '../../lib/apiClient';
+
+interface ScheduledJob {
+  id: string;
+  job_type: string;
+  next_run_at: string | null;
+}
 
 export const TopicsPromptsConfigV2 = () => {
   const { selectedBrandId, selectedBrand } = useManualBrandDashboard();
@@ -38,6 +47,7 @@ export const TopicsPromptsConfigV2 = () => {
   const [countries, setCountries] = useState<BrightdataCountry[]>([]);
   const [countriesError, setCountriesError] = useState<string | null>(null);
   const [topicFilter, setTopicFilter] = useState<string>('__ALL__');
+  const [queryTagFilter, setQueryTagFilter] = useState<string[]>([]);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   const [importConfirm, setImportConfirm] = useState<{
     isOpen: boolean;
@@ -45,6 +55,8 @@ export const TopicsPromptsConfigV2 = () => {
     existingCount: number;
   }>({ isOpen: false, importedRows: [], existingCount: 0 });
   const [saveConfirm, setSaveConfirm] = useState<{ isOpen: boolean }>({ isOpen: false });
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [nextRunTime, setNextRunTime] = useState<string | null>(null);
 
   const initialRowsByIdRef = useRef<Map<string, TopicsPromptsConfigV2Row>>(new Map());
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -55,6 +67,29 @@ export const TopicsPromptsConfigV2 = () => {
     }
     return map;
   }, [countries]);
+
+  const fetchNextRunTime = useCallback(async () => {
+    if (!selectedBrandId) return;
+    try {
+      const response = await apiClient.get<{ data: ScheduledJob[] }>(`/scheduled-jobs?brand_id=${selectedBrandId}`);
+      if (response.data && Array.isArray(response.data)) {
+        const jobs = response.data;
+        // Find data_collection job
+        const collectionJob = jobs.find(j => j.job_type === 'data_collection' || j.job_type === 'data_collection_and_scoring');
+        if (collectionJob?.next_run_at) {
+          setNextRunTime(collectionJob.next_run_at);
+        } else {
+          setNextRunTime(null);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch scheduled jobs', e);
+    }
+  }, [selectedBrandId]);
+
+  useEffect(() => {
+    fetchNextRunTime();
+  }, [fetchNextRunTime]);
 
   const getFlagEmoji = useCallback((countryCode: string) => {
     const code = countryCode.trim().toUpperCase();
@@ -138,15 +173,15 @@ export const TopicsPromptsConfigV2 = () => {
     const versions = new Set<string>();
     history.forEach(h => versions.add(h.version_tag));
     return Array.from(versions).sort((a, b) => {
-       const vA = parseInt(a.replace('V', ''), 10) || 0;
-       const vB = parseInt(b.replace('V', ''), 10) || 0;
-       return vB - vA;
+      const vA = parseInt(a.replace('V', ''), 10) || 0;
+      const vB = parseInt(b.replace('V', ''), 10) || 0;
+      return vB - vA;
     });
   }, [history]);
 
   const reconstructedRows = useMemo(() => {
     if (selectedVersion === 'Current') return [];
-    
+
     const targetVer = parseInt(selectedVersion.replace('V', ''), 10);
     if (isNaN(targetVer)) return [];
 
@@ -158,42 +193,57 @@ export const TopicsPromptsConfigV2 = () => {
 
     allTopics.forEach(topic => {
       const archive = history.find(h => h.topic_name.trim() === topic && h.version_tag === selectedVersion);
-      
+
       if (archive) {
-         archive.prompts.forEach((p: any) => {
-             result.push({
-                 id: p.id || `archive-${archive.id}-${Math.random()}`,
-                 topic: archive.topic_name,
-                 prompt: p.query_text || p.text || '',
-                 locale: p.locale,
-                 country: p.country,
-                 version: targetVer,
-                 clientId: `archive-row-${archive.id}-${p.id || Math.random()}`,
-                 isNew: false
-             });
-         });
-         return;
+        archive.prompts.forEach((p: any) => {
+          result.push({
+            id: p.id || `archive-${archive.id}-${Math.random()}`,
+            topic: archive.topic_name,
+            prompt: p.query_text || p.text || '',
+            locale: p.locale,
+            country: p.country,
+            version: targetVer,
+            clientId: `archive-row-${archive.id}-${p.id || Math.random()}`,
+            isNew: false
+          });
+        });
+        return;
       }
 
       const currentRowsForTopic = rows.filter(r => r.topic.trim() === topic);
       if (currentRowsForTopic.length > 0) {
-          const currentVer = currentRowsForTopic[0].version || 1;
-          if (currentVer <= targetVer) {
-              currentRowsForTopic.forEach(r => result.push(r));
-          }
+        const currentVer = currentRowsForTopic[0].version || 1;
+        if (currentVer <= targetVer) {
+          currentRowsForTopic.forEach(r => result.push(r));
+        }
       }
     });
-    
+
     return result;
   }, [selectedVersion, rows, history]);
 
   const displayedRowsSource = selectedVersion === 'Current' ? rows : reconstructedRows;
 
   const filteredRows = useMemo(() => {
-    if (topicFilter === '__ALL__') return displayedRowsSource;
-    const normalized = topicFilter.trim().toLowerCase();
-    return displayedRowsSource.filter(r => r.topic.trim().toLowerCase() === normalized);
-  }, [displayedRowsSource, topicFilter]);
+    let result = displayedRowsSource;
+
+    // 1. Filter by Topic
+    if (topicFilter !== '__ALL__') {
+      const normalized = topicFilter.trim().toLowerCase();
+      result = result.filter(r => r.topic.trim().toLowerCase() === normalized);
+    }
+
+    // 2. Filter by Query Tag (Branded/Neutral)
+    if (queryTagFilter.length > 0) {
+      // queryTagFilter is ['bias'] for Branded, ['blind'] for Neutral
+      // Backend returns 'bias' or 'blind' in r.queryTag
+      // If queryTag is undefined/null, we might want to treat it as Neutral or just not match?
+      // Let's match exact string.
+      result = result.filter(r => r.queryTag && queryTagFilter.includes(r.queryTag));
+    }
+
+    return result;
+  }, [displayedRowsSource, topicFilter, queryTagFilter]);
 
   const topicOptions = useMemo(() => {
     const normalizedToLabel = new Map<string, string>();
@@ -510,7 +560,10 @@ export const TopicsPromptsConfigV2 = () => {
         country: r.country.trim().toUpperCase(),
       }));
       await saveTopicsPromptsConfigV2Rows(selectedBrandId, payload, Array.from(deletedIds));
+      setSuccessModalOpen(true);
       await load();
+      // Fetch next run time again to ensure it's up to date
+      fetchNextRunTime();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save config rows');
     } finally {
@@ -702,6 +755,16 @@ export const TopicsPromptsConfigV2 = () => {
               <div className="w-px h-6 bg-[var(--border-default)] mx-2" />
 
               <div className="flex items-center gap-2">
+                <QueryTagFilter
+                  value={queryTagFilter}
+                  onChange={setQueryTagFilter}
+                  variant="outline"
+                />
+              </div>
+
+              <div className="w-px h-6 bg-[var(--border-default)] mx-2" />
+
+              <div className="flex items-center gap-2">
                 <IconFilter size={16} className="text-[var(--text-caption)]" />
                 <select
                   value={topicFilter}
@@ -721,9 +784,8 @@ export const TopicsPromptsConfigV2 = () => {
                 <button
                   onClick={load}
                   disabled={Boolean(refreshButtonDisabledReason)}
-                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${
-                    refreshButtonDisabledReason ? 'pointer-events-none' : ''
-                  }`}
+                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${refreshButtonDisabledReason ? 'pointer-events-none' : ''
+                    }`}
                 >
                   <IconRefresh size={18} />
                 </button>
@@ -732,9 +794,8 @@ export const TopicsPromptsConfigV2 = () => {
                 <button
                   onClick={() => setIsEditMode(v => !v)}
                   disabled={Boolean(editModeButtonDisabledReason)}
-                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${
-                    isEditMode ? 'border-[var(--accent-primary)]' : ''
-                  } ${editModeButtonDisabledReason ? 'pointer-events-none' : ''}`}
+                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${isEditMode ? 'border-[var(--accent-primary)]' : ''
+                    } ${editModeButtonDisabledReason ? 'pointer-events-none' : ''}`}
                 >
                   <IconPencil size={18} />
                 </button>
@@ -743,9 +804,8 @@ export const TopicsPromptsConfigV2 = () => {
                 <button
                   onClick={handleAddRow}
                   disabled={Boolean(addButtonDisabledReason)}
-                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${
-                    addButtonDisabledReason ? 'pointer-events-none' : ''
-                  }`}
+                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${addButtonDisabledReason ? 'pointer-events-none' : ''
+                    }`}
                 >
                   <IconPlus size={18} />
                 </button>
@@ -754,9 +814,8 @@ export const TopicsPromptsConfigV2 = () => {
                 <button
                   onClick={handleExportCsv}
                   disabled={Boolean(exportButtonDisabledReason)}
-                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${
-                    exportButtonDisabledReason ? 'pointer-events-none' : ''
-                  }`}
+                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${exportButtonDisabledReason ? 'pointer-events-none' : ''
+                    }`}
                 >
                   <IconDownload size={18} />
                 </button>
@@ -765,9 +824,8 @@ export const TopicsPromptsConfigV2 = () => {
                 <button
                   onClick={handleImportClick}
                   disabled={Boolean(importButtonDisabledReason)}
-                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${
-                    importButtonDisabledReason ? 'pointer-events-none' : ''
-                  }`}
+                  className={`p-2 rounded-lg bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)] disabled:opacity-50 ${importButtonDisabledReason ? 'pointer-events-none' : ''
+                    }`}
                 >
                   <IconUpload size={18} />
                 </button>
@@ -789,15 +847,14 @@ export const TopicsPromptsConfigV2 = () => {
                 >
                   Discard changes
                 </button>
-                <span title={saveDisabledReason || 'Save changes'} className={`inline-flex ${saveDisabledReason ? 'cursor-not-allowed' : ''}`}>
+                <span title={saveDisabledReason || 'Scheduled changes'} className={`inline-flex ${saveDisabledReason ? 'cursor-not-allowed' : ''}`}>
                   <button
                     onClick={handleSaveClick}
                     disabled={Boolean(saveDisabledReason)}
-                    className={`px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium disabled:opacity-50 ${
-                      saveDisabledReason ? 'pointer-events-none' : ''
-                    }`}
+                    className={`px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium disabled:opacity-50 ${saveDisabledReason ? 'pointer-events-none' : ''
+                      }`}
                   >
-                    {isSaving ? 'Saving...' : 'Save changes'}
+                    {isSaving ? 'Saving...' : 'Scheduled changes'}
                   </button>
                 </span>
               </div>
@@ -862,9 +919,8 @@ export const TopicsPromptsConfigV2 = () => {
                               onChange={(e) => updateRow(row.clientId, { topic: e.target.value })}
                               readOnly={isEditingBlocked}
                               title={isEditingBlocked ? (editBlockedReason ?? undefined) : undefined}
-                              className={`w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm ${
-                                isEditingBlocked ? 'bg-[var(--bg-secondary)]' : 'bg-white'
-                              }`}
+                              className={`w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm ${isEditingBlocked ? 'bg-[var(--bg-secondary)]' : 'bg-white'
+                                }`}
                               placeholder="Topic"
                             />
                           </td>
@@ -874,9 +930,8 @@ export const TopicsPromptsConfigV2 = () => {
                               onChange={(e) => updateRow(row.clientId, { prompt: e.target.value })}
                               readOnly={isEditingBlocked}
                               title={isEditingBlocked ? (editBlockedReason ?? undefined) : undefined}
-                              className={`w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm resize-none overflow-y-auto ${
-                                isEditingBlocked ? 'bg-[var(--bg-secondary)]' : 'bg-white'
-                              }`}
+                              className={`w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm resize-none overflow-y-auto ${isEditingBlocked ? 'bg-[var(--bg-secondary)]' : 'bg-white'
+                                }`}
                               placeholder="Prompt / query"
                             />
                           </td>
@@ -899,9 +954,8 @@ export const TopicsPromptsConfigV2 = () => {
                                     onFocus={() => {
                                       if (countries.length === 0) loadCountries();
                                     }}
-                                    className={`w-full h-12 min-w-[240px] px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm ${
-                                      isEditingBlocked ? 'bg-[var(--bg-secondary)] pointer-events-none' : 'bg-white'
-                                    }`}
+                                    className={`w-full h-12 min-w-[240px] px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm ${isEditingBlocked ? 'bg-[var(--bg-secondary)] pointer-events-none' : 'bg-white'
+                                      }`}
                                   >
                                     {countries.length === 0 ? (
                                       <option value={currentCode}>
@@ -937,9 +991,8 @@ export const TopicsPromptsConfigV2 = () => {
                                 <button
                                   onClick={() => handleDeleteRow(row.clientId)}
                                   disabled={isEditingBlocked}
-                                  className={`h-12 w-12 inline-flex items-center justify-center rounded-lg hover:bg-[var(--bg-secondary)] disabled:opacity-50 ${
-                                    isEditingBlocked ? 'pointer-events-none' : ''
-                                  }`}
+                                  className={`h-12 w-12 inline-flex items-center justify-center rounded-lg hover:bg-[var(--bg-secondary)] disabled:opacity-50 ${isEditingBlocked ? 'pointer-events-none' : ''
+                                    }`}
                                 >
                                   <IconTrash size={18} className="text-[var(--text-caption)]" />
                                 </button>
@@ -1037,6 +1090,53 @@ export const TopicsPromptsConfigV2 = () => {
                   className="px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium"
                 >
                   Save anyway
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {successModalOpen && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div
+              className="bg-white rounded-xl shadow-xl max-w-md w-full p-8 text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-16 h-16 rounded-full bg-[var(--success100)] text-[var(--success500)] flex items-center justify-center mx-auto mb-6">
+                <IconCheck size={32} strokeWidth={3} />
+              </div>
+              <h3 className="text-xl font-bold text-[var(--text-headings)] mb-3">
+                Changes Scheduled
+              </h3>
+              <p className="text-[var(--text-body)] mb-6 leading-relaxed">
+                Your changes have been saved successfully. The scores will be collected accordingly in the next collection.
+              </p>
+              {nextRunTime ? (
+                <div className="mb-8 p-4 bg-slate-50 rounded-lg border border-slate-100 inline-block">
+                  <p className="text-sm font-semibold text-[var(--text-headings)]">
+                    Next collection scheduled for:
+                  </p>
+                  <p className="text-[var(--accent-primary)] font-bold mt-1">
+                    {new Date(nextRunTime).toLocaleString(undefined, {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-8 p-3 text-xs text-[var(--text-caption)] bg-slate-50 rounded-lg">
+                  (No collection job currently scheduled for this brand)
+                </div>
+              )}
+              <div>
+                <button
+                  onClick={() => setSuccessModalOpen(false)}
+                  className="px-8 py-3 rounded-lg bg-[var(--accent-primary)] text-white font-medium hover:bg-[var(--accent-hover)] transition-colors w-full sm:w-auto"
+                >
+                  Got it
                 </button>
               </div>
             </div>

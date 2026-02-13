@@ -335,6 +335,7 @@ export interface TopicsPromptsConfigV2Row {
   locale: string;
   country: string;
   version?: number;
+  queryTag?: string;
 }
 
 export interface BrightdataCountry {

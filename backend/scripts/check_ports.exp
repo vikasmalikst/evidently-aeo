@@ -1,0 +1,30 @@
+#!/usr/bin/expect
+
+set timeout 20
+spawn ssh -o StrictHostKeyChecking=no dev@evidentlyaeo.com
+
+expect {
+  "password:" { send "t3mpd3vp@ss\r"; exp_continue }
+  "yes/no" { send "yes\r"; exp_continue }
+  "$ " {}
+}
+
+send "echo '=== CHECKING ALTERNATIVE PORTS ==='\r"
+expect "$ "
+
+send "sudo lsof -i :8082 || echo 'Port 8082 is FREE'\r"
+expect "password"
+send "t3mpd3vp@ss\r"
+expect "$ "
+
+send "sudo lsof -i :8085 || echo 'Port 8085 is FREE'\r"
+expect "$ "
+
+send "sudo lsof -i :8888 || echo 'Port 8888 is FREE'\r"
+expect "$ "
+
+send "sudo lsof -i :9000 || echo 'Port 9000 is FREE'\r"
+expect "$ "
+
+send "exit\r"
+expect eof

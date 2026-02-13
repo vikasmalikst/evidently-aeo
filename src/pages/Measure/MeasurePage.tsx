@@ -523,7 +523,7 @@ export const MeasurePage = () => {
       ...llmSlices.map(s => ({ value: s.provider, label: s.provider, color: s.color }))
     ];
 
-    return { brandModels: brandModelData, competitorModels: competitorModelData, llmOptions, chartDateLabels };
+    return { brandModels: brandModelData, competitorModels: competitorModelData, llmOptions, chartDateLabels, rawDates: masterDates };
   }, [dashboardData, selectedBrand]);
 
   // Update state when processed data changes
@@ -549,6 +549,7 @@ export const MeasurePage = () => {
   const currentModels = competitorModels;
   const llmOptions = allLlmOptions;
   const chartDateLabels = processedData.chartDateLabels || chartLabels;
+  const rawDates = processedData.rawDates || [];
 
   const prevModelIdsRef = useRef<string[]>([]);
 
@@ -1119,7 +1120,7 @@ export const MeasurePage = () => {
               <div className="flex flex-col gap-6">
                 {/* KPI Toggle */}
                 <div className="flex items-start justify-between gap-4">
-                  <KpiToggle metricType={metricType} onChange={handleKpiSelect} allowedMetricTypes={['visibility', 'share', 'brandPresence', 'sentiment']} />
+                  <KpiToggle metricType={metricType} onChange={handleKpiSelect} allowedMetricTypes={['brandPresence', 'visibility', 'share', 'sentiment']} />
                   <HelpButton
                     onClick={() => handleHelpClick('trend-analysis')}
                     label="How to read this chart"
@@ -1168,6 +1169,7 @@ export const MeasurePage = () => {
                     models={currentModels}
                     metricType={metricType}
                     completedRecommendations={dashboardData?.completedRecommendations}
+                    rawDates={rawDates}
                   />
                 </motion.div>
               </AnimatePresence>

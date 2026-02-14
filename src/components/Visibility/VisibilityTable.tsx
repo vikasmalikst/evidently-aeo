@@ -149,6 +149,17 @@ export const VisibilityTable = memo(({
                 {activeTab === 'brand' ? 'LLM Model' : 'Brand'}
               </th>
               <th
+                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[150px] whitespace-nowrap"
+                onClick={() => handleSort('brandPresencePercentage')}
+              >
+                <div className="flex items-center gap-2">
+                  Brand Presence
+                  <span className="text-xs text-[var(--text-caption)] min-w-[12px]">
+                    {sortConfig.key === 'brandPresencePercentage' && (sortConfig.direction === 'desc' ? '↓' : '↑')}
+                  </span>
+                </div>
+              </th>
+              <th
                 className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[200px] whitespace-nowrap"
                 onClick={() => handleSort('score')}
               >
@@ -167,17 +178,6 @@ export const VisibilityTable = memo(({
                   {activeTab === 'competitive' ? 'Share of Answers' : 'Share of Answers'}
                   <span className="text-xs text-[var(--text-caption)] min-w-[12px]">
                     {sortConfig.key === 'shareOfSearch' && (sortConfig.direction === 'desc' ? '↓' : '↑')}
-                  </span>
-                </div>
-              </th>
-              <th
-                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[150px] whitespace-nowrap"
-                onClick={() => handleSort('brandPresencePercentage')}
-              >
-                <div className="flex items-center gap-2">
-                  Brand Presence
-                  <span className="text-xs text-[var(--text-caption)] min-w-[12px]">
-                    {sortConfig.key === 'brandPresencePercentage' && (sortConfig.direction === 'desc' ? '↓' : '↑')}
                   </span>
                 </div>
               </th>
@@ -244,6 +244,17 @@ export const VisibilityTable = memo(({
                       </div>
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
+                      <span
+                        className="text-sm font-semibold text-[var(--text-body)]"
+                        style={{
+                          color: brandPresenceStyle.textColor,
+                          ...brandPresenceStyle.style
+                        }}
+                      >
+                        {model.brandPresencePercentage > 0 ? `${model.brandPresencePercentage}%` : '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <div
                           className="text-sm font-semibold whitespace-nowrap flex items-center gap-2"
@@ -286,17 +297,6 @@ export const VisibilityTable = memo(({
                           )}
                         </div>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
-                      <span
-                        className="text-sm font-semibold text-[var(--text-body)]"
-                        style={{
-                          color: brandPresenceStyle.textColor,
-                          ...brandPresenceStyle.style
-                        }}
-                      >
-                        {model.brandPresencePercentage > 0 ? `${model.brandPresencePercentage}%` : '—'}
-                      </span>
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       {model.sentiment !== null && model.sentiment !== undefined ? (

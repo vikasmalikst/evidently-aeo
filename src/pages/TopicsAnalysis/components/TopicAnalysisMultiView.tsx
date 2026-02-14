@@ -12,7 +12,7 @@ import type { Competitor } from '../utils/competitorColors';
 import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
 
 export type ChartType = 'racing-bar' | 'bar' | 'line';
-export type TopicsMetricType = 'share' | 'visibility' | 'sentiment';
+export type TopicsMetricType = 'share' | 'visibility' | 'sentiment' | 'brandPresence';
 
 interface TopicAnalysisMultiViewProps {
   topics: Topic[];
@@ -77,6 +77,9 @@ export const TopicAnalysisMultiView = ({
     }
     if (metricType === 'sentiment') {
       return Math.max(0, Math.min(100, topic.currentSentiment ?? 0));
+    }
+    if (metricType === 'brandPresence') {
+      return Math.max(0, Math.min(100, topic.currentBrandPresence ?? 0));
     }
     // share
     return Math.max(0, Math.min(100, topic.currentSoA ?? (topic.soA * 20)));

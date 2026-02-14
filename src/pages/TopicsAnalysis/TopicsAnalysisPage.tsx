@@ -19,7 +19,7 @@ import type { PodId } from './components/CompactMetricsPods';
 import { EducationalContentDrawer, type KpiType } from '../../components/EducationalDrawer/EducationalContentDrawer';
 import { QueryTagFilter } from '../../components/common/QueryTagFilter';
 
-type TopicsMetricType = 'share' | 'visibility' | 'sentiment';
+type TopicsMetricType = 'share' | 'visibility' | 'sentiment' | 'brandPresence';
 
 interface TopicsAnalysisPageProps {
   data: TopicsAnalysisData;
@@ -647,7 +647,7 @@ export const TopicsAnalysisPage = ({
           <KpiToggle
             metricType={metricType}
             onChange={(value) => setMetricType(value as TopicsMetricType)}
-            allowedMetricTypes={['share', 'visibility', 'sentiment']}
+            allowedMetricTypes={['brandPresence', 'visibility', 'share', 'sentiment']}
             onHelpClick={handleHelpClick}
           />
         </div>

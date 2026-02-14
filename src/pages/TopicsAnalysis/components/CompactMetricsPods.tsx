@@ -24,15 +24,15 @@ interface CompactMetricsPodsProps {
     };
   };
   topics?: Topic[]; // Topics array for gap calculation
-  metricType?: 'share' | 'visibility' | 'sentiment';
+  metricType?: 'share' | 'visibility' | 'sentiment' | 'brandPresence';
   onPodClick?: (podId: PodId) => void;
 }
 
-const getGapCount = (topics: Topic[], metricType: 'share' | 'visibility' | 'sentiment'): number => {
+const getGapCount = (topics: Topic[], metricType: 'share' | 'visibility' | 'sentiment' | 'brandPresence'): number => {
   if (!topics || topics.length === 0) {
     return 0;
   }
-  
+
   // Count topics where brand metric is less than competitor average for the selected KPI.
   return topics.filter(topic => {
     if (metricType === 'visibility') {
@@ -44,6 +44,11 @@ const getGapCount = (topics: Topic[], metricType: 'share' | 'visibility' | 'sent
       const brandValue = topic.currentSentiment ?? null;
       const competitorValue = topic.industryAvgSentiment ?? null;
       return brandValue !== null && competitorValue !== null && brandValue < competitorValue;
+    }
+    if (metricType === 'brandPresence') {
+      const brandValue = topic.currentBrandPresence ?? null;
+      const competitorValue = 100; // Presence gap is compared to being present (100%) or could use industry avg if available
+      return brandValue !== null && brandValue < competitorValue;
     }
     // share
     const brandSoA = topic.currentSoA || (topic.soA * 20); // Brand SOA in percentage (0-100)
@@ -292,9 +297,17 @@ export const CompactMetricsPods = ({
     [topics, metricType]
   );
 
-  const metricLabel = metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : 'Sentiment';
-  const metricTooltipLabel =
-    metricType === 'share' ? 'Share of Answer' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
+  const metricLabel = metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : metricType === 'sentiment' ? 'Sentiment' : 'Presence';
+  function getMetricTooltipLabel(metricType: 'share' | 'visibility' | 'sentiment' | 'brandPresence'): string {
+    switch (metricType) {
+      case 'share': return 'Share of Answer';
+      case 'visibility': return 'Visibility Score';
+      case 'sentiment': return 'Sentiment Score';
+      case 'brandPresence': return 'Brand Presence';
+      default: return '';
+    }
+  }
+  const metricTooltipLabel = getMetricTooltipLabel(metricType);
 
   // Compute the average value for the selected metric from the loaded topics.
   // This avoids extra API calls and keeps KPI pods consistent with the selection.
@@ -304,6 +317,7 @@ export const CompactMetricsPods = ({
       .map((t) => {
         if (metricType === 'visibility') return t.currentVisibility ?? null;
         if (metricType === 'sentiment') return t.currentSentiment ?? null;
+        if (metricType === 'brandPresence') return t.currentBrandPresence ?? null;
         return (t.currentSoA ?? (t.soA * 20)) as number;
       })
       .filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
@@ -349,11 +363,10 @@ export const CompactMetricsPods = ({
         label={`Avg ${metricLabel}`}
         secondary=""
         changeIndicator={undefined}
-        tooltip={`Your average ${metricTooltipLabel} is ${metricType === 'share' ? `${avgMetricValue.toFixed(1)}%` : avgMetricValue.toFixed(1)}${
-          metricType === 'share' && performance.avgSoADelta !== undefined && performance.avgSoADelta !== null
+        tooltip={`Your average ${metricTooltipLabel} is ${metricType === 'share' ? `${avgMetricValue.toFixed(1)}%` : avgMetricValue.toFixed(1)}${metricType === 'share' && performance.avgSoADelta !== undefined && performance.avgSoADelta !== null
             ? ` (${performance.avgSoADelta > 0 ? '+' : ''}${performance.avgSoADelta.toFixed(1)}% from previous period)`
             : ''
-        }`}
+          }`}
         borderColor="#00bcdc"
         iconColor="#00bcdc"
         onPodClick={onPodClick}

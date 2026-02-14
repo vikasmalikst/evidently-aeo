@@ -17,7 +17,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, 
 interface TopicsAreaChartProps {
   topics: Topic[];
   onBarClick?: (topic: Topic) => void;
-  metricType?: 'share' | 'visibility' | 'sentiment';
+  metricType?: 'share' | 'visibility' | 'sentiment' | 'brandPresence';
 }
 
 const getSoAColor = (soA: number): string => {
@@ -53,13 +53,17 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
             ? (a.currentVisibility ?? 0)
             : metricType === 'sentiment'
               ? (a.currentSentiment ?? 0)
-              : (a.currentSoA ?? 0);
+              : metricType === 'brandPresence'
+                ? (a.currentBrandPresence ?? 0)
+                : (a.currentSoA ?? 0);
         const bVal =
           metricType === 'visibility'
             ? (b.currentVisibility ?? 0)
             : metricType === 'sentiment'
               ? (b.currentSentiment ?? 0)
-              : (b.currentSoA ?? 0);
+              : metricType === 'brandPresence'
+                ? (b.currentBrandPresence ?? 0)
+                : (b.currentSoA ?? 0);
         return (bVal ?? 0) - (aVal ?? 0);
       })
       .slice(0, 10); // Show first 10 selected topics
@@ -109,6 +113,7 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
     const values = sortedTopics.map((t) => {
       if (metricType === 'visibility') return Math.max(0, Math.min(100, t.currentVisibility ?? 0));
       if (metricType === 'sentiment') return Math.max(0, Math.min(100, t.currentSentiment ?? 0));
+      if (metricType === 'brandPresence') return Math.max(0, Math.min(100, t.currentBrandPresence ?? 0));
       return Math.max(0, Math.min(100, t.currentSoA ?? 0));
     });
     return {
@@ -149,8 +154,8 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
       let value = 0;
       if (metricType === 'visibility') {
         value = Math.max(0, Math.min(100, topic.currentVisibility ?? 0));
-      } else if (metricType === 'sentiment') {
-        value = Math.max(0, Math.min(100, topic.currentSentiment ?? 0));
+      } else if (metricType === 'brandPresence') {
+        value = Math.max(0, Math.min(100, topic.currentBrandPresence ?? 0));
       } else {
         value = Math.max(0, Math.min(100, topic.currentSoA ?? 0));
       }

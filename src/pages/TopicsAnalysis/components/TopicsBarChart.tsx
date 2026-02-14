@@ -12,7 +12,7 @@ interface TopicsBarChartProps {
   selectedCompetitor?: string;
   managedCompetitors?: ManagedCompetitor[];
   selectedCompetitors?: Set<string>;
-  metricType?: 'share' | 'visibility' | 'sentiment';
+  metricType?: 'share' | 'visibility' | 'sentiment' | 'brandPresence';
 }
 
 const LEFT_AXIS_CHAR_LIMIT = 25;
@@ -62,11 +62,14 @@ export const TopicsBarChart = ({
     if (metricType === 'sentiment') {
       return Math.max(0, Math.min(100, topic.currentSentiment ?? 0));
     }
+    if (metricType === 'brandPresence') {
+      return Math.max(0, Math.min(100, topic.currentBrandPresence ?? 0));
+    }
     return Math.max(0, Math.min(100, topic.currentSoA ?? (topic.soA * 20)));
   };
 
   const metricLabel =
-    metricType === 'share' ? 'Share of Answer (SoA)' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
+    metricType === 'share' ? 'Share of Answer (SoA)' : metricType === 'visibility' ? 'Visibility Score' : metricType === 'sentiment' ? 'Sentiment Score' : 'Brand Presence';
   const formatValue = (value: number) => (metricType === 'share' ? `${value.toFixed(1)}%` : value.toFixed(1));
 
   // Sort topics by SoA descending (largest to smallest) for left to right display
@@ -101,6 +104,9 @@ export const TopicsBarChart = ({
     if (metricType === 'visibility') {
       return sortedTopics.some((topic) => topic.industryAvgVisibility !== null && topic.industryAvgVisibility !== undefined);
     }
+    if (metricType === 'brandPresence') {
+      return sortedTopics.some((topic) => topic.currentBrandPresence !== null && topic.currentBrandPresence !== undefined);
+    }
     return sortedTopics.some(
       (topic) =>
         topic.industryAvgSentiment !== null && topic.industryAvgSentiment !== undefined
@@ -131,7 +137,9 @@ export const TopicsBarChart = ({
         ? `${competitorName} SoA`
         : metricType === 'visibility'
           ? `${competitorName} Visibility`
-          : `${competitorName} Sentiment`;
+          : metricType === 'sentiment'
+            ? `${competitorName} Sentiment`
+            : `${competitorName} Presence`;
     }
   }, [managedCompetitors, selectedCompetitors, metricType]);
 
@@ -167,10 +175,10 @@ export const TopicsBarChart = ({
             topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
               ? topic.industryAvgSoA * 20
               : 0;
-        } else if (metricType === 'visibility') {
-          data['avgIndustry'] = topic.industryAvgVisibility ?? 0;
-        } else {
+        } else if (metricType === 'sentiment') {
           data['avgIndustry'] = topic.industryAvgSentiment ?? 0;
+        } else if (metricType === 'brandPresence') {
+          data['avgIndustry'] = 100; // Presence vs 100%
         }
 
         return data;
@@ -368,7 +376,7 @@ export const TopicsBarChart = ({
 
             if (showComparison && key) {
               if (key === 'brand') {
-                label = metricType === 'share' ? 'Brand SoA' : metricType === 'visibility' ? 'Brand Visibility' : 'Brand Sentiment';
+                label = metricType === 'share' ? 'Brand SoA' : metricType === 'visibility' ? 'Brand Visibility' : metricType === 'sentiment' ? 'Brand Sentiment' : 'Brand Presence';
                 barColor = BRAND_COLOR; // Data viz 02 (blue) for brand
               } else if (key === 'avgIndustry') {
                 label = competitorLabel;
@@ -533,7 +541,7 @@ export const TopicsBarChart = ({
               }}
             />
             <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-              {metricType === 'share' ? 'Brand SoA' : metricType === 'visibility' ? 'Brand Visibility' : 'Brand Sentiment'}
+              {metricType === 'share' ? 'Brand SoA' : metricType === 'visibility' ? 'Brand Visibility' : metricType === 'sentiment' ? 'Brand Sentiment' : 'Brand Presence'}
             </span>
           </div>
 

@@ -129,6 +129,9 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
         currentSoA: soAPercentage, // Percentage (0-100) for display
         currentVisibility,
         currentSentiment,
+        currentBrandPresence: t.brandPresencePercentage !== null && t.brandPresencePercentage !== undefined
+          ? Math.max(0, Math.min(100, t.brandPresencePercentage))
+          : null,
         visibilityTrend: Array(12).fill(t.avgVisibility || 0),
         trend: { direction: trendDirection, delta: topicDelta },
         searchVolume: null,

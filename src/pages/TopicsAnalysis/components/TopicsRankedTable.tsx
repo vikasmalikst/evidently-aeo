@@ -16,7 +16,7 @@ interface TopicsRankedTableProps {
   brandLogo?: string;
   brandDomain?: string;
   brandName?: string;
-  metricType?: 'share' | 'visibility' | 'sentiment';
+  metricType?: 'share' | 'visibility' | 'sentiment' | 'brandPresence';
   competitors?: ManagedCompetitor[];
   selectedCompetitors?: Set<string>;
   onHelpClick?: (key: KpiType) => void;
@@ -146,6 +146,9 @@ export const TopicsRankedTable = ({
           } else if (metricType === 'sentiment') {
             aVal = a.currentSentiment ?? 0;
             bVal = b.currentSentiment ?? 0;
+          } else if (metricType === 'brandPresence') {
+            aVal = a.currentBrandPresence ?? 0;
+            bVal = b.currentBrandPresence ?? 0;
           } else {
             aVal = a.soA;
             bVal = b.soA;
@@ -175,14 +178,15 @@ export const TopicsRankedTable = ({
     return filtered;
   }, [topics, selectedCategory, sortState, metricType]);
 
-  const metricHeaderLabel = metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : 'Sentiment';
+  const metricHeaderLabel = metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : metricType === 'sentiment' ? 'Sentiment' : 'Presence';
   const metricTooltipLabel =
-    metricType === 'share' ? 'Share of Answer' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
+    metricType === 'share' ? 'Share of Answer' : metricType === 'visibility' ? 'Visibility Score' : metricType === 'sentiment' ? 'Sentiment Score' : 'Brand Presence';
 
 
   const formatMetricValue = (topic: Topic): string => {
     if (metricType === 'visibility') return topic.currentVisibility !== null && topic.currentVisibility !== undefined ? topic.currentVisibility.toFixed(1) : '—';
     if (metricType === 'sentiment') return topic.currentSentiment !== null && topic.currentSentiment !== undefined ? topic.currentSentiment.toFixed(1) : '—';
+    if (metricType === 'brandPresence') return topic.currentBrandPresence !== null && topic.currentBrandPresence !== undefined ? topic.currentBrandPresence.toFixed(1) : '—';
     const value = (topic.currentSoA || topic.soA * 20) as number;
     return value > 0 ? value.toFixed(1) + '%' : '—';
   };
@@ -373,6 +377,7 @@ export const TopicsRankedTable = ({
                 let brandVal: number | null = null;
                 if (metricType === 'visibility') brandVal = topic.currentVisibility ?? null;
                 else if (metricType === 'sentiment') brandVal = topic.currentSentiment ?? null;
+                else if (metricType === 'brandPresence') brandVal = topic.currentBrandPresence ?? null;
                 else brandVal = (topic.currentSoA || topic.soA * 20) ?? null;
                 rowValues.push(brandVal);
 

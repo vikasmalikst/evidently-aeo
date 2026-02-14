@@ -9,7 +9,6 @@ import { CategoryBreakdown } from './components/CategoryBreakdown';
 import { BotAccessTable } from './components/BotAccessTable';
 import { Button } from '../../components/Onboarding/common/Button';
 import { Loader2, RefreshCw } from 'lucide-react';
-import { QueryTagFilter } from '../../components/common/QueryTagFilter';
 import { useDashboardStore } from '../../store/dashboardStore';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { updateBrandWebsiteUrl } from '../../api/brandApi';
@@ -122,11 +121,6 @@ export const DomainReadinessPage = () => {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Query Tag Filter */}
-            <div className="w-[180px]">
-              <QueryTagFilter />
-            </div>
-
             {!!selectedBrand && (
               <div className="flex items-center gap-2">
                 <label

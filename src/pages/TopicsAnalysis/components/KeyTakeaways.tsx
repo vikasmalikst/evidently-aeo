@@ -5,7 +5,7 @@ import { Sparkles, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface KeyTakeawaysProps {
     data: TopicsAnalysisData;
-    metricType?: 'share' | 'visibility' | 'sentiment';
+    metricType?: 'share' | 'visibility' | 'sentiment' | 'brandPresence';
 }
 
 export const KeyTakeaways: React.FC<KeyTakeawaysProps> = ({ data, metricType = 'share' }) => {
@@ -85,7 +85,7 @@ export const KeyTakeaways: React.FC<KeyTakeawaysProps> = ({ data, metricType = '
                                         {takeaway.metric.label}:
                                     </span>
                                     <span className={`text-[13px] font-semibold flex items-center gap-0.5 ${takeaway.metric.color === 'positive' ? 'text-emerald-600' :
-                                            takeaway.metric.color === 'negative' ? 'text-red-600' : 'text-gray-700'
+                                        takeaway.metric.color === 'negative' ? 'text-red-600' : 'text-gray-700'
                                         }`}>
                                         {takeaway.metric.trend === 'up' && <ArrowUp className="w-3 h-3" />}
                                         {takeaway.metric.trend === 'down' && <ArrowDown className="w-3 h-3" />}

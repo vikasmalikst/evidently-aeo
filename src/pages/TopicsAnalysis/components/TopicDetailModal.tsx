@@ -18,7 +18,7 @@ interface TopicDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   topic: Topic | null;
-  metricType?: 'share' | 'visibility' | 'sentiment';
+  metricType?: 'share' | 'visibility' | 'sentiment' | 'brandPresence';
 }
 
 // Get trend icon and color
@@ -68,32 +68,36 @@ const getSentimentColor = (sentiment: string): string => {
 export const TopicDetailModal = ({ isOpen, onClose, topic, metricType = 'share' }: TopicDetailModalProps) => {
   if (!isOpen || !topic) return null;
 
-  const metricLabel = metricType === 'share' ? 'Share of Answer' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
-  const valueSuffix = metricType === 'share' ? '%' : '';
+  const metricLabel = metricType === 'share' ? 'Share of Answer' : metricType === 'visibility' ? 'Visibility Score' : metricType === 'sentiment' ? 'Sentiment Score' : 'Brand Presence';
+  const valueSuffix = (metricType === 'share' || metricType === 'brandPresence') ? '%' : '';
   const currentValue =
     metricType === 'visibility'
       ? (topic.currentVisibility ?? 0)
       : metricType === 'sentiment'
         ? (topic.currentSentiment ?? 0)
-        : (topic.currentSoA ?? (topic.soA * 20));
-  
+        : metricType === 'brandPresence'
+          ? (topic.currentBrandPresence ?? 0)
+          : (topic.currentSoA ?? (topic.soA * 20));
+
   // Best-effort trend series (we only have a 12-slot array; for share/sentiment it may be synthetic)
   const previousValue = topic.visibilityTrend && topic.visibilityTrend.length > 0
     ? topic.visibilityTrend[0]
     : currentValue - (topic.trend.delta * 20);
-  
+
   const valueChange = currentValue - previousValue;
   const valueChangePercent = previousValue > 0 ? ((valueChange / previousValue) * 100) : 0;
-  
+
   const avgIndustryValue =
     metricType === 'visibility'
       ? topic.industryAvgVisibility ?? null
       : metricType === 'sentiment'
         ? topic.industryAvgSentiment ?? null
-        : (topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
+        : metricType === 'brandPresence'
+          ? 100 // Compare presence to 100%
+          : (topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
             ? topic.industryAvgSoA * 20
             : null);
-  
+
   const trendDisplay = getTrendDisplay(topic.trend.direction, topic.trend.delta);
   const TrendIcon = trendDisplay.icon;
 
@@ -101,16 +105,16 @@ export const TopicDetailModal = ({ isOpen, onClose, topic, metricType = 'share' 
   const trendChartData = topic.visibilityTrend && topic.visibilityTrend.length === 12
     ? topic.visibilityTrend
     : Array.from({ length: 12 }, (_, i) => {
-        const baseValue = previousValue;
-        const trend = valueChange / 11;
-        return Math.max(0, Math.min(100, baseValue + (trend * i)));
-      });
+      const baseValue = previousValue;
+      const trend = valueChange / 11;
+      return Math.max(0, Math.min(100, baseValue + (trend * i)));
+    });
 
   const chartData = {
     labels: Array.from({ length: 12 }, (_, i) => `Week ${i + 1}`),
     datasets: [
       {
-        label: metricType === 'share' ? 'Share of Answer (%)' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score',
+        label: metricType === 'share' ? 'Share of Answer (%)' : metricType === 'visibility' ? 'Visibility Score' : metricType === 'sentiment' ? 'Sentiment Score' : 'Brand Presence (%)',
         data: trendChartData,
         borderColor: '#498cf9',
         backgroundColor: 'rgba(73, 140, 249, 0.1)',

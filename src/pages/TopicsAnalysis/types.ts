@@ -25,6 +25,7 @@ export interface Topic {
   currentSoA?: number; // Latest SoA percentage (0-100) - for charts
   currentVisibility?: number | null; // Visibility score (0-100) for the selected period
   currentSentiment?: number | null; // Sentiment score (0-100) for the selected period
+  currentBrandPresence?: number | null; // Brand Presence percentage (0-100) for the selected period
   visibilityTrend?: number[]; // 12-week historical [w1, w2, ..., w12] - for line chart
   trend: Trend;
   searchVolume: number | null; // null if missing

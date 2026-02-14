@@ -18,7 +18,7 @@ export interface Takeaway {
     score: number;
 }
 
-export const generateKeyTakeaways = (data: TopicsAnalysisData, metricType: 'share' | 'visibility' | 'sentiment' = 'share'): Takeaway[] => {
+export const generateKeyTakeaways = (data: TopicsAnalysisData, metricType: 'share' | 'visibility' | 'sentiment' | 'brandPresence' = 'share'): Takeaway[] => {
     const { topics, performance, portfolio } = data;
     const takeaways: Takeaway[] = [];
 
@@ -250,6 +250,48 @@ export const generateKeyTakeaways = (data: TopicsAnalysisData, metricType: 'shar
                 score: 500
             });
         }
+    }
+    // --- BRAND PRESENCE ---
+    else if (metricType === 'brandPresence') {
+        const validTopics = topics.filter(t => t.currentBrandPresence !== null && t.currentBrandPresence !== undefined);
+        const avgPresence = validTopics.length > 0
+            ? validTopics.reduce((sum, t) => sum + (t.currentBrandPresence || 0), 0) / validTopics.length
+            : 0;
+
+        takeaways.push({
+            id: 'summary-presence',
+            type: 'summary',
+            title: 'Brand Presence Overview',
+            description: `Your brand appears in answers for ${avgPresence.toFixed(1)}% of queries across these topics.`,
+            metric: {
+                label: 'Avg Presence',
+                value: `${avgPresence.toFixed(1)}%`,
+                color: avgPresence > 50 ? 'positive' : (avgPresence < 20 ? 'negative' : 'neutral')
+            },
+            score: 1000
+        });
+
+        const lowPresenceTopics = topics.filter(t => (t.currentBrandPresence || 0) < 10);
+        if (lowPresenceTopics.length > 0) {
+            takeaways.push({
+                id: 'issue-low-presence',
+                type: 'issue',
+                title: `${lowPresenceTopics.length} Topics with Low Presence`,
+                description: `Your brand is rarely mentioned in these topics. Consider content gaps.`,
+                score: 900
+            });
+        }
+
+        const highPresenceTopics = topics.filter(t => (t.currentBrandPresence || 0) > 80);
+        highPresenceTopics.slice(0, 2).forEach(t => {
+            takeaways.push({
+                id: `win-presence-${t.id}`,
+                type: 'insight',
+                title: `Strong Presence: ${t.name}`,
+                description: `Your brand is present in ${(t.currentBrandPresence || 0).toFixed(1)}% of answers for this topic.`,
+                score: 400
+            });
+        });
     }
 
     // Weekly Gainer (Global)

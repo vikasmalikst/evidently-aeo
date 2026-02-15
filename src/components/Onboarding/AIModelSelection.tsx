@@ -11,7 +11,7 @@ import grokLogoSrc from '../../assets/Grok-icon.svg';
 import llamaLogoSrc from '../../assets/LLaMA-Meta-Logo.svg';
 import perplexityLogoSrc from '../../assets/Perplexity-Simple-Icon.svg';
 
-interface AIModel {
+export interface AIModel {
   id: string;
   name: string;
   provider: string;
@@ -24,7 +24,7 @@ interface AIModelSelectionProps {
   onModelToggle: (modelId: string) => void;
 }
 
-const AI_MODELS: AIModel[] = [
+export const AI_MODELS: AIModel[] = [
   {
     id: 'chatgpt',
     name: 'ChatGPT',

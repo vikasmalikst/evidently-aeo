@@ -59,7 +59,7 @@ export const ReviewBrandStep = ({ data, updateData, onNext, onBack }: ReviewBran
                 <div className="space-y-4">
                     <div>
                         <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5 flex items-center gap-2">
-                            <IconBuildingStore size={16} /> Brand Name
+                            <IconBuildingStore size={16} stroke={1.5} className="text-[var(--accent-primary)]" /> Brand Name
                         </label>
                         <input
                             name="brand_name"
@@ -70,7 +70,7 @@ export const ReviewBrandStep = ({ data, updateData, onNext, onBack }: ReviewBran
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5 flex items-center gap-2">
-                            <IconWorld size={16} /> Website URL
+                            <IconWorld size={16} stroke={1.5} className="text-[var(--accent-primary)]" /> Website URL
                         </label>
                         <input
                             name="website_url"
@@ -81,7 +81,7 @@ export const ReviewBrandStep = ({ data, updateData, onNext, onBack }: ReviewBran
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5 flex items-center gap-2">
-                            <IconListDetails size={16} /> Industry
+                            <IconListDetails size={16} stroke={1.5} className="text-[var(--accent-primary)]" /> Industry
                         </label>
                         <input
                             name="industry"
@@ -92,7 +92,7 @@ export const ReviewBrandStep = ({ data, updateData, onNext, onBack }: ReviewBran
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5 flex items-center gap-2">
-                            <IconMapPin size={16} /> Headquarters (City)
+                            <IconMapPin size={16} stroke={1.5} className="text-[var(--accent-primary)]" /> Headquarters (City)
                         </label>
                         <input
                             name="headquarters"

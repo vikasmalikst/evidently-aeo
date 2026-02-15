@@ -14,6 +14,22 @@ interface ReviewCompetitorsStepProps {
 export const ReviewCompetitorsStep = ({ data, updateData, onNext, onBack }: ReviewCompetitorsStepProps) => {
     const { toast } = useToast();
 
+    const normalizeDomainDisplay = (value: string): string => {
+        if (!value) return '';
+        return value
+            .trim()
+            .replace(/^https?:\/\//i, '')
+            .replace(/^www\./i, '')
+            .split('/')[0];
+    };
+
+    const toSafeHref = (value: string): string => {
+        if (!value) return '#';
+        const trimmed = value.trim();
+        if (/^https?:\/\//i.test(trimmed)) return trimmed;
+        return `https://${trimmed.replace(/^www\./i, '')}`;
+    };
+
     // Initialize competitors with stable IDs for drag-and-drop tracking
     const [competitors, setCompetitors] = useState<any[]>(() =>
         (data.competitors || []).map((c: any) => ({
@@ -217,13 +233,13 @@ export const ReviewCompetitorsStep = ({ data, updateData, onNext, onBack }: Revi
                                         ) : (
                                             <div>
                                                 <a
-                                                    href={`https://${comp.domain}`}
+                                                    href={toSafeHref(comp.domain)}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="text-sm text-[var(--accent-primary)] hover:underline block truncate"
                                                     onPointerDown={(e) => e.stopPropagation()}
                                                 >
-                                                    {comp.domain}
+                                                    {normalizeDomainDisplay(comp.domain)}
                                                 </a>
                                                 <span className="text-xs text-gray-400 font-medium">Domain URL</span>
                                             </div>
@@ -254,10 +270,10 @@ export const ReviewCompetitorsStep = ({ data, updateData, onNext, onBack }: Revi
                                         <>
                                             <button
                                                 onClick={() => startEdit(index)}
-                                                className="p-2 text-gray-400 hover:text-[var(--accent-primary)] hover:bg-blue-50 rounded-lg transition-colors"
+                                                className="p-2 text-gray-400 hover:text-[var(--accent-primary)] hover:bg-[var(--accent-light)] rounded-lg transition-colors"
                                                 title="Edit"
                                             >
-                                                <IconPencil size={18} />
+                                                <IconPencil size={18} stroke={1.5} />
                                             </button>
                                             <button
                                                 onClick={() => handleRemove(index)}

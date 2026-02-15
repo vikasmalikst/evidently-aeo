@@ -223,15 +223,15 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
                         <h2 className="text-2xl font-bold text-[var(--text-headings)]">Review Queries</h2>
                     </div>
                     <div className="flex items-center gap-4 mt-2">
-                        <div className="px-3 py-1 bg-purple-50 border border-purple-100 rounded-lg flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-                            <span className="text-sm font-medium text-purple-900">
+                        <div className="px-3 py-1 bg-[var(--accent50)] border border-[var(--accent200)] rounded-lg flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)]"></div>
+                            <span className="text-sm font-medium text-[var(--accent600)]">
                                 <strong>{splitCounts.biased}</strong> Branded Queries
                             </span>
                         </div>
-                        <div className="px-3 py-1 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                            <span className="text-sm font-medium text-blue-900">
+                        <div className="px-3 py-1 bg-gray-50 border border-gray-200 rounded-lg flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                            <span className="text-sm font-medium text-gray-700">
                                 <strong>{splitCounts.blind}</strong> Neutral Queries
                             </span>
                         </div>
@@ -312,8 +312,8 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
                                 </div>
                                 <div className="flex items-center gap-2 pl-4">
                                     <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${isBiased
-                                        ? 'bg-purple-50 text-purple-700 border-purple-100'
-                                        : 'bg-blue-50 text-blue-700 border-blue-100'
+                                        ? 'bg-[var(--accent50)] text-[var(--accent600)] border-[var(--accent200)]'
+                                        : 'bg-gray-50 text-gray-600 border-gray-200'
                                         }`}>
                                         {isBiased ? 'Branded' : 'Neutral'}
                                     </span>
@@ -354,10 +354,10 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
                                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <button
                                                                 onClick={() => startEditQuery(topic.id, idx, query)}
-                                                                className="p-1.5 text-gray-400 hover:text-[var(--accent-primary)] hover:bg-blue-50 rounded"
+                                                                className="p-1.5 text-gray-400 hover:text-[var(--accent-primary)] hover:bg-[var(--accent-light)] rounded"
                                                                 title="Edit Query"
                                                             >
-                                                                <IconPencil size={14} />
+                                                                <IconPencil size={14} stroke={1.5} />
                                                             </button>
                                                             <button
                                                                 onClick={() => deleteQuery(topic.id, idx)}
@@ -400,9 +400,9 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
                                     ) : (
                                         <button
                                             onClick={() => { setNewQueryTopicId(topic.id); setNewQueryText(''); }}
-                                            className="w-full text-left p-2 pl-5 text-sm text-[var(--accent-primary)] font-medium hover:bg-blue-50 rounded mt-1 flex items-center gap-2 transition-colors opacity-0 group-hover:opacity-100"
+                                            className="w-full text-left p-2 pl-5 text-sm text-[var(--accent-primary)] font-medium hover:bg-[var(--accent-light)] rounded mt-1 flex items-center gap-2 transition-colors opacity-0 group-hover:opacity-100"
                                         >
-                                            <IconPlus size={14} /> Add Query
+                                            <IconPlus size={14} stroke={1.5} /> Add Query
                                         </button>
                                     )}
                                 </div>
@@ -479,9 +479,9 @@ export const ReviewQueriesStep = ({ data, updateData, onNext, onBack }: ReviewQu
                             setIsAddingTopic(true);
                             setNewTopicName('');
                         }}
-                        className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-gray-500 font-medium text-sm hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)] hover:bg-blue-50/50 transition-all flex items-center justify-center gap-2"
+                        className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-gray-500 font-medium text-sm hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)] hover:bg-[var(--accent-light)] transition-all flex items-center justify-center gap-2"
                     >
-                        <IconPlus size={18} />
+                        <IconPlus size={18} stroke={1.5} />
                         Add New Category
                     </button>
                 )}

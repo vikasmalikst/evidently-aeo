@@ -12,10 +12,10 @@ interface ResearchStepProps {
 
 const RESEARCH_PHASES = [
     { label: 'Connecting to research engine...', icon: IconBrain, duration: 2000 },
-    { label: 'Analyzing company website...', icon: IconSearch, duration: 4000 },
-    { label: 'Identifying competitors in your market...', icon: IconSearch, duration: 6000 },
-    { label: 'Generating branded search queries...', icon: IconSearch, duration: 4000 },
-    { label: 'Generating neutral search queries...', icon: IconSearch, duration: 4000 },
+    { label: 'Phase 1 — Analyzing company website...', icon: IconSearch, duration: 5000 },
+    { label: 'Phase 1 — Identifying competitors in your market...', icon: IconSearch, duration: 8000 },
+    { label: 'Phase 2 — Generating branded search queries...', icon: IconSearch, duration: 6000 },
+    { label: 'Phase 2 — Generating neutral search queries...', icon: IconSearch, duration: 5000 },
     { label: 'Validating and formatting results...', icon: IconCheck, duration: 3000 },
 ];
 
@@ -83,13 +83,13 @@ export const ResearchStep = ({ brandName, country, websiteUrl, onComplete, onBac
     return (
         <div className="max-w-xl mx-auto text-center">
             <div className="mb-10">
-                <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white mb-6 shadow-lg">
+                <div className="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-white border border-[var(--border-default)] text-[var(--accent-primary)] mb-8 shadow-sm">
                     {error ? (
-                        <IconAlertTriangle size={36} />
+                        <IconAlertTriangle size={48} stroke={1.5} className="text-red-500" />
                     ) : isComplete ? (
-                        <IconCheck size={36} />
+                        <IconCheck size={48} stroke={1.5} className="text-green-500" />
                     ) : (
-                        <IconBrain size={36} className="animate-pulse" />
+                        <IconBrain size={48} stroke={1.5} className="animate-pulse" />
                     )}
                 </div>
 
@@ -126,7 +126,7 @@ export const ResearchStep = ({ brandName, country, websiteUrl, onComplete, onBac
                         </button>
                         <button
                             onClick={() => window.location.reload()}
-                            className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition-colors"
+                            className="px-6 py-2.5 rounded-lg bg-[var(--accent-primary)] text-white font-medium hover:opacity-90 transition-colors shadow-sm"
                         >
                             Try Again
                         </button>
@@ -146,9 +146,9 @@ export const ResearchStep = ({ brandName, country, websiteUrl, onComplete, onBac
                         return (
                             <div
                                 key={idx}
-                                className={`flex items-center gap-3 py-2 px-3 rounded-lg transition-all duration-500 ${isActive ? 'bg-indigo-50 border border-indigo-200' :
-                                        isDone ? 'opacity-60' :
-                                            'opacity-30'
+                                className={`flex items-center gap-3 py-2 px-4 rounded-xl transition-all duration-500 ${isActive ? 'bg-[var(--accent50)] border border-[var(--accent200)] shadow-sm translate-x-1' :
+                                    isDone ? 'opacity-50 grayscale-[0.5]' :
+                                        'opacity-30'
                                     }`}
                             >
                                 <div className="flex-shrink-0">
@@ -157,14 +157,14 @@ export const ResearchStep = ({ brandName, country, websiteUrl, onComplete, onBac
                                             <IconCheck size={14} className="text-white" />
                                         </div>
                                     ) : isActive ? (
-                                        <IconLoader2 size={20} className="text-indigo-600 animate-spin" />
+                                        <IconLoader2 size={20} className="text-[var(--accent-primary)] animate-spin" />
                                     ) : (
                                         <div className="w-6 h-6 rounded-full border-2 border-gray-300" />
                                     )}
                                 </div>
-                                <span className={`text-sm ${isActive ? 'text-indigo-800 font-medium' :
-                                        isDone ? 'text-gray-600' :
-                                            'text-gray-400'
+                                <span className={`text-sm ${isActive ? 'text-[var(--accent-primary)] font-bold' :
+                                    isDone ? 'text-gray-600' :
+                                        'text-gray-400 font-medium'
                                     }`}>
                                     {phase.label}
                                 </span>

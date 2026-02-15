@@ -6,11 +6,34 @@ interface InputStepProps {
 }
 
 const COUNTRIES = [
-    'United States', 'United Kingdom', 'Canada', 'Australia', 'Germany',
-    'France', 'India', 'Japan', 'Brazil', 'Mexico', 'Spain', 'Italy',
-    'Netherlands', 'Sweden', 'Singapore', 'South Korea', 'UAE',
-    'South Africa', 'New Zealand', 'Ireland', 'Switzerland', 'Belgium',
-    'Norway', 'Denmark', 'Finland', 'Austria', 'Portugal', 'Poland',
+    { name: 'United States', flag: '🇺🇸' },
+    { name: 'United Kingdom', flag: '🇬🇧' },
+    { name: 'Canada', flag: '🇨🇦' },
+    { name: 'Australia', flag: '🇦🇺' },
+    { name: 'Germany', flag: '🇩🇪' },
+    { name: 'France', flag: '🇫🇷' },
+    { name: 'India', flag: '🇮🇳' },
+    { name: 'Japan', flag: '🇯🇵' },
+    { name: 'Brazil', flag: '🇧🇷' },
+    { name: 'Mexico', flag: '🇲🇽' },
+    { name: 'Spain', flag: '🇪🇸' },
+    { name: 'Italy', flag: '🇮🇹' },
+    { name: 'Netherlands', flag: '🇳🇱' },
+    { name: 'Sweden', flag: '🇸🇪' },
+    { name: 'Singapore', flag: '🇸🇬' },
+    { name: 'South Korea', flag: '🇰🇷' },
+    { name: 'UAE', flag: '🇦🇪' },
+    { name: 'South Africa', flag: '🇿🇦' },
+    { name: 'New Zealand', flag: '🇳🇿' },
+    { name: 'Ireland', flag: '🇮🇪' },
+    { name: 'Switzerland', flag: '🇨🇭' },
+    { name: 'Belgium', flag: '🇧🇪' },
+    { name: 'Norway', flag: '🇳🇴' },
+    { name: 'Denmark', flag: '🇩🇰' },
+    { name: 'Finland', flag: '🇫🇮' },
+    { name: 'Austria', flag: '🇦🇹' },
+    { name: 'Portugal', flag: '🇵🇹' },
+    { name: 'Poland', flag: '🇵🇱' },
 ];
 
 export const InputStep = ({ onSubmit }: InputStepProps) => {
@@ -42,8 +65,8 @@ export const InputStep = ({ onSubmit }: InputStepProps) => {
     return (
         <div className="max-w-xl mx-auto">
             <div className="text-center mb-10">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white mb-4 shadow-lg">
-                    <IconSearch size={28} />
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-white border border-[var(--border-default)] text-[var(--accent-primary)] mb-6 shadow-sm">
+                    <IconSearch size={32} stroke={1.5} />
                 </div>
                 <h2 className="text-2xl font-bold text-[var(--text-headings)] mb-2">
                     AI-Powered Brand Research
@@ -57,7 +80,7 @@ export const InputStep = ({ onSubmit }: InputStepProps) => {
                 {/* Brand Name */}
                 <div>
                     <label className="flex items-center gap-2 text-sm font-semibold text-[var(--text-headings)] mb-2">
-                        <IconBuildingStore size={16} className="text-indigo-500" />
+                        <IconBuildingStore size={16} className="text-[var(--accent-primary)]" stroke={1.5} />
                         Brand Name <span className="text-red-400">*</span>
                     </label>
                     <input
@@ -65,7 +88,7 @@ export const InputStep = ({ onSubmit }: InputStepProps) => {
                         value={brandName}
                         onChange={(e) => { setBrandName(e.target.value); setErrors(prev => ({ ...prev, brandName: '' })); }}
                         placeholder="e.g. Magnet Kitchens"
-                        className={`w-full px-4 py-3 rounded-lg border ${errors.brandName ? 'border-red-400 bg-red-50/50' : 'border-[var(--border-default)]'} bg-white text-[var(--text-body)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all`}
+                        className={`w-full px-4 py-3 rounded-lg border ${errors.brandName ? 'border-red-400 bg-red-50/50' : 'border-[var(--border-default)]'} bg-white text-[var(--text-body)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all`}
                     />
                     {errors.brandName && <p className="mt-1.5 text-sm text-red-500">{errors.brandName}</p>}
                 </div>
@@ -73,7 +96,7 @@ export const InputStep = ({ onSubmit }: InputStepProps) => {
                 {/* Website URL */}
                 <div>
                     <label className="flex items-center gap-2 text-sm font-semibold text-[var(--text-headings)] mb-2">
-                        <IconWorld size={16} className="text-indigo-500" />
+                        <IconWorld size={16} className="text-[var(--accent-primary)]" stroke={1.5} />
                         Website URL <span className="text-red-400">*</span>
                     </label>
                     <input
@@ -81,7 +104,7 @@ export const InputStep = ({ onSubmit }: InputStepProps) => {
                         value={websiteUrl}
                         onChange={(e) => { setWebsiteUrl(e.target.value); setErrors(prev => ({ ...prev, websiteUrl: '' })); }}
                         placeholder="https://www.example.com"
-                        className={`w-full px-4 py-3 rounded-lg border ${errors.websiteUrl ? 'border-red-400 bg-red-50/50' : 'border-[var(--border-default)]'} bg-white text-[var(--text-body)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all`}
+                        className={`w-full px-4 py-3 rounded-lg border ${errors.websiteUrl ? 'border-red-400 bg-red-50/50' : 'border-[var(--border-default)]'} bg-white text-[var(--text-body)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all`}
                     />
                     {errors.websiteUrl && <p className="mt-1.5 text-sm text-red-500">{errors.websiteUrl}</p>}
                 </div>
@@ -89,25 +112,27 @@ export const InputStep = ({ onSubmit }: InputStepProps) => {
                 {/* Country */}
                 <div>
                     <label className="flex items-center gap-2 text-sm font-semibold text-[var(--text-headings)] mb-2">
-                        <IconMapPin size={16} className="text-indigo-500" />
+                        <IconMapPin size={16} className="text-[var(--accent-primary)]" stroke={1.5} />
                         Primary Market <span className="text-red-400">*</span>
                     </label>
                     <select
                         value={country}
                         onChange={(e) => setCountry(e.target.value)}
-                        className="w-full px-4 py-3 rounded-lg border border-[var(--border-default)] bg-white text-[var(--text-body)] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
+                        className="w-full px-4 py-3 rounded-lg border border-[var(--border-default)] bg-white text-[var(--text-body)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all cursor-pointer"
                     >
                         {COUNTRIES.map((c) => (
-                            <option key={c} value={c}>{c}</option>
+                            <option key={c.name} value={c.name}>
+                                {c.flag} {c.name}
+                            </option>
                         ))}
                     </select>
                     {errors.country && <p className="mt-1.5 text-sm text-red-500">{errors.country}</p>}
                 </div>
 
                 {/* Info Box */}
-                <div className="rounded-xl bg-indigo-50/70 border border-indigo-100 p-4 text-sm text-indigo-800">
+                <div className="rounded-xl bg-[var(--accent50)] border border-[var(--accent200)] p-4 text-sm text-[var(--accent600)]">
                     <p className="font-medium mb-1">What happens next?</p>
-                    <ul className="list-disc list-inside space-y-0.5 text-indigo-600 text-xs">
+                    <ul className="list-disc list-inside space-y-0.5 text-[var(--accent-primary)] text-xs">
                         <li>AI will research your brand using live web data</li>
                         <li>Identify up to <strong>10 competitors</strong> in your market</li>
                         <li>Generate <strong>20 high-intent queries</strong> (10 branded, 10 neutral)</li>
@@ -118,9 +143,9 @@ export const InputStep = ({ onSubmit }: InputStepProps) => {
                 {/* Submit */}
                 <button
                     type="submit"
-                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 flex items-center justify-center gap-2"
+                    className="w-full py-4 rounded-xl bg-[var(--accent-primary)] text-white font-bold shadow-md hover:shadow-lg hover:opacity-90 transition-all duration-200 flex items-center justify-center gap-2 transform active:scale-[0.98]"
                 >
-                    <IconSearch size={18} />
+                    <IconSearch size={20} stroke={2} />
                     Start AI Research
                 </button>
             </form>

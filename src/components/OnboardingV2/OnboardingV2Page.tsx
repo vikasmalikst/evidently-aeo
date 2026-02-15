@@ -10,6 +10,7 @@ import { generateSynonyms } from '../../lib/onboardingUtils';
 // V2-specific steps
 import { InputStep } from './InputStep';
 import { ResearchStep } from './ResearchStep';
+import { ApplyCollectorsStep } from './ApplyCollectorsStep';
 
 // Reuse existing JSON onboarding review steps
 import { ReviewBrandStep } from '../Onboarding/JSONSteps/ReviewBrandStep';
@@ -20,7 +21,7 @@ import { CompletionStep } from '../Onboarding/JSONSteps/CompletionStep';
 
 import type { BrandOnboardingData } from '../../api/brandApi';
 
-export type OnboardingV2Step = 'input' | 'research' | 'brand' | 'competitors' | 'queries' | 'enrichment' | 'completion';
+export type OnboardingV2Step = 'input' | 'research' | 'brand' | 'competitors' | 'queries' | 'collectors' | 'enrichment' | 'completion';
 
 const STORAGE_KEY = 'onboarding_v2_state';
 
@@ -28,6 +29,7 @@ interface SavedState {
     currentStep: OnboardingV2Step;
     inputData: { brandName: string; country: string; websiteUrl: string } | null;
     onboardingData: Partial<BrandOnboardingData>;
+    aiModels: string[];
     enrichment: {
         brandSynonyms: string[];
         brandProducts: string[];
@@ -42,6 +44,7 @@ export const OnboardingV2Page = () => {
     const [currentStep, setCurrentStep] = useState<OnboardingV2Step>('input');
     const [inputData, setInputData] = useState<{ brandName: string; country: string; websiteUrl: string } | null>(null);
     const [onboardingData, setOnboardingData] = useState<Partial<BrandOnboardingData>>({});
+    const [aiModels, setAiModels] = useState<string[]>(['chatgpt', 'perplexity']); // Default models
 
     // Enrichment state
     const [brandSynonyms, setBrandSynonyms] = useState<string[]>([]);
@@ -63,6 +66,7 @@ export const OnboardingV2Page = () => {
                     setCurrentStep(parsed.currentStep);
                     setInputData(parsed.inputData);
                     setOnboardingData(parsed.onboardingData);
+                    setAiModels(parsed.aiModels || ['chatgpt', 'perplexity']);
                     setBrandSynonyms(parsed.enrichment?.brandSynonyms || []);
                     setBrandProducts(parsed.enrichment?.brandProducts || []);
                     setCompetitorSynonyms(parsed.enrichment?.competitorSynonyms || {});
@@ -84,6 +88,7 @@ export const OnboardingV2Page = () => {
             currentStep,
             inputData,
             onboardingData,
+            aiModels,
             enrichment: {
                 brandSynonyms,
                 brandProducts,
@@ -217,6 +222,7 @@ export const OnboardingV2Page = () => {
         { id: 'brand', label: 'Brand', icon: IconBuildingStore },
         { id: 'competitors', label: 'Competitors', icon: IconUsers },
         { id: 'queries', label: 'Queries', icon: IconListCheck },
+        { id: 'collectors', label: 'Collectors', icon: IconBrain },
         { id: 'enrichment', label: 'Enrichment', icon: IconTags },
         { id: 'completion', label: 'Complete', icon: IconCheck },
     ];
@@ -239,9 +245,6 @@ export const OnboardingV2Page = () => {
                     </h1>
                     <div className="h-6 w-px bg-gray-200 mx-1"></div>
                     <span className="text-gray-500 font-medium">Brand Onboarding</span>
-                    <span className="ml-2 text-xs font-semibold bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-2 py-0.5 rounded-full">
-                        V2 — AI Research
-                    </span>
                 </div>
                 <div className="flex items-center gap-4">
                     {currentStep !== 'input' && (
@@ -335,8 +338,24 @@ export const OnboardingV2Page = () => {
                         <ReviewQueriesStep
                             data={onboardingData}
                             updateData={setOnboardingData}
-                            onNext={() => setCurrentStep('enrichment')}
+                            onNext={() => setCurrentStep('collectors')}
                             onBack={() => setCurrentStep('competitors')}
+                        />
+                    )}
+                    {currentStep === 'collectors' && (
+                        <ApplyCollectorsStep
+                            data={onboardingData}
+                            selectedModels={aiModels}
+                            updateData={setOnboardingData}
+                            onNext={() => setCurrentStep('enrichment')}
+                            onBack={() => setCurrentStep('queries')}
+                            onModelToggle={(modelId: string) => {
+                                setAiModels(prev =>
+                                    prev.includes(modelId)
+                                        ? prev.filter(m => m !== modelId)
+                                        : [...prev, modelId]
+                                );
+                            }}
                         />
                     )}
                     {currentStep === 'enrichment' && (
@@ -353,12 +372,15 @@ export const OnboardingV2Page = () => {
                             brandUrl={onboardingData.website_url || ''}
                             competitors={onboardingData.competitors || []}
                             onNext={() => setCurrentStep('completion')}
-                            onBack={() => setCurrentStep('queries')}
+                            onBack={() => setCurrentStep('collectors')}
                         />
                     )}
                     {currentStep === 'completion' && (
                         <CompletionStep
-                            data={onboardingData}
+                            data={{
+                                ...onboardingData,
+                                ai_models: aiModels
+                            }}
                             enrichment={{
                                 brandSynonyms,
                                 brandProducts,

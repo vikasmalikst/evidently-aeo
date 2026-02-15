@@ -145,7 +145,7 @@ export const EnrichmentStep = ({
                 {activeTab === 'brand' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in">
                         <div>
-                            <div className="flex items-center gap-3 mb-6 bg-blue-50/50 p-3 rounded-lg border border-blue-100">
+                            <div className="flex items-center gap-3 mb-6 bg-[var(--accent50)] p-3 rounded-lg border border-[var(--accent200)]">
                                 <SafeLogo
                                     domain={brandUrl}
                                     alt={brandName}
@@ -159,7 +159,7 @@ export const EnrichmentStep = ({
 
                             <div className="flex items-center justify-between mb-2">
                                 <label className="text-sm font-bold text-[var(--text-headings)] flex items-center gap-2">
-                                    <IconTags size={16} /> Brand Synonyms / Aliases
+                                    <IconTags size={16} stroke={1.5} className="text-[var(--accent-primary)]" /> Brand Synonyms / Aliases
                                 </label>
                                 <button
                                     onClick={handleRegenerateBrand}
@@ -176,14 +176,14 @@ export const EnrichmentStep = ({
                                 items={brandSynonyms}
                                 onItemsChange={setBrandSynonyms}
                                 placeholder="Add synonym (e.g. OTB)..."
-                                colorClass="text-blue-700"
-                                bgClass="bg-blue-100"
+                                colorClass="text-[var(--accent600)]"
+                                bgClass="bg-[var(--accent50)]"
                             />
                         </div>
                         <div>
                             <div className="h-[74px] mb-6"></div> {/* Spacer to align with logo section */}
                             <label className="block text-sm font-bold text-[var(--text-headings)] mb-2 flex items-center gap-2">
-                                <IconBulb size={16} /> Key Products / Categories
+                                <IconBulb size={16} stroke={1.5} className="text-green-600" /> Key Products / Categories
                             </label>
                             <p className="text-xs text-[var(--text-caption)] mb-3">
                                 Main offerings to track (e.g. "Beach Holidays", "All Inclusive").
@@ -193,7 +193,7 @@ export const EnrichmentStep = ({
                                 onItemsChange={setBrandProducts}
                                 placeholder="Add product (e.g. Package Holidays)..."
                                 colorClass="text-green-700"
-                                bgClass="bg-green-100"
+                                bgClass="bg-green-50"
                             />
                         </div>
                     </div>
@@ -248,8 +248,8 @@ export const EnrichmentStep = ({
                                         items={competitorSynonyms[currentCompetitor.company_name] || []}
                                         onItemsChange={handleCompetitorSynonymChange}
                                         placeholder={`Add alias for ${currentCompetitor.company_name}...`}
-                                        colorClass="text-purple-700"
-                                        bgClass="bg-purple-100"
+                                        colorClass="text-[var(--accent600)]"
+                                        bgClass="bg-[var(--accent-light)]"
                                     />
 
                                     <div className="mt-6">
@@ -266,7 +266,7 @@ export const EnrichmentStep = ({
                                             }}
                                             placeholder={`Add product for ${currentCompetitor.company_name}...`}
                                             colorClass="text-orange-700"
-                                            bgClass="bg-orange-100"
+                                            bgClass="bg-orange-50"
                                         />
                                     </div>
                                 </div>

@@ -1,3 +1,5 @@
+export const MAX_SCRAPABILITY_SCORE = 80;
+
 export interface AEOScoreBreakdown {
     // Generic / Article
     primaryAnswer?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };

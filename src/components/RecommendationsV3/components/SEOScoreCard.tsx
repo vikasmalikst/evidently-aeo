@@ -3,7 +3,7 @@
  * 
  * Premium features for content quality analysis and multi-format export.
  * Updates V2:
- * - Splits scoring into "Hygiene" (Frontend, 30pts) and "Scrapability" (Backend, 70pts).
+ * - Splits scoring into "Hygiene" (Frontend, 20pts) and "Scrapability" (Backend, 80pts).
  * - Fetches backend score asynchronously.
  */
 
@@ -63,7 +63,7 @@ export interface CombinedAnalysis {
 }
 
 // =============================================================================
-// HYGIENE ANALYSIS (Frontend - 30pts)
+// HYGIENE ANALYSIS (Frontend - 20pts)
 // =============================================================================
 
 export function analyzeHygiene(content: string, contentType: string = 'article'): HygieneAnalysis {
@@ -72,38 +72,54 @@ export function analyzeHygiene(content: string, contentType: string = 'article')
   
   const isVideo = contentType === 'short_video' || contentType === 'video' || contentType.includes('video');
 
-  // 1. Word Count (Max 10)
+  // 1. Word Count (Max 7pts - reduced from 10)
   const wordCount = content.split(/\s+/).filter(Boolean).length;
   // Video target: 130-180 words is optimal. Article: 300+
   const minWords = isVideo ? 120 : 300;
   const goodWords = isVideo ? 130 : 300;
 
   if (wordCount >= goodWords) {
-    metrics.push({ name: 'Word Count', status: 'good', value: `${wordCount}`, score: 10, maxScore: 10 });
-    score += 10;
+    metrics.push({ name: 'Word Count', status: 'good', value: `${wordCount}`, score: 7, maxScore: 7 });
+    score += 7;
   } else if (wordCount >= minWords) {
-    metrics.push({ name: 'Word Count', status: 'warning', value: `${wordCount}`, suggestion: `Aim for ${goodWords}+`, score: 5, maxScore: 10 });
-    score += 5;
+    metrics.push({ name: 'Word Count', status: 'warning', value: `${wordCount}`, suggestion: `Aim for ${goodWords}+`, score: 4, maxScore: 7 });
+    score += 4;
   } else {
-    metrics.push({ name: 'Word Count', status: 'error', value: `${wordCount}`, suggestion: 'Too short', score: 0, maxScore: 10 });
+    metrics.push({ name: 'Word Count', status: 'error', value: `${wordCount}`, suggestion: 'Too short', score: 0, maxScore: 7 });
     score += 0;
   }
 
-  // 2. Readability (Max 10)
+  // 2. Readability (Max 7pts - reduced from 10)
   const sentences = content.split(/[.!?]+/).filter(Boolean).length;
   const avgWordsPerSentence = wordCount / Math.max(sentences, 1);
   if (avgWordsPerSentence <= 20) {
-    metrics.push({ name: 'Readability', status: 'good', value: 'Grade 8-10', score: 10, maxScore: 10 });
-    score += 10;
+    metrics.push({ name: 'Readability', status: 'good', value: 'Grade 8-10', score: 7, maxScore: 7 });
+    score += 7;
   } else if (avgWordsPerSentence <= 25) {
-    metrics.push({ name: 'Readability', status: 'warning', value: 'Grade 11-12', suggestion: 'Simplify sentences', score: 5, maxScore: 10 });
-    score += 5;
+    metrics.push({ name: 'Readability', status: 'warning', value: 'Grade 11-12', suggestion: 'Simplify sentences', score: 4, maxScore: 7 });
+    score += 4;
   } else {
-    metrics.push({ name: 'Readability', status: 'error', value: 'Complex', suggestion: 'Sentences too long', score: 2, maxScore: 10 });
+    metrics.push({ name: 'Readability', status: 'error', value: 'Complex', suggestion: 'Sentences too long', score: 2, maxScore: 7 });
     score += 2;
   }
 
-  // Structure removed - not relevant for v4.0 JSON content
+  // 3. Structure (Max 6pts - re-implemented for v5.0 markdown)
+  // Count markdown headers (H1: #, H2: ##, H3: ###)
+  const h1Count = (content.match(/^#\s+/gm) || []).length;
+  const h2Count = (content.match(/^##\s+/gm) || []).length;
+  const h3Count = (content.match(/^###\s+/gm) || []).length;
+  const totalSections = h1Count + h2Count + h3Count;
+
+  if (totalSections >= 4) {
+    metrics.push({ name: 'Structure', status: 'good', value: `${totalSections} sections`, score: 6, maxScore: 6 });
+    score += 6;
+  } else if (totalSections >= 2) {
+    metrics.push({ name: 'Structure', status: 'warning', value: `${totalSections} sections`, suggestion: 'Add more sections for depth', score: 3, maxScore: 6 });
+    score += 3;
+  } else {
+    metrics.push({ name: 'Structure', status: 'error', value: `${totalSections} sections`, suggestion: 'Add clear section headers', score: 0, maxScore: 6 });
+    score += 0;
+  }
 
   return { score, metrics };
 }

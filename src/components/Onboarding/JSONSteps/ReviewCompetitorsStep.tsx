@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { IconTrash, IconPlus, IconBuildingStore, IconPencil, IconCheck, IconX } from '@tabler/icons-react';
+import { Reorder } from 'framer-motion';
+import { IconTrash, IconPlus, IconBuildingStore, IconPencil, IconCheck, IconX, IconGripVertical } from '@tabler/icons-react';
 import { SafeLogo } from '../common/SafeLogo';
 import { useToast } from '../../../hooks-landing/use-toast';
 
@@ -12,7 +13,15 @@ interface ReviewCompetitorsStepProps {
 
 export const ReviewCompetitorsStep = ({ data, updateData, onNext, onBack }: ReviewCompetitorsStepProps) => {
     const { toast } = useToast();
-    const [competitors, setCompetitors] = useState<any[]>(data.competitors || []);
+
+    // Initialize competitors with stable IDs for drag-and-drop tracking
+    const [competitors, setCompetitors] = useState<any[]>(() =>
+        (data.competitors || []).map((c: any) => ({
+            ...c,
+            _id: c._id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2))
+        }))
+    );
+
     const [newCompetitor, setNewCompetitor] = useState({ company_name: '', domain: '' });
     const [isAdding, setIsAdding] = useState(false);
 
@@ -34,7 +43,8 @@ export const ReviewCompetitorsStep = ({ data, updateData, onNext, onBack }: Revi
 
     const handleAdd = () => {
         if (newCompetitor.company_name && newCompetitor.domain) {
-            setCompetitors(prev => [...prev, newCompetitor]);
+            const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+            setCompetitors(prev => [...prev, { ...newCompetitor, _id: id }]);
             setNewCompetitor({ company_name: '', domain: '' });
             setIsAdding(false);
         }
@@ -136,124 +146,133 @@ export const ReviewCompetitorsStep = ({ data, updateData, onNext, onBack }: Revi
                 </div>
             )}
 
-            {/* List View */}
-            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                {competitors.map((comp, index) => {
-                    const isEditing = editingIndex === index;
+            {/* List View with Drag and Drop */}
+            <div className="max-h-[600px] overflow-y-auto pr-2">
+                <Reorder.Group axis="y" values={competitors} onReorder={setCompetitors} className="space-y-3 list-none">
+                    {competitors.map((comp, index) => {
+                        const isEditing = editingIndex === index;
 
-                    return (
-                        <div
-                            key={index}
-                            className={`flex items-center gap-4 bg-white border rounded-xl p-4 transition-all duration-200 ${isEditing
-                                ? 'border-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]/10 shadow-md'
-                                : 'border-[var(--border-default)] hover:border-gray-300 hover:shadow-sm'
-                                }`}
-                        >
-                            {/* Logo */}
-                            <div className="w-12 h-12 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden shrink-0">
-                                {comp.domain ? (
-                                    <SafeLogo
-                                        domain={comp.domain}
-                                        alt={comp.company_name}
-                                        size={32}
-                                        className="object-contain"
-                                    />
-                                ) : (
-                                    <IconBuildingStore className="text-gray-300" size={24} />
-                                )}
-                            </div>
+                        return (
+                            <Reorder.Item
+                                key={comp._id}
+                                value={comp}
+                                className={`flex items-center gap-4 bg-white border rounded-xl p-4 transition-all duration-200 ${isEditing
+                                    ? 'border-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]/10 shadow-md relative z-10'
+                                    : 'border-[var(--border-default)] hover:border-gray-300 hover:shadow-sm'
+                                    }`}
+                            >
+                                {/* Drag Handle */}
+                                <div className="text-gray-300 cursor-grab active:cursor-grabbing hover:text-gray-500 shrink-0">
+                                    <IconGripVertical size={20} />
+                                </div>
 
-                            {/* Content */}
-                            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Name Field */}
-                                <div>
-                                    {isEditing ? (
-                                        <div>
-                                            <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Name</label>
-                                            <input
-                                                value={editValues.company_name}
-                                                onChange={e => setEditValues(prev => ({ ...prev, company_name: e.target.value }))}
-                                                className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-[var(--accent-primary)]"
-                                            />
-                                        </div>
+                                {/* Logo */}
+                                <div className="w-12 h-12 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden shrink-0 pointer-events-none select-none">
+                                    {comp.domain ? (
+                                        <SafeLogo
+                                            domain={comp.domain}
+                                            alt={comp.company_name}
+                                            size={32}
+                                            className="object-contain"
+                                        />
                                     ) : (
-                                        <div>
-                                            <h3 className="font-bold text-[var(--text-headings)] text-base">
-                                                {comp.company_name}
-                                            </h3>
-                                            <span className="text-xs text-gray-400 font-medium">Competitor Name</span>
-                                        </div>
+                                        <IconBuildingStore className="text-gray-300" size={24} />
                                     )}
                                 </div>
 
-                                {/* Domain Field */}
-                                <div>
+                                {/* Content */}
+                                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* Name Field */}
+                                    <div>
+                                        {isEditing ? (
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Name</label>
+                                                <input
+                                                    value={editValues.company_name}
+                                                    onChange={e => setEditValues(prev => ({ ...prev, company_name: e.target.value }))}
+                                                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-[var(--accent-primary)]"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <h3 className="font-bold text-[var(--text-headings)] text-base">
+                                                    {comp.company_name}
+                                                </h3>
+                                                <span className="text-xs text-gray-400 font-medium">Competitor Name</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Domain Field */}
+                                    <div>
+                                        {isEditing ? (
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Domain</label>
+                                                <input
+                                                    value={editValues.domain}
+                                                    onChange={e => setEditValues(prev => ({ ...prev, domain: e.target.value }))}
+                                                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-[var(--accent-primary)]"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <a
+                                                    href={`https://${comp.domain}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-sm text-[var(--accent-primary)] hover:underline block truncate"
+                                                    onPointerDown={(e) => e.stopPropagation()}
+                                                >
+                                                    {comp.domain}
+                                                </a>
+                                                <span className="text-xs text-gray-400 font-medium">Domain URL</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-2 pl-4 border-l border-gray-100 shrink-0">
                                     {isEditing ? (
-                                        <div>
-                                            <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Domain</label>
-                                            <input
-                                                value={editValues.domain}
-                                                onChange={e => setEditValues(prev => ({ ...prev, domain: e.target.value }))}
-                                                className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-[var(--accent-primary)]"
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div>
-                                            <a
-                                                href={`https://${comp.domain}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm text-[var(--accent-primary)] hover:underline block truncate"
+                                        <>
+                                            <button
+                                                onClick={() => saveEdit(index)}
+                                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                                title="Save"
                                             >
-                                                {comp.domain}
-                                            </a>
-                                            <span className="text-xs text-gray-400 font-medium">Domain URL</span>
-                                        </div>
+                                                <IconCheck size={18} />
+                                            </button>
+                                            <button
+                                                onClick={cancelEdit}
+                                                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                                title="Cancel"
+                                            >
+                                                <IconX size={18} />
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => startEdit(index)}
+                                                className="p-2 text-gray-400 hover:text-[var(--accent-primary)] hover:bg-blue-50 rounded-lg transition-colors"
+                                                title="Edit"
+                                            >
+                                                <IconPencil size={18} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleRemove(index)}
+                                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                title="Remove"
+                                            >
+                                                <IconTrash size={18} />
+                                            </button>
+                                        </>
                                     )}
                                 </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex items-center gap-2 pl-4 border-l border-gray-100">
-                                {isEditing ? (
-                                    <>
-                                        <button
-                                            onClick={() => saveEdit(index)}
-                                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                            title="Save"
-                                        >
-                                            <IconCheck size={18} />
-                                        </button>
-                                        <button
-                                            onClick={cancelEdit}
-                                            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
-                                            title="Cancel"
-                                        >
-                                            <IconX size={18} />
-                                        </button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <button
-                                            onClick={() => startEdit(index)}
-                                            className="p-2 text-gray-400 hover:text-[var(--accent-primary)] hover:bg-blue-50 rounded-lg transition-colors"
-                                            title="Edit"
-                                        >
-                                            <IconPencil size={18} />
-                                        </button>
-                                        <button
-                                            onClick={() => handleRemove(index)}
-                                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                            title="Remove"
-                                        >
-                                            <IconTrash size={18} />
-                                        </button>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
+                            </Reorder.Item>
+                        );
+                    })}
+                </Reorder.Group>
 
                 {/* Empty State Help */}
                 {competitors.length === 0 && !isAdding && (

@@ -12,6 +12,7 @@ import { SentimentLandscape2 } from './pages/SentimentLandscape2';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { OnboardingJSONPage } from './pages/OnboardingJSONPage';
+import { OnboardingV2Page } from './components/OnboardingV2/OnboardingV2Page';
 import { PromptSelection } from './pages/PromptSelection';
 import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCollectionLoadingScreen';
 import { OnboardingDomainReadinessScreenRoute } from './components/Onboarding/OnboardingDomainReadinessScreen';
@@ -457,6 +458,15 @@ function App() {
           element={
             <ProtectedRoute>
               <OnboardingJSONPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Onboarding V2 — AI Research */}
+        <Route
+          path="/onboarding-v2"
+          element={
+            <ProtectedRoute>
+              <OnboardingV2Page />
             </ProtectedRoute>
           }
         />

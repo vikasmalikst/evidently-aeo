@@ -156,11 +156,22 @@ export class GroqCompoundService {
                     executedTools: allExecutedTools
                 };
             } catch (err: any) {
-                if (err.message && err.message.includes('tool_use_failed')) {
-                    console.error('⚠️ [GroqCompoundService] Tool use failed error. Attempting fallback fix...');
-                    // Sometimes adding a "Please use the tool" user message helps Llama recover
-                    messages.push({ role: 'user', content: 'SYSTEM: Your previous tool call failed to parse. Please try again with ONLY the tool call, or provide the answer if you already have it.' });
-                    if (iterations >= 3) throw err; // Don't loop forever
+                // Handle Groq/SDK "Tool use failed" (400) errors where the model generated invalid JSON arguments
+                if ((err.status === 400 && err.error?.code === 'tool_use_failed') || (err.message && err.message.includes('tool_use_failed'))) {
+                    console.error(`⚠️ [GroqCompoundService] Tool validation failed (Iter ${iterations}). Retrying with guidance...`);
+
+                    // Add the failed attempt context if possible, or just a generic "fix it" message
+                    // We can't easily add the "failed" message because the SDK threw before returning it.
+                    // So we just add a user message telling it to fix the format.
+
+                    messages.push({
+                        role: 'user',
+                        content: 'SYSTEM ERROR: Your previous tool call failed validation. You MUST usage the "web_search" tool with ONLY the "query" parameter (string). Do not use objects, cursors, or ids. Example: {"query": "exact search term"}'
+                    });
+
+                    if (iterations >= maxIterations) throw err;
+
+                    // Don't count this as a full logic iteration, but do increment to prevent infinite loops
                     continue;
                 }
                 throw err;

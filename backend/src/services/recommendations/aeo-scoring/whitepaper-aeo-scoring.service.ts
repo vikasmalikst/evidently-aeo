@@ -162,7 +162,20 @@ export class WhitepaperAEOScoringService implements IAEOScoringService {
 
     // 4. Methodology & Authority Signals (15)
     private scoreMethodology(text: string) {
-        return { score, max: 10, status, feedback };
+        const methodologyPatterns = [/methodology/i, /framework/i, /approach/i, /research/i, /analysis/i, /method/i];
+        const hasMethodology = methodologyPatterns.some(p => p.test(text));
+
+        let score = 0;
+        let status: 'good' | 'warning' | 'error' = 'error';
+        let feedback = "No methodology or framework described.";
+
+        if (hasMethodology) {
+            score = 15;
+            status = 'good';
+            feedback = "Methodology or framework clearly described.";
+        }
+
+        return { score, max: 15, status, feedback };
     }
 
     // 5. Concept/Problem Definition (10)

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IconTarget } from '@tabler/icons-react';
-import { SEOScoreCard, analyzeContent, analyzeHygiene } from './SEOScoreCard';
+import { SEOScoreCard } from './SEOScoreCard';
 // Define API URL (same as SEOScoreCard)
 import { apiClient } from '../../../lib/apiClient';
 
@@ -20,11 +20,7 @@ export function AEOScoreBadge({ content, brandName, contentType, onClick }: AEOS
   const [loading, setLoading] = useState(false);
   const badgeRef = useRef<HTMLDivElement>(null);
 
-  // Calculate immediate hygiene score for fallback/projection
-  const analysis = React.useMemo(() => analyzeContent(content, brandName, contentType), [content, brandName, contentType]);
-  
-  // Calculate raw hygiene score for accurate total summation
-  const hygieneAnalysis = React.useMemo(() => analyzeHygiene(content, contentType), [content, contentType]);
+
 
   useEffect(() => {
     if (!content || content.length < 50) return;
@@ -40,8 +36,8 @@ export function AEOScoreBadge({ content, brandName, contentType, onClick }: AEOS
         });
 
         if (response.success && response.data && isMounted) {
-          // Use exact same logic as SEOScoreCard: Raw Hygiene + Scrapability
-          const total = Math.min(100, hygieneAnalysis.score + response.data.totalScore);
+          // Use backend score directly
+          const total = Math.min(100, response.data.totalScore);
           setBackendScore(total);
         }
       } catch (err) {
@@ -58,11 +54,10 @@ export function AEOScoreBadge({ content, brandName, contentType, onClick }: AEOS
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [content, hygieneAnalysis.score, contentType]);
+  }, [content, contentType]);
 
-  // Use backendScore if available, otherwise analysis.score (projected)
-  // Visually indicate if it's the real one?
-  const displayScore = backendScore !== null ? backendScore : analysis.score;
+  // Use backendScore if available, otherwise show 0 or loading
+  const displayScore = backendScore !== null ? backendScore : 0;
   const isReal = backendScore !== null;
   const scoreColor = displayScore >= 80 ? 'text-[#059669]' : displayScore >= 60 ? 'text-[#d97706]' : 'text-[#dc2626]';
   const bgColor = displayScore >= 80 ? 'bg-[#d1fae5]' : displayScore >= 60 ? 'bg-[#fef3c7]' : 'bg-[#fee2e2]';

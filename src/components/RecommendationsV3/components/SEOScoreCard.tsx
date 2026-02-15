@@ -43,102 +43,20 @@ export interface SEOMetric {
   maxScore?: number;
 }
 
-export interface HygieneAnalysis {
-  score: number; // Max 30
-  metrics: SEOMetric[];
-}
-
 export interface ScrapabilityAnalysis {
-  score: number; // Max 70
+  score: number; // Max 100
   metrics: SEOMetric[];
   loading: boolean;
   error?: string;
 }
 
-export interface CombinedAnalysis {
-  totalScore: number;
-  hygiene: HygieneAnalysis;
-  scrapability: ScrapabilityAnalysis;
-  citationProbability: 'high' | 'medium' | 'low';
-}
-
-// =============================================================================
-// HYGIENE ANALYSIS (Frontend - 20pts)
-// =============================================================================
-
-export function analyzeHygiene(content: string, contentType: string = 'article'): HygieneAnalysis {
-  const metrics: SEOMetric[] = [];
-  let score = 0;
-  
-  const isVideo = contentType === 'short_video' || contentType === 'video' || contentType.includes('video');
-
-  // 1. Word Count (Max 7pts - reduced from 10)
-  const wordCount = content.split(/\s+/).filter(Boolean).length;
-  // Video target: 130-180 words is optimal. Article: 300+
-  const minWords = isVideo ? 120 : 300;
-  const goodWords = isVideo ? 130 : 300;
-
-  if (wordCount >= goodWords) {
-    metrics.push({ name: 'Word Count', status: 'good', value: `${wordCount}`, score: 7, maxScore: 7 });
-    score += 7;
-  } else if (wordCount >= minWords) {
-    metrics.push({ name: 'Word Count', status: 'warning', value: `${wordCount}`, suggestion: `Aim for ${goodWords}+`, score: 4, maxScore: 7 });
-    score += 4;
-  } else {
-    metrics.push({ name: 'Word Count', status: 'error', value: `${wordCount}`, suggestion: 'Too short', score: 0, maxScore: 7 });
-    score += 0;
-  }
-
-  // 2. Readability (Max 7pts - reduced from 10)
-  const sentences = content.split(/[.!?]+/).filter(Boolean).length;
-  const avgWordsPerSentence = wordCount / Math.max(sentences, 1);
-  if (avgWordsPerSentence <= 20) {
-    metrics.push({ name: 'Readability', status: 'good', value: 'Grade 8-10', score: 7, maxScore: 7 });
-    score += 7;
-  } else if (avgWordsPerSentence <= 25) {
-    metrics.push({ name: 'Readability', status: 'warning', value: 'Grade 11-12', suggestion: 'Simplify sentences', score: 4, maxScore: 7 });
-    score += 4;
-  } else {
-    metrics.push({ name: 'Readability', status: 'error', value: 'Complex', suggestion: 'Sentences too long', score: 2, maxScore: 7 });
-    score += 2;
-  }
-
-  // 3. Structure (Max 6pts - re-implemented for v5.0 markdown)
-  // Count markdown headers (H1: #, H2: ##, H3: ###)
-  const h1Count = (content.match(/^#\s+/gm) || []).length;
-  const h2Count = (content.match(/^##\s+/gm) || []).length;
-  const h3Count = (content.match(/^###\s+/gm) || []).length;
-  const totalSections = h1Count + h2Count + h3Count;
-
-  if (totalSections >= 4) {
-    metrics.push({ name: 'Structure', status: 'good', value: `${totalSections} sections`, score: 6, maxScore: 6 });
-    score += 6;
-  } else if (totalSections >= 2) {
-    metrics.push({ name: 'Structure', status: 'warning', value: `${totalSections} sections`, suggestion: 'Add more sections for depth', score: 3, maxScore: 6 });
-    score += 3;
-  } else {
-    metrics.push({ name: 'Structure', status: 'error', value: `${totalSections} sections`, suggestion: 'Add clear section headers', score: 0, maxScore: 6 });
-    score += 0;
-  }
-
-  return { score, metrics };
-}
-
-/**
- * Legacy Export for backward compatibility with ContentAnalysisTools.
- * Returns a projected score based on Hygiene only (scaled to 100) or just the raw hygiene score.
- * Since users are used to a 100-pt scale, we'll project: 30pts hygiene -> 100pts.
- * This is just a placeholder until they open the full card.
- */
-export function analyzeContent(content: string, brandName?: string, contentType?: string): { score: number; metrics: SEOMetric[] } {
-  const hygiene = analyzeHygiene(content, contentType);
-  // Scale score: (score / 20) * 100.
-  const projectedScore = Math.min(100, Math.round((hygiene.score / 20) * 100));
-  
-  return { 
-    score: projectedScore, 
-    metrics: hygiene.metrics 
-  };
+export interface LLMAnalysisResult {
+    final_score: number;
+    category: string;
+    signal_breakdown: Record<string, string>;
+    key_strengths: string[];
+    key_weaknesses: string[];
+    recommendations: string[];
 }
 
 // =============================================================================
@@ -148,28 +66,45 @@ export function analyzeContent(content: string, brandName?: string, contentType?
 interface SEOScoreCardProps {
   content: string;
   brandName?: string;
-  contentType?: string; // Add contentType prop
+  contentType?: string;
   onRefresh?: () => void;
 }
 
 export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEOScoreCardProps) {
-  // Client-side state
-  const [hygiene, setHygiene] = useState<HygieneAnalysis>(analyzeHygiene(content, contentType));
-  
   // Server-side state
   const [scrapability, setScrapability] = useState<ScrapabilityAnalysis>({
     score: 0,
     metrics: [],
     loading: false
   });
+  
+  // LLM Analysis State
+  const [llmAnalysis, setLlmAnalysis] = useState<LLMAnalysisResult | null>(null);
+  const [llmLoading, setLlmLoading] = useState(false);
+  const [llmError, setLlmError] = useState<string | null>(null);
 
-
+  const handleDeepAnalysis = async () => {
+    if (!content) return;
+    setLlmLoading(true);
+    setLlmError(null);
+    try {
+        const response = await apiClient.post<{ success: boolean; data: LLMAnalysisResult }>('/aeo/score-llm', {
+            content,
+            contentType: contentType || 'article'
+        });
+        if (response.success && response.data) {
+            setLlmAnalysis(response.data);
+        }
+    } catch (err: any) {
+        console.error("LLM Analysis Error:", err);
+        setLlmError(err.message || 'Analysis failed. Please try again.');
+    } finally {
+        setLlmLoading(false);
+    }
+  };
 
   // Debounce logic for API calls
   useEffect(() => {
-    // Immediate update for hygiene
-    setHygiene(analyzeHygiene(content, contentType));
-
     // Debounced update for scrapability
     const timer = setTimeout(async () => {
       // If content is empty or very short, don't bother asking backend
@@ -184,53 +119,18 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
             contentType 
         });
         
-        // apiClient.post returns the parsed JSON body directly if generic is used, 
-        // OR it might return the body. Let's assume standard structure based on usage.
-        // Actually looking at apiClient.ts implementation: 
-        // return this.request<T>(endpoint, { method: 'POST', body: ... });
-        // which returns `result = await response.json() as T;`
-        
         if (response.success && response.data) {
            const b = response.data.breakdown;
            const newMetrics: SEOMetric[] = [];
 
-           // --- 1. Generic / Article Metrics ---
-           if (b.primaryAnswer) newMetrics.push({ name: 'Primary Answer', ...b.primaryAnswer, value: b.primaryAnswer.status === 'good' ? 'Found' : 'Missing', suggestion: b.primaryAnswer.feedback });
-           
-           // --- 2. Expert Community Response Metrics ---
-           if (b.questionRelevance) newMetrics.push({ name: 'Question Relevance', ...b.questionRelevance, value: b.questionRelevance.status === 'good' ? 'High' : 'Low', suggestion: b.questionRelevance.feedback });
-           if (b.earlyAnswerSignal) newMetrics.push({ name: 'Early Answer', ...b.earlyAnswerSignal, value: b.earlyAnswerSignal.status === 'good' ? 'Direct' : 'Buried', suggestion: b.earlyAnswerSignal.feedback });
-           if (b.experienceSignals) newMetrics.push({ name: 'Expertise Signals', ...b.experienceSignals, value: b.experienceSignals.status === 'good' ? 'Strong' : 'Weak', suggestion: b.experienceSignals.feedback });
-           if (b.informationalDensity) newMetrics.push({ name: 'Info Density', ...b.informationalDensity, value: b.informationalDensity.status === 'good' ? 'High' : 'Low', suggestion: b.informationalDensity.feedback });
-           if (b.toneTrust) newMetrics.push({ name: 'Trustable Tone', ...b.toneTrust, value: b.toneTrust.status === 'good' ? 'Neutral' : 'Bias', suggestion: b.toneTrust.feedback });
-           if (b.contextualReasoning) newMetrics.push({ name: 'Contextual Reasoning', ...b.contextualReasoning, value: b.contextualReasoning.status === 'good' ? 'Deep' : 'Shallow', suggestion: b.contextualReasoning.feedback });
-           if (b.semanticClarity) newMetrics.push({ name: 'Semantic Clarity', ...b.semanticClarity, value: b.semanticClarity.status === 'good' ? 'Clear' : 'Issues', suggestion: b.semanticClarity.feedback });
-           if (b.followUpReadiness) newMetrics.push({ name: 'Follow-Up Ready', ...b.followUpReadiness, value: b.followUpReadiness.status === 'good' ? 'Yes' : 'No', suggestion: b.followUpReadiness.feedback });
-           if (b.verifiability) newMetrics.push({ name: 'Verifiability', ...b.verifiability, value: b.verifiability.status === 'good' ? 'Linked' : 'None', suggestion: b.verifiability.feedback });
-
-           // --- 3. Comparison Table Metrics ---
-           if (b.comparisonIntent) newMetrics.push({ name: 'Comparison Intent', ...b.comparisonIntent, value: b.comparisonIntent.status === 'good' ? 'Clear' : 'Vague', suggestion: b.comparisonIntent.feedback });
-           if (b.tableStructure) newMetrics.push({ name: 'Table Structure', ...b.tableStructure, value: b.tableStructure.status === 'good' ? 'Valid' : 'Broken', suggestion: b.tableStructure.feedback });
-           if (b.attributeQuality) newMetrics.push({ name: 'Attribute Quality', ...b.attributeQuality, value: b.attributeQuality.status === 'good' ? 'High' : 'Low', suggestion: b.attributeQuality.feedback });
-           if (b.neutralFactuality) newMetrics.push({ name: 'Neutral Factuality', ...b.neutralFactuality, value: b.neutralFactuality.status === 'good' ? 'Neutral' : 'Bias', suggestion: b.neutralFactuality.feedback });
-           if (b.semanticConsistency) newMetrics.push({ name: 'Semantic Consistency', ...b.semanticConsistency, value: b.semanticConsistency.status === 'good' ? 'match' : 'mismatch', suggestion: b.semanticConsistency.feedback });
-           if (b.contextualInterpretation) newMetrics.push({ name: 'Context Layer', ...b.contextualInterpretation, value: b.contextualInterpretation.status === 'good' ? 'Present' : 'Missing', suggestion: b.contextualInterpretation.feedback });
-           if (b.edgeCaseCoverage) newMetrics.push({ name: 'Edge Case / Limits', ...b.edgeCaseCoverage, value: b.edgeCaseCoverage.status === 'good' ? 'Covered' : 'Missing', suggestion: b.edgeCaseCoverage.feedback });
-           if (b.timeliness) newMetrics.push({ name: 'Timeliness', ...b.timeliness, value: b.timeliness.status === 'good' ? 'Fresh' : 'Unknown', suggestion: b.timeliness.feedback });
-           if (b.llmReadiness) newMetrics.push({ name: 'LLM Readiness', ...b.llmReadiness, value: b.llmReadiness.status === 'good' ? 'Ready' : 'Hard', suggestion: b.llmReadiness.feedback });
-           
-           // --- 4. Shared / Other Metrics (Fallbacks) ---
-           if (b.conceptClarity) newMetrics.push({ name: 'Concept Definitions', ...b.conceptClarity, value: b.conceptClarity.status === 'good' ? 'Clear' : 'Vague', suggestion: b.conceptClarity.feedback });
-           if (b.explanationDepth) newMetrics.push({ name: 'Explanation Depth', ...b.explanationDepth, value: b.explanationDepth.status === 'good' ? 'Deep' : 'Shallow', suggestion: b.explanationDepth.feedback });
-           if (b.comparison) newMetrics.push({ name: 'Comparisons', ...b.comparison, value: b.comparison.status === 'good' ? 'Present' : 'None', suggestion: b.comparison.feedback });
-           if (b.authority) newMetrics.push({ name: 'Authority Signals', ...b.authority, value: b.authority.status === 'good' ? 'Strong' : 'Weak', suggestion: b.authority.feedback });
-           if (b.antiMarketing) newMetrics.push({ name: 'Tone Check', ...b.antiMarketing, value: b.antiMarketing.status === 'good' ? 'Neutral' : 'Promo', suggestion: b.antiMarketing.feedback });
-
-           // --- 5. V2 Metrics (Universal) ---
+           // --- V2 Metrics (Universal) ---
            if (b.chunkability) newMetrics.push({ name: 'Chunkability', ...b.chunkability, value: b.chunkability.status === 'good' ? 'Structured' : 'Flat', suggestion: b.chunkability.feedback });
            if (b.fleschReadability) newMetrics.push({ name: 'Readability (Flesch)', ...b.fleschReadability, value: b.fleschReadability.score + '/35', suggestion: b.fleschReadability.feedback });
            if (b.freshness) newMetrics.push({ name: 'Freshness', ...b.freshness, value: b.freshness.status === 'good' ? 'Fresh' : 'Older', suggestion: b.freshness.feedback });
 
+           // --- Fallback for old metrics if they still exist (should be hidden now) ---
+           // Keeping them commented out or removed as per user request to "get rid of previous AEO scores"
+           
            setScrapability({
              score: response.data.totalScore,
              metrics: newMetrics,
@@ -251,11 +151,8 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
     return () => clearTimeout(timer);
   }, [content]);
 
-  // Combined score
-  // If scrapability is 0 (not loaded yet or failed), should we show just hygiene?
-  // Let's assume scrapability starts at 0.
-  // We should probably visually indicate "calculating" if score is low but loading is true.
-  const totalScore = Math.min(100, Math.max(0, hygiene.score + scrapability.score));
+  // Combined score is just the backend score now
+  const totalScore = Math.min(100, Math.max(0, scrapability.score));
   
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'text-[#10b981]';
@@ -315,37 +212,117 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row">
-        {/* Hygiene Column */}
-        <div className="flex-1 border-b md:border-b-0 md:border-r border-[#f1f5f9] p-4">
-          <div className="flex items-center gap-2 mb-3">
-             <IconLayout size={14} className="text-[#64748b]" />
-             <h4 className="text-[12px] font-semibold text-[#64748b] uppercase tracking-wide">Hygiene (20pts)</h4>
-          </div>
-          <div className="space-y-3">
-            {hygiene.metrics.map((metric, idx) => (
-               <MetricItem key={idx} metric={metric} />
-            ))}
-          </div>
+      <div className="p-4 bg-[#fafcff]">
+        <div className="flex items-center gap-2 mb-3">
+           <IconServer size={14} className="text-[#64748b]" />
+           <h4 className="text-[12px] font-semibold text-[#64748b] uppercase tracking-wide">Score Breakdown</h4>
         </div>
+        <div className="space-y-3">
+          {scrapability.loading && scrapability.metrics.length === 0 ? (
+             <div className="text-[12px] text-[#94a3b8] italic p-2">Analyzing content semantics...</div>
+          ) : (
+              scrapability.metrics.map((metric, idx) => (
+                 <MetricItem key={idx} metric={metric} />
+              ))
+          )}
+          {scrapability.error && <div className="text-[11px] text-red-400">{scrapability.error}</div>}
+        </div>
+      </div>
 
-        {/* Scrapability Column */}
-        <div className="flex-1 p-4 bg-[#fafcff]">
-          <div className="flex items-center gap-2 mb-3">
-             <IconServer size={14} className="text-[#64748b]" />
-             <h4 className="text-[12px] font-semibold text-[#64748b] uppercase tracking-wide">AI Scrapability (80pts)</h4>
-          </div>
-          <div className="space-y-3">
-            {scrapability.loading && scrapability.metrics.length === 0 ? (
-               <div className="text-[12px] text-[#94a3b8] italic p-2">Analyzing content semantics...</div>
-            ) : (
-                scrapability.metrics.map((metric, idx) => (
-                   <MetricItem key={idx} metric={metric} />
-                ))
-            )}
-            {scrapability.error && <div className="text-[11px] text-red-400">{scrapability.error}</div>}
-          </div>
-        </div>
+      {/* Deep Analysis Section */}
+      <div className="p-4 border-t border-[#f1f5f9] bg-white">
+        {!llmAnalysis && !llmLoading ? (
+            <button 
+                onClick={handleDeepAnalysis}
+                className="w-full py-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-md text-[13px] font-medium shadow-sm flex items-center justify-center gap-2 transition-all"
+            >
+                <IconServer size={16} />
+                <span>Run Deep AI Analysis</span>
+            </button>
+        ) : llmLoading ? (
+            <div className="flex flex-col items-center justify-center py-6 gap-3">
+                <motion.div 
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                    className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full"
+                />
+                <span className="text-[12px] text-[#64748b] animate-pulse">Analyzing 25+ signals with AI...</span>
+            </div>
+        ) : llmAnalysis ? (
+            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <div className="flex items-center justify-between">
+                     <h4 className="text-[13px] font-bold text-[#1e293b] flex items-center gap-2">
+                        <IconTarget size={16} className="text-indigo-500" />
+                        AI Quality Score
+                     </h4>
+                     <div className={`px-3 py-1 rounded-full text-[12px] font-bold ${
+                        llmAnalysis.final_score >= 4 ? 'bg-green-100 text-green-700' :
+                        llmAnalysis.final_score >= 2 ? 'bg-blue-100 text-blue-700' :
+                        llmAnalysis.final_score >= 0 ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-red-100 text-red-700'
+                     }`}>
+                        {llmAnalysis.final_score > 0 ? '+' : ''}{llmAnalysis.final_score} / +5
+                     </div>
+                </div>
+                
+                <div className="text-[12px] text-[#64748b] font-medium border-l-2 border-indigo-200 pl-3 py-1">
+                    {llmAnalysis.category}
+                </div>
+
+                {/* Recommendations */}
+                {llmAnalysis.recommendations && llmAnalysis.recommendations.length > 0 && (
+                    <div className="bg-indigo-50 p-3 rounded-md border border-indigo-100">
+                        <div className="text-[11px] font-bold text-indigo-800 uppercase tracking-wide mb-2 flex items-center gap-1">
+                            <IconChartBar size={12} /> Key Improvements
+                        </div>
+                        <ul className="space-y-1">
+                            {llmAnalysis.recommendations.map((rec, i) => (
+                                <li key={i} className="text-[12px] text-indigo-900 flex items-start gap-2">
+                                    <span className="mt-1.5 w-1 h-1 rounded-full bg-indigo-400 flex-shrink-0" />
+                                    {rec}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
+                 {/* Strengths & Weaknesses Grid */}
+                 <div className="grid grid-cols-2 gap-3">
+                    {llmAnalysis.key_strengths?.length > 0 && (
+                        <div>
+                            <span className="text-[11px] font-semibold text-green-700 mb-1 block">Strengths</span>
+                            <div className="flex flex-wrap gap-1">
+                                {llmAnalysis.key_strengths.map((str, i) => (
+                                    <span key={i} className="px-2 py-0.5 bg-green-50 text-green-700 text-[10px] rounded border border-green-100">
+                                        {str}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    
+                    {llmAnalysis.key_weaknesses?.length > 0 && (
+                        <div>
+                             <span className="text-[11px] font-semibold text-red-700 mb-1 block">Weaknesses</span>
+                             <div className="flex flex-wrap gap-1">
+                                {llmAnalysis.key_weaknesses.map((wk, i) => (
+                                    <span key={i} className="px-2 py-0.5 bg-red-50 text-red-700 text-[10px] rounded border border-red-100">
+                                        {wk}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                 </div>
+            </div>
+        ) : null}
+        
+        {llmError && (
+            <div className="mt-3 p-2 bg-red-50 text-red-600 text-[11px] rounded border border-red-100 flex items-center justify-between">
+                <span>{llmError}</span>
+                <button onClick={() => setLlmError(null)} className="text-red-400 hover:text-red-700"><IconLayout size={12}/></button>
+            </div>
+        )}
       </div>
 
       {/* Citation Probability Footer */}

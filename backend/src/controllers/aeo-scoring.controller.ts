@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { AEOScoringFactory, ContentType } from '../services/recommendations/aeo-scoring/aeo-scoring-factory.service';
+import { AEOScoringFactory2, ContentType } from '../services/recommendations/aeo-scoring2/aeo-scoring-factory.service';
 
 export const scoreContent = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -9,9 +9,9 @@ export const scoreContent = async (req: Request, res: Response, next: NextFuncti
             return res.status(400).json({ success: false, message: 'Content is required' });
         }
 
-        // Get appropriate service using factory (defaults to 'article')
+        // Get appropriate service using V2 factory (new criteria: Chunkability, Flesch, Freshness)
         const type: ContentType = (contentType as ContentType) || 'article';
-        const scoringService = AEOScoringFactory.getService(type);
+        const scoringService = AEOScoringFactory2.getService(type);
 
         const result = scoringService.calculateScrapabilityScore(content);
 

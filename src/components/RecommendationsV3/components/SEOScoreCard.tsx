@@ -226,6 +226,11 @@ export function SEOScoreCard({ content, brandName, contentType, onRefresh }: SEO
            if (b.authority) newMetrics.push({ name: 'Authority Signals', ...b.authority, value: b.authority.status === 'good' ? 'Strong' : 'Weak', suggestion: b.authority.feedback });
            if (b.antiMarketing) newMetrics.push({ name: 'Tone Check', ...b.antiMarketing, value: b.antiMarketing.status === 'good' ? 'Neutral' : 'Promo', suggestion: b.antiMarketing.feedback });
 
+           // --- 5. V2 Metrics (Universal) ---
+           if (b.chunkability) newMetrics.push({ name: 'Chunkability', ...b.chunkability, value: b.chunkability.status === 'good' ? 'Structured' : 'Flat', suggestion: b.chunkability.feedback });
+           if (b.fleschReadability) newMetrics.push({ name: 'Readability (Flesch)', ...b.fleschReadability, value: b.fleschReadability.score + '/35', suggestion: b.fleschReadability.feedback });
+           if (b.freshness) newMetrics.push({ name: 'Freshness', ...b.freshness, value: b.freshness.status === 'good' ? 'Fresh' : 'Older', suggestion: b.freshness.feedback });
+
            setScrapability({
              score: response.data.totalScore,
              metrics: newMetrics,

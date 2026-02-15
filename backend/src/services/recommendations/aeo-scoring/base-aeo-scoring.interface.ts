@@ -1,7 +1,9 @@
+export const MAX_SCRAPABILITY_SCORE = 80;
+
 export interface AEOScoreBreakdown {
     // Generic / Article
     primaryAnswer?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
-    chunkability?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    // chunkability removed in favor of V2 universal metric
     conceptClarity?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
     explanationDepth?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
     comparison?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
@@ -40,6 +42,11 @@ export interface AEOScoreBreakdown {
     completenessOfExplanation?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
     trustAuthoritySignals?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
     followUpReadiness_sm?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+
+    // V2 Metrics (Universal)
+    chunkability?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    fleschReadability?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
+    freshness?: { score: number; max: number; status: 'good' | 'warning' | 'error'; feedback: string };
 }
 
 export interface AEOScoreResult {

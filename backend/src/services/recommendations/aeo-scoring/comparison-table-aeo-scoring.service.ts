@@ -1,4 +1,4 @@
-import { IAEOScoringService, AEOScoreResult } from './base-aeo-scoring.interface';
+import { IAEOScoringService, AEOScoreResult, MAX_SCRAPABILITY_SCORE } from './base-aeo-scoring.interface';
 
 /**
  * Comparison Table AEO Scoring Service (v2)
@@ -39,6 +39,7 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
                     );
 
                     if (tableSection) {
+                        // If a table section is found, use its content for table-specific scoring
                         tableContent = tableSection.content || '';
                     }
 
@@ -46,6 +47,7 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
                     text = parsed.sections.map((s: any) => `${s.title}\n${s.content}`).join('\n\n');
                 } else if (parsed.content) {
                     text = parsed.content;
+                    // If no specific table section, assume the whole content might be a table
                     tableContent = text;
                 }
             }
@@ -53,44 +55,60 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
             // Not JSON, treat as raw text
         }
 
+        // Extract Markdown Tables for specific analysis if not already extracted from JSON
+        if (!tableContent) {
+            // Matches | Header | Header | ... \n | --- | --- | ...
+            const tableMatch = text.match(/\|(.+)\|\n\|(\s*---.*\|)+/);
+            if (tableMatch) {
+                // Grab the table block roughly
+                const split = text.split(tableMatch[0]);
+                if (split.length > 1) {
+                    // The starting match plus some following lines
+                    // This is a rough heuristic, but effective enough for v1
+                    tableContent = tableMatch[0] + (split[1] || '').split('\n\n')[0];
+                } else {
+                    tableContent = tableMatch[0];
+                }
+            }
+        }
+
+
         // 1. Comparison Intent Clarity (10)
-        // Pass contentTitle explicitly if found
-        const intentScore = this.scoreComparisonIntent(contentTitle || text);
+        // Check contentTitle or first H1/H2
+        const firstLine = contentTitle || text.split('\n')[0]?.trim() || '';
+        const intentScore = this.scoreComparisonIntent(firstLine);
 
         // 2. Table Structure & Parsability (20)
-        // Pass specifically the table content for structure check
-        const structureScore = this.scoreTableStructure(tableContent);
+        const structureScore = this.scoreTableStructure(tableContent || text); // Use tableContent if available, else full text
 
-        // 3. Attribute Selection Quality (20)
-        const attributeScore = this.scoreAttributeQuality(tableContent);
+        // 3. Attribute Quality (10)
+        const attributeScore = this.scoreAttributeQuality(tableContent || text);
 
-        // 4. Neutral Language & Factuality (15)
+        // 4. Neutral Language (10)
         const neutralityScore = this.scoreNeutrality(text);
 
-        // 5. Semantic Consistency (10)
-        const consistencyScore = this.scoreSemanticConsistency(tableContent);
+        // 5. Semantic Consistency (5)
+        const consistencyScore = this.scoreSemanticConsistency(tableContent || text);
 
-        // 6. Contextual Interpretation Layer (10)
+        // 6. Contextual Interpretation (5)
         const contextScore = this.scoreContextualInterpretation(text);
 
-        // 7. Edge-Case & Limitation Coverage (10)
+        // 7. Edge Case Coverage (10)
         const edgeCaseScore = this.scoreEdgeCases(text);
 
-        // 8. Timeliness & Update Signals (5)
+        // 8. Timeliness (10)
         const timelinessScore = this.scoreTimeliness(text);
 
-        // 9. LLM Extraction Readiness (Bonus +5)
-        const llmScore = this.scoreLLMReadiness(structureScore.score);
+        // LLM Readiness removed as separate score, integrated into Structure
 
-        // Total Calculation (Total 100 + 5 bonus, capped at 70 for backend portion)
-        const rawTotal = intentScore.score + structureScore.score + attributeScore.score +
+        // Total Calculation (Max 80)
+        // 10 + 20 + 10 + 10 + 5 + 5 + 10 + 10 = 80
+        const total = intentScore.score + structureScore.score + attributeScore.score +
             neutralityScore.score + consistencyScore.score + contextScore.score +
             edgeCaseScore.score + timelinessScore.score;
 
-        const total = Math.round(rawTotal * 0.7) + llmScore.score;
-
         return {
-            totalScore: Math.min(70, total),
+            totalScore: Math.min(MAX_SCRAPABILITY_SCORE, total),
             breakdown: {
                 comparisonIntent: intentScore,
                 tableStructure: structureScore,
@@ -100,7 +118,7 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
                 contextualInterpretation: contextScore,
                 edgeCaseCoverage: edgeCaseScore,
                 timeliness: timelinessScore,
-                llmReadiness: llmScore
+                llmReadiness: { score: structureScore.score, max: 20, status: structureScore.status, feedback: "Integrated into Table Structure" }
             }
         };
     }
@@ -130,26 +148,22 @@ export class ComparisonTableAEOScoringService implements IAEOScoringService {
 
     // 2. Table Structure & Parsability (20)
     private scoreTableStructure(text: string): { score: number, max: number, status: 'good' | 'warning' | 'error', feedback: string } {
-        // Simple Markdown Table Check
-        // | Header | Header |
-        // | --- | --- |
-
-        // Count lines that look like table rows
-        const tableLines = text.match(/^\s*\|.*\|\s*$/gm) || [];
-        const hasSeparator = /^\s*\|[-:\s|]+\|\s*$/m.test(text);
+        // Must contain markdown table syntax: | Header | and | --- |
+        const hasPipes = (text.match(/\|/g) || []).length > 6; // More than 3 pipes implies at least 2 columns and 2 rows
+        const hasSeparators = /\|?\s*:?-+:?\s*\|/.test(text); // Checks for separator line like |---| or |:---|
 
         let score = 0;
         let status: 'good' | 'warning' | 'error' = 'error';
-        let feedback = "No markdown table structure detected.";
+        let feedback = "No Markdown table definition found.";
 
-        if (tableLines.length >= 3 && hasSeparator) {
+        if (hasPipes && hasSeparators) {
             score = 20;
             status = 'good';
-            feedback = "Strong table structure.";
-        } else if (tableLines.length > 0) {
+            feedback = "Valid Markdown table structure detected.";
+        } else if (hasPipes) {
             score = 10;
             status = 'warning';
-            feedback = "Structure exists but is thin (add more rows).";
+            feedback = "Potential table found but malformed (missing separator row).";
         }
 
         return { score, max: 20, status, feedback };

@@ -92,15 +92,49 @@ export const Step3Refine: React.FC = () => {
         return '';
     };
 
-    const getTemplateForAction = (rec: RecommendationV3): string => {
-        if (rec.assetType) return rec.assetType;
-        const action = rec.action.toLowerCase();
-        if (action.includes('video')) return 'short_video';
-        if (action.includes('article') || action.includes('blog')) return 'article';
-        if (action.includes('whitepaper') || action.includes('guide')) return 'whitepaper';
-        if (action.includes('comparison')) return 'comparison_table';
-        return 'article';
-    };
+  // Determine the content template type based on the action/focus string
+  // This ensures the backend factory gets the right 'contentType' for scoring
+  const getTemplateForAction = (rec: RecommendationV3): string => {
+    // 1. Explicit overrides if 'contentTemplate' field exists (future proofing)
+    // if (rec.contentTemplate) return rec.contentTemplate;
+
+    const action = rec.action.toLowerCase();
+    const focus = (rec.contentFocus || '').toLowerCase();
+    const combined = `${action} ${focus}`;
+
+    // 2. Expert / Community Response
+    if (combined.includes('expert') || combined.includes('community') || combined.includes('forum') || combined.includes('reddit') || combined.includes('quora')) {
+        return 'expert_community_response';
+    }
+
+    // 3. Social Media Thread
+    if (combined.includes('social') || combined.includes('thread') || combined.includes('linkedin') || combined.includes('twitter') || combined.includes('x.com')) {
+        return 'social_media_thread';
+    }
+
+    // 4. Comparison Table
+    if (combined.includes('comparison') || combined.includes('table') || combined.includes('battle card')) {
+        return 'comparison_table';
+    }
+
+    // 5. Short Video / TikTok
+    if (combined.includes('video') || combined.includes('short') || combined.includes('tiktok') || combined.includes('reel')) {
+        return 'short_video'; // Factory maps this to video service typically or needs aliasing
+    }
+
+    // 6. Podcast
+    if (combined.includes('podcast') || combined.includes('audio') || combined.includes('script')) {
+        return 'podcast';
+    }
+
+    // 7. Whitepaper
+    if (combined.includes('whitepaper') || combined.includes('report') || combined.includes('deep dive')) {
+        return 'whitepaper';
+    }
+
+    // Default
+    return 'article';
+  };
 
     const getContentIcon = (type: string) => {
         switch (type) {

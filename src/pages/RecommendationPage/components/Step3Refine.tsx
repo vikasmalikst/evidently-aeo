@@ -262,23 +262,21 @@ export const Step3Refine: React.FC = () => {
                                         <div className="flex items-center gap-2">
                                         {!rec.isCompleted ? (
                                             <div className="flex items-center gap-2">
-                                                {/* AEO Score Badge - Temporarily Hidden
-                                                 {!isColdStart && hasContent && (
-                                                     <div className="mr-2" onClick={(e) => e.stopPropagation()}>
-                                                         <AEOScoreBadge
-                                                             content={visibleContent}
-                                                             brandName={brandName}
-                                                             contentType={contentType}
-                                                             onClick={() => setScorePanel({
-                                                                 isOpen: true,
-                                                                 content: visibleContent,
-                                                                 brandName: brandName,
-                                                                 contentType: contentType
-                                                             })}
-                                                         />
-                                                     </div>
-                                                 )}
-                                                 */}
+                                                {!isColdStart && hasContent && (
+                                                    <div className="mr-2" onClick={(e) => e.stopPropagation()}>
+                                                        <AEOScoreBadge
+                                                            content={visibleContent}
+                                                            brandName={brandName}
+                                                            contentType={contentType}
+                                                            onClick={() => setScorePanel({
+                                                                isOpen: true,
+                                                                content: visibleContent,
+                                                                brandName: brandName,
+                                                                contentType: contentType
+                                                            })}
+                                                        />
+                                                    </div>
+                                                )}
 
                                                 {/* Regenerate Button - Only visible when there's feedback */}
                                                 {(rec.id && (sectionFeedbackMap.get(rec.id)?.size || 0) > 0) && (

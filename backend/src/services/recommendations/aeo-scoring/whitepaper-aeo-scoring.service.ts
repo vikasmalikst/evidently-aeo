@@ -74,7 +74,7 @@ export class WhitepaperAEOScoringService implements IAEOScoringService {
             totalScore: Math.min(80, total),
             breakdown: {
                 primaryAnswer: answerScore,
-               
+
                 authority: dataScore,
                 explanationDepth: authorityScore,
                 conceptClarity: structureScore, // Changed from definitionScore - structure is key for whitepapers
